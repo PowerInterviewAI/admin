@@ -1,34 +1,60 @@
+import os
+from dataclasses import dataclass
 from functools import lru_cache
-from typing import AsyncGenerator
+from pathlib import Path
+from typing import Awaitable, Callable
 
-from fastapi import FastAPI, Request
+from dotenv import load_dotenv
+from fastapi import FastAPI, Request, Response
 from fastapi_mongo_admin import mount_admin_app
 from loguru import logger
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
-from pydantic import BaseSettings, Field
 
 
-class Settings(BaseSettings):
+@dataclass(frozen=True)
+class Settings:
     """Application settings loaded from environment variables."""
 
-    mongo_uri: str = Field(..., env="MONGO_URI")
-    mongo_db: str = Field("admin", env="MONGO_DB")
+    mongo_uri: str
+    mongo_db: str = "admin"
 
-    admin_prefix: str = Field("/admin", env="ADMIN_PREFIX")
-    ui_mount_path: str = Field("/admin-ui", env="ADMIN_UI_MOUNT_PATH")
+    admin_prefix: str = "/admin"
+    ui_mount_path: str = "/admin-ui"
 
-    host: str = Field("0.0.0.0", env="HOST")
-    port: int = Field(8000, env="PORT")
-    debug: bool = Field(False, env="DEBUG")
+    host: str = "0.0.0.0"
+    port: int = 8000
+    debug: bool = False
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
+
+def _load_dotenv() -> None:
+    env_path = Path(".env")
+    if env_path.exists():
+        load_dotenv(dotenv_path=env_path)
 
 
 @lru_cache()
 def get_settings() -> Settings:
-    return Settings()
+    _load_dotenv()
+
+    mongo_uri = os.getenv("MONGO_URI", "").strip()
+    if not mongo_uri:
+        raise RuntimeError("MONGO_URI must be set in the environment or .env file")
+
+    return Settings(
+        mongo_uri=mongo_uri,
+        mongo_db=os.getenv("MONGO_DB", "admin"),
+        admin_prefix=os.getenv("ADMIN_PREFIX", "/admin"),
+        ui_mount_path=os.getenv("ADMIN_UI_MOUNT_PATH", "/admin-ui"),
+        host=os.getenv("HOST", "0.0.0.0"),
+        port=int(os.getenv("PORT", "8000")),
+        debug=os.getenv("DEBUG", "false").lower() in ("1", "true", "yes"),
+    )
+
+
+@lru_cache()
+def get_motor_client() -> AsyncIOMotorClient:
+    settings = get_settings()
+    return AsyncIOMotorClient(settings.mongo_uri)
 
 
 def get_database() -> AsyncIOMotorDatabase:
@@ -38,8 +64,7 @@ def get_database() -> AsyncIOMotorDatabase:
     """
 
     settings = get_settings()
-    client = AsyncIOMotorClient(settings.mongo_uri)
-    return client[settings.mongo_db]
+    return get_motor_client()[settings.mongo_db]
 
 
 def create_app() -> FastAPI:
@@ -48,7 +73,10 @@ def create_app() -> FastAPI:
     app = FastAPI(title="MongoDB Admin Panel", debug=settings.debug)
 
     @app.middleware("http")
-    async def log_requests(request: Request, call_next):
+    async def log_requests(
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
         logger.info("%s %s", request.method, request.url)
         response = await call_next(request)
         logger.info("%s %s -> %s", request.method, request.url, response.status_code)

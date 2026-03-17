@@ -1,11 +1,10 @@
 [tool.ruff]
-# See https://beta.ruff.rs/docs/configuration/
 line-length = 88
-extend-ignore = ["E203", "W503"]
 exclude = [".venv", "build", "dist"]
 
 [tool.mypy]
 python_version = "3.12"
+plugins = ["pydantic.mypy"]
 check_untyped_defs = true
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
