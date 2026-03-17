@@ -6,6 +6,7 @@ from typing import Awaitable, Callable
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, Response
+from fastapi.responses import RedirectResponse
 from fastapi_mongo_admin import mount_admin_app
 from loguru import logger
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
@@ -77,9 +78,9 @@ def create_app() -> FastAPI:
         request: Request,
         call_next: Callable[[Request], Awaitable[Response]],
     ) -> Response:
-        logger.info("%s %s", request.method, request.url)
+        logger.info(f"{request.method} {request.url}")
         response = await call_next(request)
-        logger.info("%s %s -> %s", request.method, request.url, response.status_code)
+        logger.info(f"{request.method} {request.url} -> {response.status_code}")
         return response
 
     mount_admin_app(
@@ -89,6 +90,14 @@ def create_app() -> FastAPI:
         ui_mount_path=settings.ui_mount_path,
         require_auth=False,  # Set to True for production and provide an auth_dependency
     )
+
+    ui_root = settings.ui_mount_path.rstrip("/")
+    ui_target = f"{ui_root}/admin.html"
+
+    @app.get(ui_root, include_in_schema=False)
+    @app.get(f"{ui_root}/", include_in_schema=False)
+    def redirect_to_admin_ui() -> RedirectResponse:
+        return RedirectResponse(url=ui_target)
 
     @app.get("/")
     def read_root() -> dict[str, str]:
