@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+
+# IDEs
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# dotenv
+.env
+
+# mypy
+.mypy_cache/
+
+# ruff
+.ruff_cache/
