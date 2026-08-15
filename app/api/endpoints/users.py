@@ -2,6 +2,7 @@ import re
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Query
+from pydantic import BaseModel
 
 from app.api.dependency import PaymentCRUDDep, SessionCRUDDep, UserCRUDDep
 from app.models.common.object_id import PyObjectId
@@ -9,6 +10,16 @@ from app.models.user import User, UserRead, UserUpdate
 from app.schemas.common import Page
 
 router = APIRouter(prefix="/users", tags=["users"])
+
+
+class UserPatchBody(BaseModel):
+    """PATCH body for a user - `id` comes from the URL path, not the body."""
+
+    username: str | None = None
+    email: str | None = None
+    role: User.Role | None = None
+    status: User.Status | None = None
+    credits: int | None = None
 
 
 @router.get("")
@@ -51,8 +62,8 @@ async def get_user(
 
 
 @router.patch("/{user_id}")
-async def update_user(user_id: PyObjectId, patch: UserUpdate, crud: UserCRUDDep) -> UserRead:
-    patch.id = user_id
+async def update_user(user_id: PyObjectId, body: UserPatchBody, crud: UserCRUDDep) -> UserRead:
+    patch = UserUpdate(id=user_id, **body.model_dump(exclude_unset=True))
     return await crud.update(patch)
 
 

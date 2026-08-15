@@ -1,6 +1,7 @@
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Query
+from pydantic import BaseModel
 
 from app.api.dependency import PaymentCRUDDep
 from app.models.common.object_id import PyObjectId
@@ -9,6 +10,13 @@ from app.schemas.common import Page
 from app.schemas.payment import CreditPlan
 
 router = APIRouter(prefix="/payments", tags=["payments"])
+
+
+class PaymentPatchBody(BaseModel):
+    """PATCH body for a payment - `id` comes from the URL path, not the body."""
+
+    status: Payment.Status | None = None
+    credits_applied: bool | None = None
 
 
 @router.get("")
@@ -42,7 +50,7 @@ async def get_payment(payment_id: PyObjectId, crud: PaymentCRUDDep) -> PaymentRe
 
 
 @router.patch("/{payment_id}")
-async def update_payment(payment_id: PyObjectId, patch: PaymentUpdate, crud: PaymentCRUDDep) -> PaymentRead:
+async def update_payment(payment_id: PyObjectId, body: PaymentPatchBody, crud: PaymentCRUDDep) -> PaymentRead:
     """Manual override of `status`/`credits_applied` for support cases. Does not call NOWPayments."""
-    patch.id = payment_id
+    patch = PaymentUpdate(id=payment_id, **body.model_dump(exclude_unset=True))
     return await crud.update(patch)
