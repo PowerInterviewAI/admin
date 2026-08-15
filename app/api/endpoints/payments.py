@@ -3,11 +3,13 @@ from typing import Annotated, Any, Literal
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
-from app.api.dependency import PaymentCRUDDep
+from app.api.dependency import DB, PaymentCRUDDep
 from app.models.common.object_id import PyObjectId
 from app.models.payment import Payment, PaymentRead, PaymentUpdate
 from app.schemas.common import Page
 from app.schemas.payment import CreditPlan
+from app.schemas.user_label import UserLabel
+from app.services.user_lookup_service import get_user_labels
 
 router = APIRouter(prefix="/payments", tags=["payments"])
 
@@ -19,9 +21,16 @@ class PaymentPatchBody(BaseModel):
     credits_applied: bool | None = None
 
 
+class PaymentWithUser(PaymentRead):
+    """A payment row plus the identity of the user it belongs to."""
+
+    user: UserLabel | None = None
+
+
 @router.get("")
 async def list_payments(
     crud: PaymentCRUDDep,
+    db: DB,
     status_: Annotated[Payment.Status | None, Query(alias="status")] = None,
     plan: CreditPlan | None = None,
     user_id: PyObjectId | None = None,
@@ -29,7 +38,7 @@ async def list_payments(
     sort_dir: Literal["asc", "desc"] = "desc",
     offset: int = 0,
     limit: Annotated[int, Query(le=200)] = 50,
-) -> Page[PaymentRead]:
+) -> Page[PaymentWithUser]:
     query: dict[str, Any] = {}
     if status_:
         query[Payment.Field.STATUS.value] = status_.value
@@ -41,7 +50,10 @@ async def list_payments(
     sort = [(sort_by, -1 if sort_dir == "desc" else 1)]
     items = await crud.search(query=query, sort=sort, offset=offset, length=limit)
     total = await crud.count(query=query)
-    return Page(items=items, total=total, offset=offset, limit=limit)
+
+    labels = await get_user_labels(db, [item.user_id for item in items])
+    rows = [PaymentWithUser(**item.model_dump(by_alias=True), user=labels.get(str(item.user_id))) for item in items]
+    return Page(items=rows, total=total, offset=offset, limit=limit)
 
 
 @router.get("/{payment_id}")

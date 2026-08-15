@@ -1,0 +1,13 @@
+{
+  "name": "power-interview-admin",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Convenience root for the admin dashboard - runs the FastAPI service and the Next.js UI together",
+  "scripts": {
+    "start": "concurrently -n api,web -c blue,green \"uv run python -m app.main\" \"pnpm --dir web start\"",
+    "dev": "concurrently -n api,web -c blue,green \"uv run python -m app.main\" \"pnpm --dir web dev\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

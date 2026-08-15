@@ -1,43 +1,56 @@
-# MongoDB Admin Panel (FastAPI + fastapi-mongo-admin)
+# Power Interview AI - Admin
 
-A minimal FastAPI project that exposes a MongoDB admin UI using [`fastapi-mongo-admin`](https://pypi.org/project/fastapi-mongo-admin/).
+Local-only admin dashboard for Power Interview AI: analytics, and CRUD over users, payments, sessions, and audit logs. Reads/writes the same MongoDB database `../backend` uses - it does not call backend's API.
 
-## 🚀 Quick Start
+See [SPEC.md](SPEC.md) for the feature list and data model, and [CLAUDE.md](CLAUDE.md) for architecture, conventions, and known gotchas.
 
-1. Create a `.env` file (or set env vars) with your MongoDB connection:
+## Requirements
 
-```env
-MONGO_URI=mongodb://localhost:27017
-MONGO_DB=admin
+- Python 3.12 and [uv](https://docs.astral.sh/uv/)
+- Node.js and [pnpm](https://pnpm.io/)
+- MongoDB (local, matching backend's `MONGO_URL`/`MONGO_DB`)
+
+## Setup
+
+```bash
+uv sync
+cp .env.example .env   # defaults already point at backend's local MongoDB
+
+pnpm install            # root: installs `concurrently`
+cd web && pnpm install && cd ..
 ```
 
-2. Activate the virtual environment:
+## Running
 
-```powershell
-.\.venv\Scripts\Activate.ps1
+Two processes: the API (`:8000`) and the Next.js UI (`:3000`).
+
+```bash
+# Both at once, from admin/
+pnpm dev      # hot-reload dev servers
+
+# Or separately
+uv run python -m app.main   # API
+cd web && pnpm dev          # UI
 ```
 
-3. Run the app:
+For a production-style run, build the UI first: `cd web && pnpm build`, then `pnpm start` from `admin/` (or `pnpm --dir web start` + `uv run python -m app.main` separately).
 
-```powershell
-uvicorn main:app --reload
+## Lint, type-check
+
+```bash
+uv run ruff format
+uv run ruff check
+uv run mypy app
+
+cd web && pnpm lint
 ```
 
-4. Open the admin UI:
+## Project layout
 
-- API endpoints: `http://localhost:8000/admin`
-- UI: `http://localhost:8000/admin-ui`
-
-## 🧰 Tooling
-
-- ✅ Linting: `ruff check .`
-- ✅ Type checking: `mypy .`
-
-## 🧩 Notes
-
-- This project uses `loguru` for request logging.
-- `fastapi-mongo-admin` supports auto-discovering Pydantic models; see `fastapi_mongo_admin.mount_admin_app` docs.
-
----
-
-**Tip:** For production, add authentication (e.g., `require_auth=True`) and protect the admin UI.
+| Path | Purpose |
+|---|---|
+| `app/` | FastAPI service: routers, MongoDB models, analytics aggregations |
+| `web/` | Next.js admin UI |
+| `pyproject.toml` / `uv.lock` | Python dependencies (uv) |
+| `package.json` | Root convenience scripts only (`concurrently`) - not a Node project itself |
+| `.env.example` | Environment variable template |
