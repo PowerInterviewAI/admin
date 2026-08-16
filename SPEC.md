@@ -4,39 +4,41 @@ Project specification for the Power Interview AI admin dashboard - a local-only,
 
 ## Overview
 
-`admin` is a standalone full-stack app (FastAPI + Next.js) that reads and writes the same MongoDB database `../backend` uses for the Power Interview AI product. It does not call backend's API - it talks to MongoDB directly, since backend exposes no admin-facing endpoints today. It is meant to run on a single local machine, opened in a browser; it is never deployed or exposed publicly, and has no authentication.
+`admin` is a single Next.js application that reads and writes the same MongoDB database `../backend` uses for the Power Interview AI product. It does not call backend's API - it talks to MongoDB directly, since backend exposes no admin-facing endpoints today. It is meant to run on a single local machine, opened in a browser; it is never deployed or exposed publicly, and has no authentication.
 
 ## Tech Stack
 
-| Layer            | Technology                                          |
-| ---------------- | ---------------------------------------------------- |
-| API              | FastAPI (Python 3.12), uv-managed                    |
-| Database access  | pymongo async client, direct to MongoDB (no ODM)     |
-| Frontend         | Next.js 16 (App Router), React 19, TypeScript        |
+| Layer            | Technology                                                    |
+| ---------------- | ------------------------------------------------------------- |
+| Framework        | Next.js 16 (App Router), React 19, TypeScript                  |
+| Server logic     | Server components for reads, server actions for writes         |
+| Database access  | MongoDB Node driver, direct to MongoDB (no ODM)                |
+| Validation       | Zod - one schema set shared by document reads, forms, and URL state |
 | Styling          | Tailwind CSS v4, shadcn/ui (Base UI-based, `base-nova` preset) |
-| Data fetching    | TanStack Query v5 (client-side only - no server components fetch data) |
-| Tables           | TanStack Table v8                                    |
-| Charts           | Recharts, via shadcn's `Chart` wrapper                |
-| Forms            | react-hook-form + Zod                                |
-| Package managers | `uv` (Python), `pnpm` (Node)                          |
+| Tables           | TanStack Table v8                                              |
+| Charts           | Recharts, via shadcn's `Chart` wrapper                         |
+| Forms            | react-hook-form + Zod                                          |
+| Package manager  | `pnpm`                                                         |
+
+There is no separate API process and no client-side data-fetching library. A page renders from the database on the server; a mutation is a server action that writes and then refreshes the route.
 
 ## Data Model
 
-Five MongoDB collections, owned by `../backend` and read/written here without any schema-migration coordination between the two repos:
+Five MongoDB collections, owned by `../backend` and read/written here without any schema-migration coordination between the two repos. Every document is validated against a zod schema on read, so drift surfaces as a named error rather than blank cells.
 
 | Collection    | Key fields                                                                                          | Notes |
 | ------------- | ----------------------------------------------------------------------------------------------------- | ----- |
-| `users`       | `username`, `email`, `role` (`user`/`trial_user`/`admin`), `status` (`active`/`inactive`), `credits`, `interview_config` (`full_name`, `profile_data`, `context`) | `password_hash` is always masked to `null` in API responses |
+| `users`       | `username`, `email`, `role` (`user`/`trial_user`/`admin`), `status` (`active`/`inactive`), `credits`, `interview_config` (`full_name`, `profile_data`, `context`) | `password_hash` has no field in the schema, so it is stripped on read and never reaches a client |
 | `payments`    | `user_id`, `plan` (`starter`/`pro`/`enterprise`), `status` (10-value enum), `price_amount`, `credits_amount`, `credits_applied` | Status/`credits_applied` are manually editable here - editing does **not** call NOWPayments or replay webhook logic |
-| `sessions`    | `token`, `user_id`, `device_info` (`ip_address`, `user_agent`)                                        | Deleting one force-logs-out that device. `token` is never served by the API - it is a live bearer credential |
-| `audit_logs`  | `event_type` (16-value enum), `user_id`, `email`, `status`, `metadata` (free-form dict)               | Read-only in the UI; this is the primary real-usage signal |
+| `sessions`    | `token`, `user_id`, `device_info` (`ip_address`, `user_agent`)                                        | Deleting one force-logs-out that device. `token` has no field in the schema - it is a live bearer credential |
+| `audit_logs`  | `event_type` (17-value enum), `user_id`, `email`, `status`, `metadata` (free-form dict)               | Read-only in the UI; this is the primary real-usage signal |
 | `global_state`| `active_sessions`                                                                                      | **Not used anywhere in this app** - it's a simulated `random.gauss(260, 10)` value in backend, not real data |
 
 ## Features
 
 ### Analytics (`/`)
 
-All computed server-side from real documents (`app/services/analytics_service.py`), never from `global_state`:
+All computed server-side from real documents (`src/server/queries/analytics.ts`), never from `global_state`, and issued as one parallel batch:
 
 - KPI cards: total users (+ admin count), lifetime revenue from `finished` payments, credits outstanding across all users, ASR sessions in the last 30 days
 - Signups per day and revenue per day (last 30 days), as trend charts
@@ -45,15 +47,15 @@ All computed server-side from real documents (`app/services/analytics_service.py
 
 ### Users (`/users`)
 
-Search (username/email), filter by role and status, paginated table sortable by joined date (server-side, resets to page 1). Row click opens an edit sheet: role, status, credits, username, email, and the user's interview configuration (full name, profile/CV, context) are all editable; the sheet also shows that user's payment and session counts, and has a delete action (destructive, confirmed via dialog).
+Search (username/email), filter by role and status, paginated table sortable by username, credits, or joined date. Row click opens an edit sheet: role, status, credits, username, email, and the user's interview configuration (full name, profile/CV, context) are all editable; the sheet also shows that user's payment and session counts, and has a delete action (destructive, confirmed via dialog).
 
 ### Payments (`/payments`)
 
-Filter by status and plan, paginated table showing which user each payment belongs to. Row click opens an edit sheet for a manual `status`/`credits_applied` override - explicitly labeled as a support/manual tool, not a payment-provider action.
+Filter by status and plan, paginated table sortable by amount or created date, showing which user each payment belongs to. Row click opens an edit sheet for a manual `status`/`credits_applied` override - explicitly labeled as a support/manual tool, not a payment-provider action.
 
 ### Sessions (`/sessions`)
 
-Paginated table of every active session across all users, showing the account and device behind each one, with a revoke action (confirmed via dialog) that deletes the session document, forcing that device to re-authenticate.
+Paginated table of every active session across all users, sortable by start or last-active time, showing the account and device behind each one, with a revoke action (confirmed via dialog) that deletes the session document, forcing that device to re-authenticate.
 
 ### Audit Logs (`/audit-logs`)
 
@@ -61,10 +63,11 @@ Filterable (event type, status, date range) read-only table. Row click opens a d
 
 ### Cross-cutting UI behaviour
 
+- Filters, sort, and page live in the URL: every view is linkable, and the back button steps through it
 - Light and dark themes, following the system preference by default with a toggle in the header
-- Every table distinguishes "no rows matched" from "the API could not be reached", the latter with a retry action
+- Every table distinguishes "no rows matched" from "the database could not be reached", the latter with a retry that re-runs the server render
 - Destructive actions (delete user, revoke session) always go through a confirmation dialog
-- Every mutation reports success or failure as a toast
+- Every mutation reports success or failure as a toast, driven by the action's return value rather than a thrown error
 
 ## Out of Scope
 
@@ -76,4 +79,4 @@ Filterable (event type, status, date range) read-only table. Row click opens a d
 
 ## Project Structure
 
-See [CLAUDE.md](CLAUDE.md) for the full directory layout, architecture rationale, and known gotchas in the shadcn/Base UI setup and the form/PATCH patterns.
+See [CLAUDE.md](CLAUDE.md) for the full directory layout, architecture rationale, and known gotchas in the shadcn/Base UI setup and the URL-state, table, and server-action patterns.
