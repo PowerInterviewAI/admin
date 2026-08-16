@@ -1,32 +1,43 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
 
-# Virtual environments
-.venv/
-venv/
+# next.js
+/.next/
+/out/
+/build
 
-# Distribution / packaging
-build/
-dist/
-*.egg-info/
+# testing
+/coverage
 
-# Node (root-level `concurrently` install only - web/ has its own .gitignore)
-node_modules/
+# env files (can opt-in for committing if needed)
+.env*
+!.env.example
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# misc
+.DS_Store
+*.pem
+*.log
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
 
 # IDEs
 .vscode/
 .idea/
 
-# Logs
-*.log
-
-# dotenv
-.env
-
-# mypy
-.mypy_cache/
-
-# ruff
-.ruff_cache/
+# vercel
+.vercel
