@@ -1,3 +1,5 @@
+"use client";
+
 import { RefreshCw, TriangleAlert } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -11,12 +13,12 @@ import {
 } from "@/components/ui/empty";
 
 /**
- * Shown wherever a query fails. Distinguishing this from the empty state matters: an unreachable
- * API rendering as "no results" reads as "this table is empty", which is the wrong conclusion to
- * hand an admin looking at user or payment data.
+ * Shown whenever a page fails to read the database. Distinguishing this from the empty state
+ * matters: an unreachable database rendering as "no results" reads as "this table is empty", which
+ * is the wrong conclusion to hand an admin looking at user or payment data.
  */
-export function QueryError({ error, onRetry }: { error: Error; onRetry?: () => void }) {
-  const reason = (error.message || "The admin API did not respond").replace(/\.$/, "");
+export function DataError({ error, onRetry }: { error: Error; onRetry?: () => void }) {
+  const reason = (error.message || "The database did not respond").replace(/\.$/, "");
 
   return (
     <Empty>
@@ -26,8 +28,8 @@ export function QueryError({ error, onRetry }: { error: Error; onRetry?: () => v
         </EmptyMedia>
         <EmptyTitle>Could not load data</EmptyTitle>
         <EmptyDescription>
-          {reason}. Check that the admin API is running on{" "}
-          <code className="font-mono">{process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"}</code>.
+          {reason}. Check that MongoDB is reachable at the <code className="font-mono">MONGO_URL</code>{" "}
+          in your <code className="font-mono">.env.local</code>.
         </EmptyDescription>
       </EmptyHeader>
       {onRetry && (

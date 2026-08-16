@@ -1,37 +1,23 @@
-"use client";
+import { Activity, Coins, Users, Wallet } from "lucide-react";
+import { connection } from "next/server";
 
-import { Users, Wallet, Coins, Activity } from "lucide-react";
-
-import { useAnalyticsOverview } from "@/hooks/use-analytics";
-import { PageHeader } from "@/components/custom/page-header";
-import { StatCard } from "@/components/custom/stat-card";
-import { DistributionChart, TrendChart } from "@/components/custom/charts";
+import { DistributionChart, TrendChart } from "@/components/charts";
+import { PageHeader } from "@/components/page-header";
+import { StatCard } from "@/components/stat-card";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
-import { QueryError } from "@/components/custom/query-error";
-import { Skeleton } from "@/components/ui/skeleton";
-import { formatDate, formatNumber, formatUsd, titleCase } from "@/lib/format";
+import { formatNumber, formatUsd } from "@/lib/format";
+import { ANALYTICS_WINDOW_DAYS, getAnalyticsOverview } from "@/server/queries/analytics";
 
-export default function DashboardPage() {
-  const { data, isLoading, error, refetch } = useAnalyticsOverview();
+import { RecentActivityTable } from "./recent-activity-table";
 
-  if (error) {
-    return (
-      <div className="flex flex-col">
-        <PageHeader
-          title="Dashboard"
-          description="Real usage and revenue data, read directly from the Power Interview AI database."
-        />
-        <Card>
-          <CardContent className="py-12">
-            <QueryError error={error} onRetry={() => void refetch()} />
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+export default async function DashboardPage() {
+  // This route takes no search params, so without an explicit request dependency Next would try
+  // to prerender it at build time - against a database that is not running during the build.
+  await connection();
+
+  const data = await getAnalyticsOverview();
+  const asrSessions = data.activity.asr_sessions_per_day.reduce((sum, day) => sum + day.count, 0);
 
   return (
     <div className="flex flex-col">
@@ -43,166 +29,117 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="Total Users"
-          value={data ? formatNumber(data.users.total) : "—"}
+          value={formatNumber(data.users.total)}
           icon={Users}
-          hint={data ? `${data.users.by_role.admin ?? 0} admins` : undefined}
-          isLoading={isLoading}
+          hint={`${formatNumber(data.users.by_role.admin ?? 0)} admins`}
         />
         <StatCard
           label="Revenue (finished)"
-          value={data ? formatUsd(data.revenue.total_usd) : "—"}
+          value={formatUsd(data.revenue.total_usd)}
           icon={Wallet}
           hint="Lifetime, status = finished"
-          isLoading={isLoading}
         />
         <StatCard
           label="Credits Outstanding"
-          value={data ? formatNumber(data.credits_outstanding) : "—"}
+          value={formatNumber(data.credits_outstanding)}
           icon={Coins}
           hint="Sum across all users"
-          isLoading={isLoading}
         />
         <StatCard
-          label="ASR Sessions (30d)"
-          value={
-            data ? formatNumber(data.activity.asr_sessions_per_day.reduce((sum, d) => sum + d.count, 0)) : "—"
-          }
+          label={`ASR Sessions (${ANALYTICS_WINDOW_DAYS}d)`}
+          value={formatNumber(asrSessions)}
           icon={Activity}
-          hint="asr_start events, last 30 days"
-          isLoading={isLoading}
+          hint={`asr_start events, last ${ANALYTICS_WINDOW_DAYS} days`}
         />
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 mt-4">
-        <Card>
-          <CardHeader>
-            <CardTitle>Signups</CardTitle>
-            <CardDescription>New users per day, last 30 days</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {isLoading || !data ? (
-              <Skeleton className="h-55 w-full" />
-            ) : data.users.signups_per_day.length === 0 ? (
-              <ChartEmpty />
-            ) : (
-              <TrendChart
-                data={data.users.signups_per_day.map((d) => ({ date: d.date, value: d.count }))}
-                label="Signups"
-                color="var(--chart-1)"
-              />
-            )}
-          </CardContent>
-        </Card>
+      <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <ChartCard
+          title="Signups"
+          description={`New users per day, last ${ANALYTICS_WINDOW_DAYS} days`}
+          isEmpty={data.users.signups_per_day.length === 0}
+        >
+          <TrendChart
+            data={data.users.signups_per_day.map((day) => ({ date: day.date, value: day.count }))}
+            label="Signups"
+            color="var(--chart-1)"
+          />
+        </ChartCard>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Revenue</CardTitle>
-            <CardDescription>Finished payments per day, last 30 days</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {isLoading || !data ? (
-              <Skeleton className="h-55 w-full" />
-            ) : data.revenue.per_day.length === 0 ? (
-              <ChartEmpty />
-            ) : (
-              <TrendChart
-                data={data.revenue.per_day.map((d) => ({ date: d.date, value: d.amount }))}
-                label="Revenue"
-                color="var(--chart-2)"
-                valueFormatter={(v) => formatUsd(v)}
-              />
-            )}
-          </CardContent>
-        </Card>
+        <ChartCard
+          title="Revenue"
+          description={`Finished payments per day, last ${ANALYTICS_WINDOW_DAYS} days`}
+          isEmpty={data.revenue.per_day.length === 0}
+        >
+          <TrendChart
+            data={data.revenue.per_day.map((day) => ({ date: day.date, value: day.amount }))}
+            label="Revenue"
+            color="var(--chart-2)"
+            format="usd"
+          />
+        </ChartCard>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Users by role</CardTitle>
-            <CardDescription>Current distribution</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {isLoading || !data ? (
-              <Skeleton className="h-55 w-full" />
-            ) : Object.keys(data.users.by_role).length === 0 ? (
-              <ChartEmpty />
-            ) : (
-              <DistributionChart data={data.users.by_role} labelFormatter={titleCase} />
-            )}
-          </CardContent>
-        </Card>
+        <ChartCard
+          title="Users by role"
+          description="Current distribution"
+          isEmpty={Object.keys(data.users.by_role).length === 0}
+        >
+          <DistributionChart data={data.users.by_role} />
+        </ChartCard>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Payments by status</CardTitle>
-            <CardDescription>All-time, every payment record</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {isLoading || !data ? (
-              <Skeleton className="h-55 w-full" />
-            ) : Object.keys(data.revenue.payments_by_status).length === 0 ? (
-              <ChartEmpty />
-            ) : (
-              <DistributionChart data={data.revenue.payments_by_status} labelFormatter={titleCase} />
-            )}
-          </CardContent>
-        </Card>
+        <ChartCard
+          title="Payments by status"
+          description="All-time, every payment record"
+          isEmpty={Object.keys(data.revenue.payments_by_status).length === 0}
+        >
+          <DistributionChart data={data.revenue.payments_by_status} />
+        </ChartCard>
       </div>
 
       <Card className="mt-4">
         <CardHeader>
           <CardTitle>Recent activity</CardTitle>
-          <CardDescription>Latest 20 audit log events</CardDescription>
+          <CardDescription>
+            Latest {data.recent_activity.length || 20} audit log events
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          {isLoading || !data ? (
-            <div className="flex flex-col gap-2">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <Skeleton key={i} className="h-8 w-full" />
-              ))}
-            </div>
-          ) : data.recent_activity.length === 0 ? (
-            <ChartEmpty />
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Event</TableHead>
-                    <TableHead>Email</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>When</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {data.recent_activity.map((entry) => (
-                    <TableRow key={entry._id}>
-                      <TableCell className="font-medium">{titleCase(entry.event_type)}</TableCell>
-                      <TableCell className="text-muted-foreground">{entry.email ?? "—"}</TableCell>
-                      <TableCell>
-                        <Badge variant={entry.status === "success" ? "secondary" : "destructive"}>
-                          {entry.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">{formatDate(entry.created_at)}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
+          <RecentActivityTable entries={data.recent_activity} />
         </CardContent>
       </Card>
     </div>
   );
 }
 
-function ChartEmpty() {
+function ChartCard({
+  title,
+  description,
+  isEmpty,
+  children,
+}: {
+  title: string;
+  description: string;
+  isEmpty: boolean;
+  children: React.ReactNode;
+}) {
   return (
-    <Empty>
-      <EmptyHeader>
-        <EmptyTitle>No data yet</EmptyTitle>
-        <EmptyDescription>Nothing in this window.</EmptyDescription>
-      </EmptyHeader>
-    </Empty>
+    <Card>
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+        <CardDescription>{description}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {isEmpty ? (
+          <Empty>
+            <EmptyHeader>
+              <EmptyTitle>No data yet</EmptyTitle>
+              <EmptyDescription>Nothing in this window.</EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        ) : (
+          children
+        )}
+      </CardContent>
+    </Card>
   );
 }

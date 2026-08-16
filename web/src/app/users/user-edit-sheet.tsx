@@ -1,41 +1,13 @@
 "use client";
 
-import { useState } from "react";
-import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
 import { Trash2 } from "lucide-react";
+import { useState, useTransition } from "react";
+import { Controller, useForm } from "react-hook-form";
+import { toast } from "sonner";
 
-import { useDeleteUser, useUpdateUser, useUser } from "@/hooks/use-users";
-import type { UserDetail } from "@/lib/types";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
-import {
-  Field,
-  FieldDescription,
-  FieldError,
-  FieldGroup,
-  FieldLabel,
-  FieldSeparator,
-} from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -47,36 +19,50 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+  FieldSeparator,
+} from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import { Textarea } from "@/components/ui/textarea";
 import { formatDate, formatNumber, titleCase } from "@/lib/format";
-
-const userFormSchema = z.object({
-  username: z.string().min(1, "Username is required"),
-  email: z.string().email("Enter a valid email"),
-  role: z.enum(["user", "trial_user", "admin"]),
-  status: z.enum(["active", "inactive"]),
-  credits: z.number().int().min(0, "Credits cannot be negative"),
-  interview_config: z.object({
-    full_name: z.string(),
-    profile_data: z.string(),
-    context: z.string(),
-  }),
-});
-
-const EMPTY_INTERVIEW_CONFIG = { full_name: "", profile_data: "", context: "" };
-
-type UserFormValues = z.infer<typeof userFormSchema>;
+import {
+  EMPTY_INTERVIEW_CONFIG,
+  USER_ROLES,
+  USER_STATUSES,
+  type UserPatch,
+  type UserRow,
+  userPatchSchema,
+} from "@/lib/schemas/user";
+import { deleteUser, updateUser } from "@/server/actions/users";
 
 interface UserEditSheetProps {
-  userId: string | null;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+  user: UserRow | null;
+  onClose: () => void;
 }
 
-export function UserEditSheet({ userId, open, onOpenChange }: UserEditSheetProps) {
-  const { data, isLoading } = useUser(userId);
-
+export function UserEditSheet({ user, onClose }: UserEditSheetProps) {
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Sheet open={!!user} onOpenChange={(open) => !open && onClose()}>
       <SheetContent className="flex flex-col sm:max-w-lg">
         <SheetHeader>
           <SheetTitle>Edit user</SheetTitle>
@@ -85,55 +71,62 @@ export function UserEditSheet({ userId, open, onOpenChange }: UserEditSheetProps
           </SheetDescription>
         </SheetHeader>
 
-        {isLoading || !data || !userId ? (
-          <div className="flex flex-col gap-4 px-4">
-            <Skeleton className="h-9 w-full" />
-            <Skeleton className="h-9 w-full" />
-            <Skeleton className="h-9 w-full" />
-          </div>
-        ) : (
+        {user && (
           // Keyed by user id so the form mounts fresh (correct defaultValues, no async resync race)
           // every time a different user is selected, instead of reactively syncing in place.
-          <UserEditForm key={userId} userId={userId} data={data} onClose={() => onOpenChange(false)} />
+          <UserEditForm key={user._id} user={user} onClose={onClose} />
         )}
       </SheetContent>
     </Sheet>
   );
 }
 
-function UserEditForm({
-  userId,
-  data,
-  onClose,
-}: {
-  userId: string;
-  data: UserDetail;
-  onClose: () => void;
-}) {
-  const updateUser = useUpdateUser(userId);
-  const deleteUser = useDeleteUser();
+function UserEditForm({ user, onClose }: { user: UserRow; onClose: () => void }) {
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [isSaving, startSaving] = useTransition();
+  const [isDeleting, startDeleting] = useTransition();
 
   const {
     register,
     control,
     handleSubmit,
     formState: { errors, isDirty },
-  } = useForm<UserFormValues>({
-    resolver: zodResolver(userFormSchema),
+  } = useForm<UserPatch>({
+    resolver: zodResolver(userPatchSchema),
     defaultValues: {
-      username: data.user.username,
-      email: data.user.email,
-      role: data.user.role,
-      status: data.user.status,
-      credits: data.user.credits,
-      interview_config: data.user.interview_config ?? EMPTY_INTERVIEW_CONFIG,
+      username: user.username,
+      email: user.email,
+      role: user.role,
+      status: user.status,
+      credits: user.credits,
+      interview_config: user.interview_config ?? EMPTY_INTERVIEW_CONFIG,
     },
   });
 
   const onSubmit = handleSubmit((values) => {
-    updateUser.mutate(values, { onSuccess: onClose });
+    startSaving(async () => {
+      const result = await updateUser(user._id, values);
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("User updated");
+      onClose();
+    });
   });
+
+  const onDelete = () => {
+    startDeleting(async () => {
+      const result = await deleteUser(user._id);
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("User deleted");
+      setDeleteOpen(false);
+      onClose();
+    });
+  };
 
   return (
     <>
@@ -141,9 +134,9 @@ function UserEditForm({
         <form id="user-edit-form" onSubmit={onSubmit}>
           <FieldGroup>
             <div className="flex items-center gap-3 text-sm text-muted-foreground">
-              <Badge variant="outline">{formatNumber(data.payment_count)} payments</Badge>
-              <Badge variant="outline">{formatNumber(data.session_count)} sessions</Badge>
-              <span>Joined {formatDate(data.user.created_at)}</span>
+              <Badge variant="outline">{formatNumber(user.payment_count)} payments</Badge>
+              <Badge variant="outline">{formatNumber(user.session_count)} sessions</Badge>
+              <span>Joined {formatDate(user.created_at)}</span>
             </div>
 
             <Field data-invalid={!!errors.username}>
@@ -169,9 +162,11 @@ function UserEditForm({
                       <SelectValue>{(v: string) => titleCase(v)}</SelectValue>
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="admin">Admin</SelectItem>
-                      <SelectItem value="user">User</SelectItem>
-                      <SelectItem value="trial_user">Trial User</SelectItem>
+                      {USER_ROLES.map((role) => (
+                        <SelectItem key={role} value={role}>
+                          {titleCase(role)}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 )}
@@ -189,8 +184,11 @@ function UserEditForm({
                       <SelectValue>{(v: string) => titleCase(v)}</SelectValue>
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="active">Active</SelectItem>
-                      <SelectItem value="inactive">Inactive</SelectItem>
+                      {USER_STATUSES.map((status) => (
+                        <SelectItem key={status} value={status}>
+                          {titleCase(status)}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 )}
@@ -212,7 +210,7 @@ function UserEditForm({
 
             <FieldSeparator>Interview configuration</FieldSeparator>
 
-            {!data.user.interview_config && (
+            {!user.interview_config && (
               <FieldDescription>
                 This user has not set up an interview yet. Saving here creates the configuration.
               </FieldDescription>
@@ -241,7 +239,6 @@ function UserEditForm({
               <Textarea
                 id="interview-context"
                 rows={5}
-                // The base Textarea is `field-sizing-content`, so a long CV would grow unbounded.
                 className="max-h-72 overflow-y-auto"
                 {...register("interview_config.context")}
               />
@@ -263,30 +260,20 @@ function UserEditForm({
             <AlertDialogHeader>
               <AlertDialogTitle>Delete this user?</AlertDialogTitle>
               <AlertDialogDescription>
-                This permanently removes {data.user.email} from the database. This cannot be undone.
+                This permanently removes {user.email} from the database. This cannot be undone.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                variant="destructive"
-                onClick={() => {
-                  deleteUser.mutate(userId, {
-                    onSuccess: () => {
-                      setDeleteOpen(false);
-                      onClose();
-                    },
-                  });
-                }}
-              >
-                Delete
+              <AlertDialogAction variant="destructive" disabled={isDeleting} onClick={onDelete}>
+                {isDeleting ? "Deleting..." : "Delete"}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
 
-        <Button type="submit" form="user-edit-form" disabled={!isDirty || updateUser.isPending}>
-          {updateUser.isPending ? "Saving..." : "Save changes"}
+        <Button type="submit" form="user-edit-form" disabled={!isDirty || isSaving}>
+          {isSaving ? "Saving..." : "Save changes"}
         </Button>
       </SheetFooter>
     </>

@@ -1,4 +1,4 @@
-import type { UserLabel } from "@/lib/types";
+import type { UserLabel } from "@/lib/schemas/common";
 
 /** Renders who a row belongs to. Falls back to the raw id when the user no longer exists. */
 export function UserCell({ user, userId }: { user: UserLabel | null; userId: string }) {

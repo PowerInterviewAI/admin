@@ -11,11 +11,26 @@ export type UserStatus = z.infer<typeof userStatusSchema>;
 export const USER_ROLES = userRoleSchema.options;
 export const USER_STATUSES = userStatusSchema.options;
 
-/** A user's interview setup (full name, profile/CV, context). */
-export const interviewConfigSchema = z.object({
-  full_name: z.string().default(""),
-  profile_data: z.string().default(""),
-  context: z.string().default(""),
+/**
+ * A user's interview setup (full name, profile/CV, context).
+ *
+ * Two variants with the same output type: the form schema demands all three fields, because the
+ * sheet always submits all three, while the stored variant fills gaps left by documents written
+ * before a field existed. Keeping the defaults out of the form schema matters to
+ * `zodResolver`, which requires a schema whose input and output types are identical.
+ */
+const interviewConfigFields = {
+  full_name: z.string(),
+  profile_data: z.string(),
+  context: z.string(),
+};
+
+export const interviewConfigSchema = z.object(interviewConfigFields);
+
+const storedInterviewConfigSchema = z.object({
+  full_name: interviewConfigFields.full_name.default(""),
+  profile_data: interviewConfigFields.profile_data.default(""),
+  context: interviewConfigFields.context.default(""),
 });
 
 export type InterviewConfig = z.infer<typeof interviewConfigSchema>;
@@ -38,7 +53,7 @@ export const userSchema = timestampsSchema.extend({
   role: userRoleSchema.catch("user"),
   status: userStatusSchema.catch("inactive"),
   credits: z.number().int().default(0),
-  interview_config: interviewConfigSchema.nullish().default(null),
+  interview_config: storedInterviewConfigSchema.nullish().default(null),
 });
 
 export type User = z.infer<typeof userSchema>;

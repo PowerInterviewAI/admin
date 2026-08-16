@@ -15,7 +15,6 @@ export type CollectionName = (typeof COLLECTIONS)[keyof typeof COLLECTIONS];
 export type Document = Record<string, unknown>;
 
 declare global {
-  // eslint-disable-next-line no-var
   var __adminMongoClient: MongoClient | undefined;
 }
 

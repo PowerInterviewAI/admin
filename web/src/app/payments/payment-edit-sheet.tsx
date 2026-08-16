@@ -1,9 +1,21 @@
 "use client";
 
-import { useForm, Controller } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useTransition } from "react";
+import { Controller, useForm } from "react-hook-form";
+import { toast } from "sonner";
 
-import { useUpdatePayment } from "@/hooks/use-payments";
-import type { Payment, PaymentStatus } from "@/lib/types";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Sheet,
   SheetContent,
@@ -12,46 +24,23 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Checkbox } from "@/components/ui/checkbox";
 import { formatDate, formatUsd, titleCase } from "@/lib/format";
-
-const STATUSES: PaymentStatus[] = [
-  "pending",
-  "waiting",
-  "confirming",
-  "confirmed",
-  "sending",
-  "partially_paid",
-  "finished",
-  "failed",
-  "refunded",
-  "expired",
-];
-
-interface PaymentFormValues {
-  status: PaymentStatus;
-  credits_applied: boolean;
-}
+import {
+  PAYMENT_STATUSES,
+  type PaymentPatch,
+  type PaymentRow,
+  paymentPatchSchema,
+} from "@/lib/schemas/payment";
+import { updatePayment } from "@/server/actions/payments";
 
 interface PaymentEditSheetProps {
-  payment: Payment | null;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+  payment: PaymentRow | null;
+  onClose: () => void;
 }
 
-export function PaymentEditSheet({ payment, open, onOpenChange }: PaymentEditSheetProps) {
+export function PaymentEditSheet({ payment, onClose }: PaymentEditSheetProps) {
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Sheet open={!!payment} onOpenChange={(open) => !open && onClose()}>
       <SheetContent className="flex flex-col sm:max-w-md">
         <SheetHeader>
           <SheetTitle>Edit payment</SheetTitle>
@@ -61,24 +50,33 @@ export function PaymentEditSheet({ payment, open, onOpenChange }: PaymentEditShe
         </SheetHeader>
 
         {payment && (
-          // Keyed by payment id so the form mounts fresh (correct defaultValues, no async resync race)
-          // every time a different payment is selected, instead of reactively syncing in place.
-          <PaymentEditForm key={payment._id} payment={payment} onClose={() => onOpenChange(false)} />
+          // Keyed by payment id so the form mounts fresh (correct defaultValues, no async resync
+          // race) every time a different payment is selected, instead of syncing in place.
+          <PaymentEditForm key={payment._id} payment={payment} onClose={onClose} />
         )}
       </SheetContent>
     </Sheet>
   );
 }
 
-function PaymentEditForm({ payment, onClose }: { payment: Payment; onClose: () => void }) {
-  const updatePayment = useUpdatePayment(payment._id);
+function PaymentEditForm({ payment, onClose }: { payment: PaymentRow; onClose: () => void }) {
+  const [isSaving, startSaving] = useTransition();
 
-  const { control, handleSubmit, formState } = useForm<PaymentFormValues>({
+  const { control, handleSubmit, formState } = useForm<PaymentPatch>({
+    resolver: zodResolver(paymentPatchSchema),
     defaultValues: { status: payment.status, credits_applied: payment.credits_applied },
   });
 
   const onSubmit = handleSubmit((values) => {
-    updatePayment.mutate(values, { onSuccess: onClose });
+    startSaving(async () => {
+      const result = await updatePayment(payment._id, values);
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Payment updated");
+      onClose();
+    });
   });
 
   return (
@@ -108,9 +106,9 @@ function PaymentEditForm({ payment, onClose }: { payment: Payment; onClose: () =
                       <SelectValue>{(v: string) => titleCase(v)}</SelectValue>
                     </SelectTrigger>
                     <SelectContent>
-                      {STATUSES.map((s) => (
-                        <SelectItem key={s} value={s}>
-                          {titleCase(s)}
+                      {PAYMENT_STATUSES.map((status) => (
+                        <SelectItem key={status} value={status}>
+                          {titleCase(status)}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -136,15 +134,16 @@ function PaymentEditForm({ payment, onClose }: { payment: Payment; onClose: () =
               </FieldLabel>
             </Field>
             <FieldDescription>
-              Toggling this does not itself credit or debit the user - it only records whether it happened.
+              Toggling this does not itself credit or debit the user - it only records whether it
+              happened.
             </FieldDescription>
           </FieldGroup>
         </form>
       </div>
 
       <SheetFooter className="border-t">
-        <Button type="submit" form="payment-edit-form" disabled={!formState.isDirty || updatePayment.isPending}>
-          {updatePayment.isPending ? "Saving..." : "Save changes"}
+        <Button type="submit" form="payment-edit-form" disabled={!formState.isDirty || isSaving}>
+          {isSaving ? "Saving..." : "Save changes"}
         </Button>
       </SheetFooter>
     </>

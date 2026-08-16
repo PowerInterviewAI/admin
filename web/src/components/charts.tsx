@@ -3,11 +3,12 @@
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, XAxis, YAxis } from "recharts";
 
 import {
+  type ChartConfig,
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
-  type ChartConfig,
 } from "@/components/ui/chart";
+import { formatUsd, titleCase } from "@/lib/format";
 
 interface TrendPoint {
   date: string;
@@ -18,13 +19,22 @@ interface TrendChartProps {
   data: TrendPoint[];
   label: string;
   color?: string;
-  valueFormatter?: (value: number) => string;
+  /**
+   * A name rather than a formatter function: these charts are rendered from a Server Component,
+   * and a function prop cannot cross that boundary.
+   */
+  format?: "number" | "usd";
 }
 
 const dateFormatter = (value: string) =>
   new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 
-export function TrendChart({ data, label, color = "var(--chart-1)", valueFormatter }: TrendChartProps) {
+export function TrendChart({
+  data,
+  label,
+  color = "var(--chart-1)",
+  format = "number",
+}: TrendChartProps) {
   const config = {
     value: { label, color },
   } satisfies ChartConfig;
@@ -52,7 +62,7 @@ export function TrendChart({ data, label, color = "var(--chart-1)", valueFormatt
             <ChartTooltipContent
               labelFormatter={(value) => dateFormatter(String(value))}
               formatter={(value) =>
-                valueFormatter ? valueFormatter(Number(value)) : String(value)
+                format === "usd" ? formatUsd(Number(value)) : String(value)
               }
             />
           }
@@ -69,11 +79,6 @@ export function TrendChart({ data, label, color = "var(--chart-1)", valueFormatt
   );
 }
 
-interface DistributionChartProps {
-  data: Record<string, number>;
-  labelFormatter?: (key: string) => string;
-}
-
 const DISTRIBUTION_COLORS = [
   "var(--chart-1)",
   "var(--chart-2)",
@@ -82,34 +87,34 @@ const DISTRIBUTION_COLORS = [
   "var(--chart-5)",
 ];
 
-export function DistributionChart({ data, labelFormatter = (k) => k }: DistributionChartProps) {
+/** Keys are snake_case enum values from the database, so they are always title-cased for display. */
+export function DistributionChart({ data }: { data: Record<string, number> }) {
   const entries = Object.entries(data);
-  const chartData = entries.map(([key, value], i) => ({
+  const chartData = entries.map(([key, value], index) => ({
     key,
-    label: labelFormatter(key),
+    label: titleCase(key),
     value,
-    fill: DISTRIBUTION_COLORS[i % DISTRIBUTION_COLORS.length],
+    fill: DISTRIBUTION_COLORS[index % DISTRIBUTION_COLORS.length],
   }));
 
   const config = Object.fromEntries(
-    entries.map(([key], i) => [
+    entries.map(([key], index) => [
       key,
-      { label: labelFormatter(key), color: DISTRIBUTION_COLORS[i % DISTRIBUTION_COLORS.length] },
+      { label: titleCase(key), color: DISTRIBUTION_COLORS[index % DISTRIBUTION_COLORS.length] },
     ]),
   ) satisfies ChartConfig;
 
   return (
     <ChartContainer config={config} className="h-55 w-full">
-      <BarChart data={chartData} layout="vertical" margin={{ left: 8, right: 16 }} barCategoryGap="30%">
+      <BarChart
+        data={chartData}
+        layout="vertical"
+        margin={{ left: 8, right: 16 }}
+        barCategoryGap="30%"
+      >
         <CartesianGrid horizontal={false} strokeDasharray="3 3" />
         <XAxis type="number" tickLine={false} axisLine={false} allowDecimals={false} />
-        <YAxis
-          dataKey="label"
-          type="category"
-          tickLine={false}
-          axisLine={false}
-          width={90}
-        />
+        <YAxis dataKey="label" type="category" tickLine={false} axisLine={false} width={90} />
         <ChartTooltip content={<ChartTooltipContent />} />
         <Bar dataKey="value" radius={4} maxBarSize={36}>
           {chartData.map((entry) => (
