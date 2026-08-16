@@ -18,6 +18,7 @@ Project specification for the Power Interview AI admin dashboard - a local-only,
 | Tables           | TanStack Table v8                                              |
 | Charts           | Recharts, via shadcn's `Chart` wrapper                         |
 | Forms            | react-hook-form + Zod                                          |
+| Password hashing | `bcryptjs`, configured to match backend's passlib output       |
 | Package manager  | `pnpm`                                                         |
 
 There is no separate API process and no client-side data-fetching library. A page renders from the database on the server; a mutation is a server action that writes and then refreshes the route.
@@ -28,10 +29,10 @@ Five MongoDB collections, owned by `../backend` and read/written here without an
 
 | Collection    | Key fields                                                                                          | Notes |
 | ------------- | ----------------------------------------------------------------------------------------------------- | ----- |
-| `users`       | `username`, `email`, `role` (`user`/`trial_user`/`admin`), `status` (`active`/`inactive`), `credits`, `interview_config` (`full_name`, `profile_data`, `context`) | `password_hash` has no field in the schema, so it is stripped on read and never reaches a client |
+| `users`       | `username`, `email`, `role` (`user`/`trial_user`/`admin`), `status` (`active`/`inactive`), `credits`, `interview_config` (`full_name`, `profile_data`, `context`) | `password_hash` has no field in the schema, so it is stripped on read and never reaches a client. It is write-only here: the set-password action is the one thing that touches it |
 | `payments`    | `user_id`, `plan` (`starter`/`pro`/`enterprise`), `status` (10-value enum), `price_amount`, `credits_amount`, `credits_applied` | Status/`credits_applied` are manually editable here - editing does **not** call NOWPayments or replay webhook logic |
 | `sessions`    | `token`, `user_id`, `device_info` (`ip_address`, `user_agent`)                                        | Deleting one force-logs-out that device. `token` has no field in the schema - it is a live bearer credential |
-| `audit_logs`  | `event_type` (17-value enum), `user_id`, `email`, `status`, `metadata` (free-form dict)               | Read-only in the UI; this is the primary real-usage signal |
+| `audit_logs`  | `event_type` (17-value enum), `user_id`, `email`, `status`, `metadata` (free-form dict)               | Read-only in the UI. The one entry this app writes is the `password_change` it records for its own overwrites |
 | `global_state`| `active_sessions`                                                                                      | **Not used anywhere in this app** - it's a simulated `random.gauss(260, 10)` value in backend, not real data |
 
 ## Features
@@ -48,6 +49,8 @@ All computed server-side from real documents (`src/server/queries/analytics.ts`)
 ### Users (`/users`)
 
 Search (username/email), filter by role and status, paginated table sortable by username, credits, or joined date. Row click opens an edit sheet: role, status, credits, username, email, and the user's interview configuration (full name, profile/CV, context) are all editable; the sheet also shows that user's payment and session counts, and has a delete action (destructive, confirmed via dialog).
+
+The sheet also carries a **set-password** action, in its own dialog outside the edit form so it never rides along with an ordinary save. It overwrites `password_hash` without knowing the current password (which is what makes it an admin tool rather than a copy of backend's change-password endpoint), revokes every session that user holds, and records a `password_change` audit log entry. The hash is bcrypt in backend's exact format, so the user signs in through the normal login flow afterwards.
 
 ### Payments (`/payments`)
 

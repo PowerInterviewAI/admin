@@ -98,6 +98,19 @@ export async function findMany<T>({
   return docs.map((doc) => parseDocument(schema, doc, collection));
 }
 
+export async function findOne<T>({
+  collection,
+  schema,
+  filter,
+}: {
+  collection: CollectionName;
+  schema: z.ZodType<T>;
+  filter: Filter<Document>;
+}): Promise<T | null> {
+  const doc = await getCollection(collection).findOne(filter);
+  return doc ? parseDocument(schema, doc, collection) : null;
+}
+
 export async function countBy(
   collection: CollectionName,
   field: string,
@@ -148,6 +161,45 @@ export async function deleteById(
     if (result.deletedCount === 0) {
       throw notFound(what);
     }
+  } catch (error) {
+    throw describeWriteError(error, what);
+  }
+}
+
+/**
+ * Deletes everything matching `filter` and reports how many went. Unlike `deleteById`, matching
+ * nothing is a valid outcome, not a `not_found`: the callers here are clearing a set that is
+ * legitimately empty most of the time.
+ */
+export async function deleteMany(
+  collection: CollectionName,
+  filter: Filter<Document>,
+  what: string,
+): Promise<number> {
+  try {
+    const result = await getCollection(collection).deleteMany(filter);
+    return result.deletedCount;
+  } catch (error) {
+    throw describeWriteError(error, what);
+  }
+}
+
+/**
+ * Stamps the timestamps the way backend's `TimeStampedCRUDBase.create` does: `created_at` set,
+ * `updated_at` left null until something updates the document. Writing `updated_at` here instead
+ * would make a freshly inserted document sort as recently modified in every view that orders by it.
+ */
+export async function insertDocument(
+  collection: CollectionName,
+  doc: Document,
+  what: string,
+): Promise<void> {
+  try {
+    await getCollection(collection).insertOne({
+      ...doc,
+      created_at: currentTimestampMs(),
+      updated_at: null,
+    });
   } catch (error) {
     throw describeWriteError(error, what);
   }

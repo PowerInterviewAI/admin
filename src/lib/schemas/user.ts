@@ -84,3 +84,37 @@ export const userPatchSchema = z.object({
 });
 
 export type UserPatch = z.infer<typeof userPatchSchema>;
+
+/**
+ * bcrypt hashes at most the first 72 bytes of a password and silently ignores the rest, on both
+ * sides of this stack. A longer password would still authenticate, on its truncated prefix, and
+ * nothing anywhere would say so - rejecting it here is the only place that can.
+ */
+const BCRYPT_MAX_PASSWORD_BYTES = 72;
+
+/**
+ * What the set-password dialog submits. There is no current-password field: backend's
+ * `POST /api/users/me/change-password` demands one because the user is proving it is their own
+ * account, and an admin overwriting someone else's password has no such thing to supply.
+ *
+ * The eight-character floor is this app's own: no schema in backend or the desktop client sets a
+ * minimum, so nothing here is being duplicated, and a tool whose whole job is writing someone's
+ * credential should not be the easiest way to give an account a one-character password.
+ */
+export const userPasswordSchema = z
+  .object({
+    password: z
+      .string()
+      .min(8, "Use at least 8 characters")
+      .refine(
+        (value) => new TextEncoder().encode(value).length <= BCRYPT_MAX_PASSWORD_BYTES,
+        `Passwords longer than ${BCRYPT_MAX_PASSWORD_BYTES} bytes are truncated by bcrypt`,
+      ),
+    confirm_password: z.string(),
+  })
+  .refine((values) => values.password === values.confirm_password, {
+    message: "The two passwords do not match",
+    path: ["confirm_password"],
+  });
+
+export type UserPassword = z.infer<typeof userPasswordSchema>;

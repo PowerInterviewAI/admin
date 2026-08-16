@@ -21,11 +21,13 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   Field,
+  FieldContent,
   FieldDescription,
   FieldError,
   FieldGroup,
   FieldLabel,
   FieldSeparator,
+  FieldTitle,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
@@ -54,6 +56,8 @@ import {
   userPatchSchema,
 } from "@/lib/schemas/user";
 import { deleteUser, updateUser } from "@/server/actions/users";
+
+import { SetPasswordDialog } from "./set-password-dialog";
 
 interface UserEditSheetProps {
   user: UserRow | null;
@@ -248,6 +252,23 @@ function UserEditForm({ user, onClose }: { user: UserRow; onClose: () => void })
             </Field>
           </FieldGroup>
         </form>
+
+        {/* Outside the form on purpose. The footer's submit is bound to `user-edit-form` by id, so
+            a password field living inside it would ride along with every ordinary save, and a
+            nested <form> is not valid HTML either. */}
+        <FieldGroup className="mt-5">
+          <FieldSeparator>Password</FieldSeparator>
+
+          <Field orientation="horizontal">
+            <FieldContent>
+              <FieldTitle>Overwrite the password</FieldTitle>
+              <FieldDescription>
+                Sets a new password without the current one. Signs out every device.
+              </FieldDescription>
+            </FieldContent>
+            <SetPasswordDialog user={user} />
+          </Field>
+        </FieldGroup>
       </div>
 
       <SheetFooter className="flex-row justify-between border-t">

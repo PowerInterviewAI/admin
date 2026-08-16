@@ -67,6 +67,22 @@ Route-specific components are colocated with their route; only genuinely shared 
 
 `password_hash` and a session's `token` have no field in `userSchema`/`sessionSchema`. Zod strips unknown keys, so they are dropped the moment a document is parsed and cannot reach a client even by accident. The earlier FastAPI version masked `password_hash` to `null` with a serializer, which is strictly worse: the field still existed on the wire, and a `None` that fails re-validation downstream is a real failure mode this shape does not have. If you add a field that must never leave the server, leave it out of the schema rather than nulling it.
 
+Being absent from the schema does not mean being unwritable. `setUserPassword` in `src/server/actions/users.ts` `$set`s `password_hash` and is the only thing in the app that does; the field stays out of `userSchema` because that schema governs what leaves the server, not what the server may write. `updateById` takes a plain `Document`, so a write-only field needs no schema entry at all.
+
+### Overwriting a password: the hash has to be backend's
+
+`src/server/password.ts` hashes with `bcryptjs` at cost 12, which is what backend gets from `CryptContext(schemes=["bcrypt"])` taking passlib's defaults (`$2b$` ident, 12 rounds - `app/services/auth_service.py`). Both halves matter: the ident because passlib's `needs_update()` would otherwise mark the hash stale, and the cost because an admin-set password should not be quietly weaker than one backend writes on signup. Verified end to end against the backend venv's own `CryptContext`, not just assumed from the `$2b$` prefix.
+
+bcrypt hashes at most the first 72 bytes and ignores the rest, silently, on both sides. `userPasswordSchema` rejects anything longer, because a password that authenticates on a truncated prefix is not something any other layer here would report.
+
+Three things happen alongside the write, and each exists for a reason that is not obvious from the feature name:
+
+1. **Every session for that user is deleted.** A session token outlives the password it was issued against, so without this the overwrite is cosmetic on any device already signed in - including the one you are taking the account back from. Backend's own change-password keeps the *calling* session alive; there is no calling session here, so all of them go.
+2. **A `password_change` audit log entry is written.** This is the only document this app inserts anywhere. Backend logs that event when a user changes their own password, and an admin overwrite that left no trace would make the audit log read as if the password never moved. `metadata.source` is `admin_dashboard` to tell the two apart; backend's entries carry `device_info` instead, which this has no request to derive.
+3. **That audit write can fail without failing the action.** By the time it runs the password is already changed, so returning `{ ok: false }` would tell the admin the opposite of what happened. It logs to the server console and the action still reports success.
+
+The UI lives in `src/app/users/set-password-dialog.tsx`, mounted from the edit sheet but deliberately **outside** `<form id="user-edit-form">`: the sheet's footer submit is bound to that form by id, so a password field inside it would ride along with every ordinary save, and a nested `<form>` is invalid HTML besides. The dialog's inner form is mounted only while the dialog is open, which is the same "don't reactively resync, remount instead" rule the edit sheets follow - here it means reopening never shows what was typed last time.
+
 ### Every document is validated on read
 
 `parseDocument` in `src/server/repository.ts` runs the zod schema over every document and throws an `AppError` naming the collection, the `_id`, and the failing path. Backend owns these collections and can change a field without telling this app; a loud failure that names the offending document beats a page of silently blank cells. Keep new reads going through `findPage`/`findMany` so they inherit this.
