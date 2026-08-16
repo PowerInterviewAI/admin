@@ -5,8 +5,19 @@
  */
 export type ActionResult = { ok: true } | { ok: false; error: string };
 
+/**
+ * Same contract for the few actions whose caller needs a value back - starting a campaign returns
+ * the id the composer then polls. The failure arm is identical, so `if (!result.ok) toast.error`
+ * reads the same at every call site.
+ */
+export type ActionData<T> = { ok: true; data: T } | { ok: false; error: string };
+
 export const ok: ActionResult = { ok: true };
 
-export function failed(error: string): ActionResult {
+export function succeeded<T>(data: T): ActionData<T> {
+  return { ok: true, data };
+}
+
+export function failed(error: string): { ok: false; error: string } {
   return { ok: false, error };
 }
