@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { ColumnDef } from "@tanstack/react-table";
+import type { ColumnDef, OnChangeFn, SortingState } from "@tanstack/react-table";
 
 import { useUsers } from "@/hooks/use-users";
 import type { User, UserRole, UserStatus } from "@/lib/types";
@@ -33,11 +33,19 @@ export default function UsersPage() {
   const [role, setRole] = useState<UserRole | "all">("all");
   const [status, setStatus] = useState<UserStatus | "all">("all");
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [sorting, setSorting] = useState<SortingState>([{ id: "created_at", desc: true }]);
+
+  const handleSortingChange: OnChangeFn<SortingState> = (updater) => {
+    setSorting((prev) => (typeof updater === "function" ? updater(prev) : updater));
+    setPageIndex(0);
+  };
 
   const { data, isLoading, error, refetch } = useUsers({
     q: q || undefined,
     role: role === "all" ? undefined : role,
     status: status === "all" ? undefined : status,
+    sort_by: sorting[0]?.id,
+    sort_dir: sorting[0]?.desc ? "desc" : "asc",
     offset: pageIndex * PAGE_SIZE,
     limit: PAGE_SIZE,
   });
@@ -47,6 +55,7 @@ export default function UsersPage() {
       {
         accessorKey: "username",
         header: "User",
+        enableSorting: false,
         cell: ({ row }) => (
           <div className="flex flex-col">
             <span className="font-medium">{row.original.username}</span>
@@ -57,6 +66,7 @@ export default function UsersPage() {
       {
         accessorKey: "role",
         header: "Role",
+        enableSorting: false,
         cell: ({ row }) => (
           <Badge variant={ROLE_BADGE_VARIANT[row.original.role]}>{titleCase(row.original.role)}</Badge>
         ),
@@ -64,6 +74,7 @@ export default function UsersPage() {
       {
         accessorKey: "status",
         header: "Status",
+        enableSorting: false,
         cell: ({ row }) => (
           <Badge variant={row.original.status === "active" ? "secondary" : "outline"}>
             {titleCase(row.original.status)}
@@ -73,11 +84,13 @@ export default function UsersPage() {
       {
         accessorKey: "credits",
         header: "Credits",
+        enableSorting: false,
         cell: ({ row }) => formatNumber(row.original.credits),
       },
       {
         accessorKey: "created_at",
         header: "Joined",
+        enableSorting: true,
         cell: ({ row }) => formatDate(row.original.created_at),
       },
     ],
@@ -147,6 +160,8 @@ export default function UsersPage() {
         isLoading={isLoading}
         error={error}
         onRetry={() => void refetch()}
+        sorting={sorting}
+        onSortingChange={handleSortingChange}
         emptyMessage="No users match these filters."
         getRowId={(row) => row._id}
         onRowClick={(row) => setSelectedUserId(row._id)}

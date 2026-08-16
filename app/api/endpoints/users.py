@@ -6,7 +6,7 @@ from pydantic import BaseModel
 
 from app.api.dependency import PaymentCRUDDep, SessionCRUDDep, UserCRUDDep
 from app.models.common.object_id import PyObjectId
-from app.models.user import User, UserRead, UserUpdate
+from app.models.user import InterviewConfig, User, UserRead, UserUpdate
 from app.schemas.common import Page
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -20,6 +20,7 @@ class UserPatchBody(BaseModel):
     role: User.Role | None = None
     status: User.Status | None = None
     credits: int | None = None
+    interview_config: InterviewConfig | None = None
 
 
 @router.get("")

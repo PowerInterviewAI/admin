@@ -63,6 +63,7 @@ class UserUpdate(TimeStampedModel):
     role: User.Role | None = None
     status: User.Status | None = None
     credits: int | None = None
+    interview_config: InterviewConfig | None = None
 
 
 class UserCRUD(GenericCRUDBase[User, UserRead, UserUpdate]):

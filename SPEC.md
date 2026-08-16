@@ -26,7 +26,7 @@ Five MongoDB collections, owned by `../backend` and read/written here without an
 
 | Collection    | Key fields                                                                                          | Notes |
 | ------------- | ----------------------------------------------------------------------------------------------------- | ----- |
-| `users`       | `username`, `email`, `role` (`user`/`trial_user`/`admin`), `status` (`active`/`inactive`), `credits`  | `password_hash` is always masked to `null` in API responses |
+| `users`       | `username`, `email`, `role` (`user`/`trial_user`/`admin`), `status` (`active`/`inactive`), `credits`, `interview_config` (`full_name`, `profile_data`, `context`) | `password_hash` is always masked to `null` in API responses |
 | `payments`    | `user_id`, `plan` (`starter`/`pro`/`enterprise`), `status` (10-value enum), `price_amount`, `credits_amount`, `credits_applied` | Status/`credits_applied` are manually editable here - editing does **not** call NOWPayments or replay webhook logic |
 | `sessions`    | `token`, `user_id`, `device_info` (`ip_address`, `user_agent`)                                        | Deleting one force-logs-out that device. `token` is never served by the API - it is a live bearer credential |
 | `audit_logs`  | `event_type` (16-value enum), `user_id`, `email`, `status`, `metadata` (free-form dict)               | Read-only in the UI; this is the primary real-usage signal |
@@ -45,7 +45,7 @@ All computed server-side from real documents (`app/services/analytics_service.py
 
 ### Users (`/users`)
 
-Search (username/email), filter by role and status, paginated table. Row click opens an edit sheet: role, status, credits, username, email are all editable; the sheet also shows that user's payment and session counts, and has a delete action (destructive, confirmed via dialog).
+Search (username/email), filter by role and status, paginated table sortable by joined date (server-side, resets to page 1). Row click opens an edit sheet: role, status, credits, username, email, and the user's interview configuration (full name, profile/CV, context) are all editable; the sheet also shows that user's payment and session counts, and has a delete action (destructive, confirmed via dialog).
 
 ### Payments (`/payments`)
 

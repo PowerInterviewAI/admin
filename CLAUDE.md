@@ -92,9 +92,19 @@ Payments and sessions only store `user_id`. A raw ObjectId tells an admin nothin
 
 `SessionRead` deliberately has **no** `token` field at all (it inherits `SessionBase`, not `Session`) and sets `extra="ignore"` so the Mongo document's token is dropped at validation. A session token is a live bearer credential and the dashboard only ever revokes by `_id`. Masking it with a `field_serializer` was tried first and is worse: the serializer emits `None`, which then fails re-validation when the row is wrapped into `SessionWithUser`, and widening the annotation to `str | None` breaks mypy's LSP check against the base model. Not having the field is both simpler and more honest about the API surface.
 
+### Fonts wire through `@theme inline`, and the variable names must match
+
+`globals.css` maps Tailwind's font theme keys to the `next/font` CSS variables inside `@theme inline` (`--font-sans: var(--font-inter), ...`). The `inline` option is load-bearing: the `next/font` variables are declared on `<html>` via the font loader's `className`, which is below the scope where a plain `@theme` would emit `--font-sans`, so utilities have to inline the *value* rather than reference the theme variable. This was previously written as `--font-sans: var(--font-sans)` - self-referential, so `font-sans` resolved to nothing and the whole app silently fell back to the browser default font while still loading and self-hosting the webfont. If you swap the font family, change the name in **both** `layout.tsx` (`variable:`) and `globals.css`, and confirm with `grep -o 'html{[^}]*}' .next/static/chunks/*.css` after `pnpm build` that the rule names the font variable you expect.
+
 ### PATCH bodies never include `id`
 
 `UserUpdate`/`PaymentUpdate` (the full internal update models, shared with the `GenericCRUDBase` pattern) require `id` - but the client sends it via the URL path, not the body, and validating the raw client body against those models 422s on "missing id" for every single edit. Each PATCH endpoint therefore takes a separate `*PatchBody` model with no `id` field, and constructs the full `*Update` server-side: `UserUpdate(id=user_id, **body.model_dump(exclude_unset=True))`. If you add a PATCH endpoint for a new entity, follow this pattern - don't take the `*Update` model directly as the request body.
+
+`interview_config` rides this same path, with one consequence worth knowing: `GenericCRUDBase.update` `$set`s the dumped nested dict, so a PATCH **replaces the whole `interview_config` subdocument**, never merges into it. The user edit sheet therefore always submits all three inner fields, seeded from `data.user.interview_config ?? EMPTY_INTERVIEW_CONFIG` so a user who has never configured an interview gets one created rather than a partial write. Sending `{"interview_config": null}` clears it back to null.
+
+### Server-side table sorting
+
+`DataTable` sorts through the API, not in the browser: it runs `manualSorting: true` and only turns sorting on when both `sorting` and `onSortingChange` are passed, so the other list pages are unaffected. Because the table-level `enableSorting` then applies to every column, a page that opts in must set `enableSorting: false` on the columns that should *not* be sortable - the API's `sort_by` takes a raw Mongo field name, and offering a sort on a column whose `accessorKey` is not a real indexed field just produces a confusing result set. `enableSortingRemoval: false` keeps a sort always applied, matching the API's `created_at desc` default. Changing the sort must also reset `pageIndex` to 0, or page 3 of the old order silently becomes page 3 of the new one.
 
 ### Query and error-state conventions
 

@@ -4,12 +4,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { api, toQueryString } from "@/lib/api";
-import type { Page, User, UserDetail, UserRole, UserStatus } from "@/lib/types";
+import type { InterviewConfig, Page, User, UserDetail, UserRole, UserStatus } from "@/lib/types";
 
 export interface UserListParams {
   q?: string;
   role?: UserRole;
   status?: UserStatus;
+  sort_by?: string;
+  sort_dir?: "asc" | "desc";
   offset?: number;
   limit?: number;
   [key: string]: string | number | undefined;
@@ -37,6 +39,7 @@ export interface UserPatch {
   role?: UserRole;
   status?: UserStatus;
   credits?: number;
+  interview_config?: InterviewConfig;
 }
 
 export function useUpdateUser(userId: string) {

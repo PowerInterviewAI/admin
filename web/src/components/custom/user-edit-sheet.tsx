@@ -16,8 +16,16 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
+import {
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+  FieldSeparator,
+} from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -47,7 +55,14 @@ const userFormSchema = z.object({
   role: z.enum(["user", "trial_user", "admin"]),
   status: z.enum(["active", "inactive"]),
   credits: z.number().int().min(0, "Credits cannot be negative"),
+  interview_config: z.object({
+    full_name: z.string(),
+    profile_data: z.string(),
+    context: z.string(),
+  }),
 });
+
+const EMPTY_INTERVIEW_CONFIG = { full_name: "", profile_data: "", context: "" };
 
 type UserFormValues = z.infer<typeof userFormSchema>;
 
@@ -62,10 +77,12 @@ export function UserEditSheet({ userId, open, onOpenChange }: UserEditSheetProps
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="flex flex-col sm:max-w-md">
+      <SheetContent className="flex flex-col sm:max-w-lg">
         <SheetHeader>
           <SheetTitle>Edit user</SheetTitle>
-          <SheetDescription>Update role, status, and credit balance.</SheetDescription>
+          <SheetDescription>
+            Update the account, credit balance, and interview setup.
+          </SheetDescription>
         </SheetHeader>
 
         {isLoading || !data || !userId ? (
@@ -110,6 +127,7 @@ function UserEditForm({
       role: data.user.role,
       status: data.user.status,
       credits: data.user.credits,
+      interview_config: data.user.interview_config ?? EMPTY_INTERVIEW_CONFIG,
     },
   });
 
@@ -190,6 +208,46 @@ function UserEditForm({
               />
               <FieldDescription>Selects the LLM tier; does not gate access.</FieldDescription>
               <FieldError errors={[errors.credits]} />
+            </Field>
+
+            <FieldSeparator>Interview configuration</FieldSeparator>
+
+            {!data.user.interview_config && (
+              <FieldDescription>
+                This user has not set up an interview yet. Saving here creates the configuration.
+              </FieldDescription>
+            )}
+
+            <Field>
+              <FieldLabel htmlFor="interview-full-name">Full name</FieldLabel>
+              <Input id="interview-full-name" {...register("interview_config.full_name")} />
+              <FieldDescription>The name the assistant answers as during a session.</FieldDescription>
+            </Field>
+
+            <Field>
+              <FieldLabel htmlFor="interview-profile-data">Profile / CV</FieldLabel>
+              <Textarea
+                id="interview-profile-data"
+                rows={8}
+                // The base Textarea is `field-sizing-content`, so a long CV would grow unbounded.
+                className="max-h-72 overflow-y-auto"
+                {...register("interview_config.profile_data")}
+              />
+              <FieldDescription>Resume text the answers are grounded in.</FieldDescription>
+            </Field>
+
+            <Field>
+              <FieldLabel htmlFor="interview-context">Context</FieldLabel>
+              <Textarea
+                id="interview-context"
+                rows={5}
+                // The base Textarea is `field-sizing-content`, so a long CV would grow unbounded.
+                className="max-h-72 overflow-y-auto"
+                {...register("interview_config.context")}
+              />
+              <FieldDescription>
+                Role, company, or interview details that steer the answers.
+              </FieldDescription>
             </Field>
           </FieldGroup>
         </form>

@@ -2,11 +2,14 @@
 
 import {
   type ColumnDef,
+  type Header,
+  type OnChangeFn,
+  type SortingState,
   flexRender,
   getCoreRowModel,
   useReactTable,
 } from "@tanstack/react-table";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight } from "lucide-react";
 
 import {
   Table,
@@ -35,6 +38,38 @@ interface DataTableProps<T> {
   emptyMessage?: string;
   getRowId?: (row: T) => string;
   onRowClick?: (row: T) => void;
+  /** Sorting is server-side: pass both to enable it, and opt columns in with `enableSorting`. */
+  sorting?: SortingState;
+  onSortingChange?: OnChangeFn<SortingState>;
+}
+
+function HeaderContent<T>({ header }: { header: Header<T, unknown> }) {
+  const content = flexRender(header.column.columnDef.header, header.getContext());
+
+  if (!header.column.getCanSort()) {
+    return content;
+  }
+
+  const direction = header.column.getIsSorted();
+  const Icon = direction === "asc" ? ArrowUp : direction === "desc" ? ArrowDown : ArrowUpDown;
+  const label =
+    typeof header.column.columnDef.header === "string"
+      ? header.column.columnDef.header
+      : header.column.id;
+
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="-ml-2 h-8 px-2 data-[sorted=true]:text-foreground"
+      data-sorted={!!direction}
+      onClick={header.column.getToggleSortingHandler()}
+      aria-label={`Sort by ${label}, currently ${direction || "unsorted"}`}
+    >
+      {content}
+      <Icon className={direction ? undefined : "opacity-50"} />
+    </Button>
+  );
 }
 
 export function DataTable<T>({
@@ -50,14 +85,23 @@ export function DataTable<T>({
   emptyMessage = "No results.",
   getRowId,
   onRowClick,
+  sorting,
+  onSortingChange,
 }: DataTableProps<T>) {
+  const sortable = !!sorting && !!onSortingChange;
+
   const table = useReactTable({
     data,
     columns,
     getCoreRowModel: getCoreRowModel(),
     manualPagination: true,
+    manualSorting: true,
+    enableSorting: sortable,
+    enableSortingRemoval: false,
     pageCount: Math.max(1, Math.ceil(total / pageSize)),
     getRowId: getRowId as ((row: T) => string) | undefined,
+    state: sorting ? { sorting } : undefined,
+    onSortingChange,
   });
 
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
@@ -73,9 +117,7 @@ export function DataTable<T>({
               <TableRow key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
                   <TableHead key={header.id}>
-                    {header.isPlaceholder
-                      ? null
-                      : flexRender(header.column.columnDef.header, header.getContext())}
+                    {header.isPlaceholder ? null : <HeaderContent header={header} />}
                   </TableHead>
                 ))}
               </TableRow>
