@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   Users,
   CreditCard,
+  Mail,
   Monitor,
   ScrollText,
 } from "lucide-react";
@@ -27,6 +28,7 @@ const NAV_ITEMS = [
   { href: "/users", label: "Users", icon: Users },
   { href: "/payments", label: "Payments", icon: CreditCard },
   { href: "/sessions", label: "Sessions", icon: Monitor },
+  { href: "/emails", label: "Email", icon: Mail },
   { href: "/audit-logs", label: "Audit Logs", icon: ScrollText },
 ];
 
