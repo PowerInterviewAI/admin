@@ -148,6 +148,19 @@ This app was scaffolded with a current-generation `shadcn` CLI (v4.18+) that dif
 
 `/` takes no search params, so without an explicit request dependency Next would try to prerender it at build time, against a database that is not running during the build. `await connection()` at the top of the page opts it out. Every other route reads `searchParams` and is dynamic already.
 
+### `mongodb+srv://` and `src/server/dns.ts`
+
+Node has two resolvers: `dns.lookup` (the OS one) and `dns.resolve*` (c-ares, configured by `dns.getServers()`). The driver expands a `+srv` URI with `resolveSrv`/`resolveTxt` and only then connects with `lookup`, so when c-ares is misconfigured the failure is `querySrv ECONNREFUSED` on the `_mongodb._tcp.*` hostname while every other network call, including the FastAPI backend and `nslookup`, works fine. It reads as an Atlas outage, a firewall, or a bad IP allowlist entry, and is none of those. Before assuming the database is unreachable, check `node -e "console.log(require('dns').getServers())"`.
+
+c-ares falls back to a hardcoded `127.0.0.1` when it cannot read the system DNS config (a VPN adapter plus VMware virtual adapters trigger this), and nothing listens on port 53 there. `ensureResolvableDns()` points it at real resolvers, but **only when the configured servers are entirely loopback** - on a healthy machine it is a no-op, so it will not quietly route DNS off-box for anyone who does not have this problem. Override the resolvers with `DNS_SERVERS` in `.env.local`.
+
+Two things about it are load-bearing, and both were found the hard way:
+
+1. **`dns` and `dns.promises` are separate resolver instances.** `dns.setServers()` does not touch `dns.promises`, and the driver resolves through `dns.promises`. Fixing only the callback API leaves `dns.getServers()` reporting the new servers while `dns.promises.getServers()` still says `127.0.0.1` and every SRV lookup keeps failing - a very convincing false fix. Both must be set. A throwaway script will not reproduce this: `dns.promises` is initialized lazily from the current default servers, so a script that touches it *after* `setServers` appears to work.
+2. **It hangs off client creation, not `instrumentation.ts`.** Resolver config is per-process, and in dev Next renders routes in a worker process separate from the one that runs `register()`. Instrumentation logged success while the worker actually holding the connection was never fixed.
+
+Switching the URI to the standard non-SRV form (shard hosts plus `replicaSet=`) also works, since that path never touches c-ares, but it pins hostnames that Atlas is free to change when the cluster rescales.
+
 ### Theme
 
 `next-themes` was already a dependency (the generated `sonner.tsx` imports `useTheme`) but nothing mounted a provider, so the dark palette in `globals.css` was unreachable. `AppShell` now wraps everything in `ThemeProvider attribute="class"`, and the root `<html>` carries `suppressHydrationWarning` because the provider mutates that element before hydration.

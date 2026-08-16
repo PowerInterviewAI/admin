@@ -2,6 +2,8 @@ import "server-only";
 
 import { type Collection, type Db, MongoClient, ObjectId } from "mongodb";
 
+import { ensureResolvableDns } from "./dns";
+
 export const COLLECTIONS = {
   users: "users",
   payments: "payments",
@@ -24,6 +26,9 @@ function createClient(): MongoClient {
     throw new Error(
       "MONGO_URL is not set. Copy .env.example to .env.local and point it at the database backend uses.",
     );
+  }
+  if (uri.startsWith("mongodb+srv://")) {
+    ensureResolvableDns();
   }
   return new MongoClient(uri, { appName: "power-interview-admin" });
 }
