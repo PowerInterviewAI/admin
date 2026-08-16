@@ -35,7 +35,7 @@ One Next.js app. There is no separate API service: pages read MongoDB directly o
 
 ```
 src/
-  app/                 one route per entity: /, /users, /payments, /sessions, /audit-logs
+  app/                 one route per entity: /, /users, /payments, /sessions, /emails, /audit-logs
     <route>/page.tsx       async server component: parses searchParams, runs the query
     <route>/*-view.tsx     client component: filters + table + sheet
     <route>/loading.tsx    route-shaped skeleton
@@ -46,10 +46,12 @@ src/
     errors.ts              AppError plus duplicate-key mapping
     queries/               one module per entity, plus analytics and user-labels
     actions/               "use server" mutations
+    email/                 SMTP transport and the background campaign runner
   lib/
     schemas/             zod schemas: the single source of truth for the app's types
     search-params.ts     per-route URL state schemas and query-string building
     action-result.ts     the { ok } | { ok: false, error } shape every action returns
+    email/               the shared email layout, ported from backend's Jinja templates
   components/
     ui/                  generated shadcn primitives (vendor code, don't hand-edit)
     *.tsx                shared app components
@@ -129,6 +131,8 @@ After a successful write an action calls `refresh()` from `next/cache`, which re
 
 The user/payment edit sheets mount a fresh inner form component keyed by the record's id (`<UserEditForm key={user._id} .../>`) using `useForm({ defaultValues })`, instead of one long-lived form synced via RHF's reactive `values` option. The `values`-sync approach was tried first and silently left `Controller`-wrapped `<Select>` fields displaying blank (the underlying value was correct - visible in the open dropdown's highlighted item - but the closed trigger never rendered it) even though plain `register()`-bound inputs updated fine. Remounting via `key` sidesteps the whole question of *why* by never needing async resync in the first place.
 
+**Subscribe with `useWatch`, not `watch()`.** `watch()` is a returned function, so React Compiler skips memoizing the whole component and eslint reports `react-hooks/incompatible-library` - the same warning TanStack Table produces, but avoidable here. `useWatch({ control, name })` returns a value instead. Scope it to the smallest component that needs it (the composer's `PreviewPane` is the example): a live preview subscribed at the top of the form would re-render the recipient picker on every keystroke and throw away its search results.
+
 `zodResolver` requires a schema whose input and output types are identical, so a form schema must not use `.default()`. That is why `src/lib/schemas/user.ts` carries two interview-config schemas with the same output type: a strict one for the form, and a `storedInterviewConfigSchema` with defaults for reading documents written before a field existed.
 
 ### Rows that reference a user resolve the user
@@ -136,6 +140,28 @@ The user/payment edit sheets mount a fresh inner form component keyed by the rec
 Payments and sessions only store `user_id`. A raw ObjectId tells an admin nothing, so both list queries resolve the whole page's users in one query (`src/server/queries/user-labels.ts`) and attach a `UserLabel` to each row; the UI renders it through `src/components/user-cell.tsx`, which falls back to "Deleted user" plus the raw id when the user is gone.
 
 The users list does the same in reverse: it resolves payment and session counts for the whole page in two grouped aggregations, which is why the edit sheet can open from row data alone and there is no per-record fetch anywhere in the app.
+
+### Email marketing: one renderer, two callers
+
+`/emails` replaces `../../power-interview-email`, a Python CLI whose campaign lived in a gitignored `content.py` and whose only record of a send was `logs/app.log`.
+
+**`src/lib/email/template.ts` is a hand port of `../backend/app/templates/base.j2.html`, not a renderer for it.** Marketing and transactional mail have to look like the same product, and there is no Jinja here; reading the `.j2.html` off disk would also couple a Next build to a sibling Python repo's directory layout. The cost is that the two copies can drift - **if the backend template changes, change this file too**. The port is verified byte-identical to the Jinja render for all four severities, escaping included (Jinja's autoescape emits `&#39;`/`&#34;`, not `&apos;`/`&quot;`, which is why `escapeHtml` uses the numeric forms).
+
+It carries no `server-only`, deliberately: the live preview and the actual send call `renderEmailHtml` with the same arguments, so what an admin approves in the browser is byte-for-byte what leaves the SMTP server. `greetingName` reproduces Python's `str.capitalize()`, lowercased tail and all - a marketing email that addressed someone differently from every transactional email they have had would read as coming from somewhere else.
+
+**Sending outlives the action.** `startEmailCampaign` writes the campaign document and returns; `campaign-runner.ts` keeps walking the recipient list in the same Node process afterwards, and the composer polls `getCampaignProgress`. A server action cannot hold a request open for the minutes a few hundred paced recipients take. Three consequences are load-bearing:
+
+1. **Every recipient is written as `pending` before the first send** and flipped in place as the run proceeds, so a run that dies halfway still names exactly who was reached.
+2. **`updated_at` is the heartbeat.** The runner touches it on every recipient. A campaign still marked `sending` with a stale one is a run whose process went away, and `isCampaignInterrupted` is what turns that into an **Interrupted** badge instead of a progress bar that will never move. It is computed on the server (`EmailCampaignRow.interrupted`) because it compares against the current clock, and a client re-deciding it during hydration would be free to disagree with the markup it is hydrating.
+3. **Counters are `$set` from local variables, not `$inc`ed.** The loop is the document's only writer, so there is nothing to race with - and `$inc` does not type-check against `Collection<Record<string, unknown>>` anyway (the driver's `NotAcceptedFields` collapses every key of an index-signature schema to `undefined`; `$set` has no such member, which is why a `Document`-typed update object works there).
+
+`sendEmail` lets SMTP failures propagate, which is the opposite of what backend and the Python sender do - both swallow every exception into a log line, which is precisely why neither can say afterwards who received a campaign. The runner catches per recipient and records the reason on that recipient's row.
+
+`email_campaigns` is the one collection in this app that backend neither owns nor reads. Test sends stay out of it: recording every draft iteration would bury the real sends in the history table.
+
+`/emails` reads no search params, so it needs `await connection()` for the same reason the dashboard does. Without it Next prerenders it at build time - against a database that is not running, and baking in whatever `SMTP_*` values the build environment happened to have.
+
+The preview writes into the iframe's `contentDocument` rather than passing `srcDoc`, because `srcDoc` reloads the frame on every change and throws away scroll position - unusable while editing the bottom of a long email. That needs `sandbox="allow-same-origin"`; `allow-scripts` is deliberately not granted, so the raw author-written body cannot execute anything.
 
 ### Server/client boundary
 
@@ -183,9 +209,17 @@ Switching the URI to the standard non-SRV form (shard hosts plus `replicaSet=`) 
 
 `ThemeToggle` renders both icons and lets the `dark:` variant pick one in CSS. Choosing in JS needs a post-hydration `mounted` flag (the server cannot know the stored theme), and the project's eslint config rejects that pattern outright via `react-hooks/set-state-in-effect`.
 
+### Environment
+
+`.env.local`, gitignored. `MONGO_URL`/`MONGO_DB` are required; `DNS_SERVERS` is an escape hatch for the `+srv` problem above.
+
+The `SMTP_*` block is required only by `/emails`, and its absence is a first-class state rather than a crash: `readEmailConfig()` names the missing variables, the page renders read-only with that reason shown, and composing and previewing still work. Only `describeEmailSetup()` crosses to the client - it deliberately omits the password, because the API key must never reach a browser. `EMAIL_FROM_ADDRESS`/`EMAIL_FROM_NAME`/`APP_NAME` default to what backend and the Python sender already send as, so leaving them unset keeps every kind of mail arriving from one identity.
+
 ### Known lint warning
 
-`pnpm lint` reports one warning: React Compiler skips `useReactTable` (`react-hooks/incompatible-library`). TanStack Table returns functions that cannot be memoized safely; the warning is inherent to using it and is not a defect to fix.
+`pnpm lint` reports exactly one warning: React Compiler skips `useReactTable` (`react-hooks/incompatible-library`). TanStack Table returns functions that cannot be memoized safely; the warning is inherent to using it and is not a defect to fix.
+
+If a second one appears naming react-hook-form's `watch()`, that one *is* fixable - see "Subscribe with `useWatch`" above.
 
 ## Project Spec
 
