@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { auditEventTypeSchema, auditStatusSchema } from "@/lib/schemas/audit-log";
 import { sortDirSchema } from "@/lib/schemas/common";
+import { emailCampaignStatusSchema } from "@/lib/schemas/email";
 import { paymentPlanSchema, paymentStatusSchema } from "@/lib/schemas/payment";
 import { userRoleSchema, userStatusSchema } from "@/lib/schemas/user";
 
@@ -58,6 +59,13 @@ export const sessionsSearchParamsSchema = z.object({
   page: pageSchema,
 });
 
+export const emailCampaignsSearchParamsSchema = z.object({
+  status: emailCampaignStatusSchema.optional().catch(undefined),
+  sort_by: z.enum(["created_at", "total"]).catch("created_at"),
+  sort_dir: sortDirSchema.catch("desc"),
+  page: pageSchema,
+});
+
 export const auditLogsSearchParamsSchema = z.object({
   event_type: auditEventTypeSchema.optional().catch(undefined),
   status: auditStatusSchema.optional().catch(undefined),
@@ -67,6 +75,7 @@ export const auditLogsSearchParamsSchema = z.object({
   page: pageSchema,
 });
 
+export type EmailCampaignsSearchParams = z.infer<typeof emailCampaignsSearchParamsSchema>;
 export type UsersSearchParams = z.infer<typeof usersSearchParamsSchema>;
 export type PaymentsSearchParams = z.infer<typeof paymentsSearchParamsSchema>;
 export type SessionsSearchParams = z.infer<typeof sessionsSearchParamsSchema>;
