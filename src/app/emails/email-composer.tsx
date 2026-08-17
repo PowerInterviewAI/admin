@@ -510,16 +510,23 @@ function PreviewPane({
   const template = useWatch({ control, name: "template" });
   const [message, setMessage] = useState({ subject: "", body: "" });
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pending = useRef<Partial<PreviewMessage>>({});
 
   useImperativeHandle(
     ref,
     () => ({
       update: (patch: Partial<PreviewMessage>) => {
+        // Patches accumulate rather than replace. One timer serves both fields, so tabbing from
+        // the subject into the body within the debounce window would otherwise cancel the queued
+        // subject patch and flush only the body - losing the last subject keystroke until that
+        // field happened to be edited again.
+        pending.current = { ...pending.current, ...patch };
+
         if (timer.current) clearTimeout(timer.current);
-        timer.current = setTimeout(
-          () => setMessage((current) => ({ ...current, ...patch })),
-          PREVIEW_DEBOUNCE_MS,
-        );
+        timer.current = setTimeout(() => {
+          setMessage((current) => ({ ...current, ...pending.current }));
+          pending.current = {};
+        }, PREVIEW_DEBOUNCE_MS);
       },
     }),
     [],
