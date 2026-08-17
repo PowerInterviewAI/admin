@@ -88,6 +88,19 @@
   --sidebar-accent-foreground: oklch(0.25 0.01 60);
   --sidebar-border: oklch(0.88 0.015 70);
   --sidebar-ring: oklch(0.72 0.15 60);
+
+  /* Syntax colours for the campaign body editor. GitHub's light palette rather than the app's warm
+     brand ramp: the accent hues here are all near the same orange, so a theme-derived palette would
+     have had tag, attribute and value differ only in lightness - the one thing highlighting exists
+     to prevent. These are also the colours the email template itself renders in. */
+  --code-tag: #116329;
+  --code-attr: #0550ae;
+  --code-string: #0a3069;
+  --code-comment: #6e7781;
+  --code-punct: #57606a;
+  --code-meta: #6639ba;
+  --code-css-prop: #953800;
+  --code-css-value: #0a3069;
 }
 
 .dark {
@@ -122,6 +135,15 @@
   --sidebar-accent-foreground: oklch(0.95 0.01 70);
   --sidebar-border: oklch(0.32 0.02 60);
   --sidebar-ring: oklch(0.72 0.15 60);
+
+  --code-tag: #7ee787;
+  --code-attr: #79c0ff;
+  --code-string: #a5d6ff;
+  --code-comment: #8b949e;
+  --code-punct: #8b949e;
+  --code-meta: #d2a8ff;
+  --code-css-prop: #ffa657;
+  --code-css-value: #a5d6ff;
 }
 
 @layer base {
@@ -137,5 +159,44 @@
   /* Digits in a data table have to line up column-wise to be scannable. */
   table {
     font-variant-numeric: tabular-nums;
+  }
+}
+
+/* Token classes for `HtmlEditor`. Written as plain CSS rather than Tailwind utilities because the
+   class names are attached in `paint()` from a token kind, so no utility would survive a scan of
+   the source. Nothing here may change metrics: the painted layer sits under a transparent textarea
+   and any font, weight or spacing change would slide the colours off the characters. */
+@layer components {
+  .tok-tag-name {
+    color: var(--code-tag);
+  }
+  .tok-tag-punct {
+    color: var(--code-punct);
+  }
+  .tok-attr-name {
+    color: var(--code-attr);
+  }
+  .tok-attr-value {
+    color: var(--code-string);
+  }
+  /* Colour only, no italic: a synthesised oblique can differ in advance width, and the painted
+     layer has to stay glyph-for-glyph under the textarea. */
+  .tok-comment {
+    color: var(--code-comment);
+  }
+  .tok-meta {
+    color: var(--code-meta);
+  }
+  .tok-entity {
+    color: var(--code-meta);
+  }
+  .tok-css-prop {
+    color: var(--code-css-prop);
+  }
+  .tok-css-value {
+    color: var(--code-css-value);
+  }
+  .tok-punct {
+    color: var(--code-punct);
   }
 }

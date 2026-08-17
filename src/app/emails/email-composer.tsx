@@ -28,7 +28,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Textarea } from "@/components/ui/textarea";
 import { inspectEmailBody } from "@/lib/email/body";
 import {
   EMAIL_ACCENTS,
@@ -56,6 +55,7 @@ import {
 import type { EmailSetup } from "@/server/email/transport";
 
 import { EmailPreview } from "./email-preview";
+import { HtmlEditor, type HtmlEditorHandle } from "./html-editor";
 import { RecipientPicker } from "./recipient-picker";
 import { SendConfirmDialog } from "./send-confirm-dialog";
 
@@ -125,8 +125,12 @@ export function EmailComposer({
   // The preview is fed rather than subscribed - see `PreviewPane`. `register`'s own handler still
   // runs first, so RHF stays the source of truth for validation and for what gets sent.
   const previewRef = useRef<PreviewHandle>(null);
+  const editorRef = useRef<HtmlEditorHandle>(null);
   const subjectField = register("subject");
   const bodyField = register("body");
+  // `ref` is separated so it reaches the textarea inside `HtmlEditor` rather than the wrapper -
+  // the component's own `ref` carries its imperative handle.
+  const { ref: bodyInputRef, ...bodyRest } = bodyField;
 
   const poll = useCallback(
     (campaignId: string) => {
@@ -305,26 +309,25 @@ export function EmailComposer({
                           shouldValidate: true,
                           shouldDirty: true,
                         });
-                        // `setValue` bypasses the textarea's onChange, so the preview has to be
-                        // told separately or it keeps showing the body this just replaced.
+                        // `setValue` bypasses the textarea's onChange, so both readers of the body
+                        // have to be told separately or they keep showing what this just replaced.
                         previewRef.current?.update({ body: STARTER_EMAIL_BODY });
+                        editorRef.current?.sync();
                       }}
                     >
                       <FileCode2 data-icon="inline-start" />
                       Insert starter layout
                     </Button>
                   </div>
-                  <Textarea
+                  <HtmlEditor
                     id="campaign-body"
+                    ref={editorRef}
                     rows={16}
-                    spellCheck={false}
                     placeholder="<p>Something worth telling everyone.</p>"
-                    // The base Textarea is `field-sizing-content`, which re-measures the entire
-                    // body on every keystroke and grows the page unbounded. A campaign body is
-                    // long enough for both to hurt, so this box is a fixed 16 rows that scrolls.
-                    className="field-sizing-fixed resize-y overflow-y-auto font-mono text-xs"
+                    invalid={!!errors.body}
                     aria-invalid={!!errors.body}
-                    {...bodyField}
+                    {...bodyRest}
+                    inputRef={bodyInputRef}
                     onChange={(event) => {
                       void bodyField.onChange(event);
                       previewRef.current?.update({ body: event.currentTarget.value });
