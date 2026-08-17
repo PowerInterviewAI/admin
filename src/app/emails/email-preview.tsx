@@ -111,6 +111,9 @@ function ViewportButton({
   );
 }
 
+/** Long enough that a burst of typing produces one reparse, short enough to feel live. */
+const WRITE_DEBOUNCE_MS = 300;
+
 /**
  * Writes the rendered email into the frame's document rather than passing it as `srcDoc`.
  *
@@ -125,16 +128,37 @@ function ViewportButton({
  */
 function PreviewFrame({ html, width }: { html: string; width: number }) {
   const frameRef = useRef<HTMLIFrameElement>(null);
+  const hasWritten = useRef(false);
 
+  /**
+   * Tearing down and reparsing a whole HTML document is by far the most expensive thing on this
+   * page, and running it per keystroke froze the editor. It is debounced rather than deferred:
+   * `useDeferredValue` only lowers the priority of the work, it still performs it for every
+   * intermediate value, and this particular work is synchronous DOM parsing that cannot yield.
+   *
+   * The cleanup cancels a pending write, so a burst of typing reparses once at the end of it. The
+   * first write is immediate, so the preview is not blank for the debounce interval on mount.
+   */
   useEffect(() => {
-    const doc = frameRef.current?.contentDocument;
-    if (!doc) return;
+    const write = () => {
+      const doc = frameRef.current?.contentDocument;
+      if (!doc) return;
 
-    const scrollTop = doc.documentElement.scrollTop || doc.body?.scrollTop || 0;
-    doc.open();
-    doc.write(html);
-    doc.close();
-    doc.documentElement.scrollTop = scrollTop;
+      const scrollTop = doc.documentElement.scrollTop || doc.body?.scrollTop || 0;
+      doc.open();
+      doc.write(html);
+      doc.close();
+      doc.documentElement.scrollTop = scrollTop;
+      hasWritten.current = true;
+    };
+
+    if (!hasWritten.current) {
+      write();
+      return;
+    }
+
+    const timer = setTimeout(write, WRITE_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
   }, [html]);
 
   return (
@@ -144,7 +168,7 @@ function PreviewFrame({ html, width }: { html: string; width: number }) {
       sandbox="allow-same-origin"
       style={{ width }}
       className={cn(
-        "h-[36rem] max-w-full shrink-0 rounded-md border bg-white transition-[width] duration-200",
+        "h-144 max-w-full shrink-0 rounded-md border bg-white transition-[width] duration-200",
       )}
     />
   );

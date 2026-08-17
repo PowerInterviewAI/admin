@@ -3,15 +3,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { CircleCheck, CircleX, FileCode2, Send, TriangleAlert, Users } from "lucide-react";
 import { useRouter } from "next/navigation";
-import {
-  useCallback,
-  useDeferredValue,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  useTransition,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { type Control, Controller, useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 
@@ -287,8 +279,10 @@ export function EmailComposer({
                     rows={16}
                     spellCheck={false}
                     placeholder="<p>Something worth telling everyone.</p>"
-                    // `field-sizing-content` would otherwise let a long campaign grow the page.
-                    className="max-h-112 overflow-y-auto font-mono text-xs"
+                    // The base Textarea is `field-sizing-content`, which re-measures the entire
+                    // body on every keystroke and grows the page unbounded. A campaign body is
+                    // long enough for both to hurt, so this box is a fixed 16 rows that scrolls.
+                    className="field-sizing-fixed resize-y overflow-y-auto font-mono text-xs"
                     aria-invalid={!!errors.body}
                     {...register("body")}
                   />
@@ -471,22 +465,20 @@ function PreviewPane({
   const body = useWatch({ control, name: "body" });
   const template = useWatch({ control, name: "template" });
 
-  // Re-rendering a whole email document per keystroke is real work, so it trails typing rather
-  // than competing with it for the main thread.
-  const deferredSubject = useDeferredValue(subject);
-  const deferredBody = useDeferredValue(body);
-
+  // Building the string is cheap; painting it is not. The expensive half is debounced inside
+  // `EmailPreview`, which is why there is no `useDeferredValue` here - it would only add a second
+  // render per keystroke without skipping any of the work that actually costs.
   const html = useMemo(
     () =>
       renderEmailHtml({
         appName,
         name: PREVIEW_RECIPIENT_NAME,
-        subject: deferredSubject,
-        body: deferredBody,
+        subject,
+        body,
         template,
         year,
       }),
-    [appName, deferredSubject, deferredBody, template, year],
+    [appName, subject, body, template, year],
   );
 
   return (
