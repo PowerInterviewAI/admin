@@ -36,8 +36,27 @@ function toRecipient(doc: Document): EmailRecipient {
   };
 }
 
+/**
+ * Counts mailable *addresses*, not mailable users.
+ *
+ * The send path deduplicates by address, so counting documents would promise an admin more
+ * messages than the run delivers: the confirmation dialog and its duration estimate would both
+ * overstate, and the progress bar would then top out below the number they agreed to. Grouping in
+ * the database keeps that honest without pulling the whole user base into memory to count it.
+ *
+ * The `$toLower`/`$trim` pair has to match `dedupeByEmail`'s key exactly, or the two disagree
+ * again in the other direction.
+ */
 export async function countMailableUsers(): Promise<number> {
-  return getCollection(COLLECTIONS.users).countDocuments(MAILABLE);
+  const [result] = await getCollection(COLLECTIONS.users)
+    .aggregate<{ count: number }>([
+      { $match: MAILABLE },
+      { $group: { _id: { $toLower: { $trim: { input: "$email" } } } } },
+      { $count: "count" },
+    ])
+    .toArray();
+
+  return result?.count ?? 0;
 }
 
 /**
