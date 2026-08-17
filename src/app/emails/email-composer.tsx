@@ -532,8 +532,14 @@ function PreviewPane({
 
         if (timer.current) clearTimeout(timer.current);
         timer.current = setTimeout(() => {
-          setMessage((current) => ({ ...current, ...pending.current }));
+          // Read out of the ref *before* queueing the update. React calls a state updater when it
+          // renders, not when the update is queued, so an updater closing over `pending.current`
+          // sees whatever the ref holds by then - an object this flush has already emptied. Only
+          // the very first flush escaped it, because React evaluates an updater eagerly while the
+          // fiber has no pending work, which froze the preview on the first edit of every session.
+          const flushing = pending.current;
           pending.current = {};
+          setMessage((current) => ({ ...current, ...flushing }));
         }, PREVIEW_DEBOUNCE_MS);
       },
     }),
