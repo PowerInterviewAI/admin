@@ -185,6 +185,19 @@ Reading `pending.current` from inside the updater instead is a bug that already 
 
 The tag-balance check tolerates HTML's optional end tags (`p`, `li`, `td`, `tr`, …) and skips comment contents, because `<p>one<p>two` and Outlook's `<!--[if mso]>` conditionals are both normal in email HTML and neither is a mistake. It is regex-based rather than DOM-based on purpose: `renderEmailHtml` runs in the browser and in Node, and Node has no `DOMParser`.
 
+### The body editor is a painted layer under a transparent textarea
+
+`HtmlEditor` (`src/app/emails/html-editor.tsx`) syntax-highlights the campaign body without an editor library. The element stays a real, uncontrolled `<textarea>`, so native undo, `register("body")`'s ref, and the browser's own caret and selection keep working; a `<pre>` behind it carries the colour, and the textarea's own text is `transparent`.
+
+Four things about it are load-bearing:
+
+1. **`tokenizeHtml` returns tokens, not markup, and `paint()` writes them with `textContent`.** This layer lives in the admin document, not the sandboxed preview frame, and its input is raw author-written HTML. Returning an HTML string would put a single escaping bug between a pasted `<img onerror=...>` and script execution on a page wired straight to MongoDB. There is no `innerHTML` in this path and there must not be.
+2. **`tokenize(s).map(t => t.value).join("") === s`.** Not a character added, dropped, or reordered - it is what lets the painted layer sit glyph-for-glyph under the text. Checked against 20k fuzzed inputs; if you extend the tokenizer, keep that test honest.
+3. **`scrollbar-gutter: stable` on both layers.** The textarea's scrollbar narrows the width its text wraps at while the layer, which never scrolls, has no gutter - so without this the two wrap at different columns the moment the body outgrows the box, and every wrapped line drifts. Reserving the gutter in CSS is what makes the width constant, which is why the layer needs no per-keystroke measuring. An earlier version re-read `clientWidth` on every input and cost 12ms a keystroke to layout thrash; the CSS version costs about 2ms at 7KB.
+4. **Painting is driven by a native `input` listener, not React state.** Highlighting through state would have put a re-render of the whole form back on the keystroke path that `PreviewPane` exists to keep clear. It also means a consumer's `onChange` cannot skip the paint. A programmatic write still has to say so: `setValue` fires no `input`, so the starter-layout button calls `editorRef.current.sync()` alongside the preview's `update()`.
+
+Token colours are GitHub's palette in `globals.css` (`--code-*`, one set per theme) rather than anything derived from the app's ramp: the brand accents are all near the same orange, so a theme-derived palette would have separated tag, attribute, and value by lightness alone. Nothing in the `.tok-*` rules may change a metric - no italics, no weight, no spacing - or the colours slide off the characters. Bodies over `HIGHLIGHT_LIMIT` (40k) drop to plain readable text instead of paying the paint cost.
+
 ### Server/client boundary
 
 `src/server/**` imports `server-only`, so leaking it into a client component is a build error rather than a runtime surprise.
