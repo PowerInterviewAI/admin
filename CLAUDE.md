@@ -171,10 +171,12 @@ Functions cannot cross the boundary. `TrendChart` takes `format="usd"` rather th
 
 ### shadcn/ui is not the CLI you remember
 
-This app was scaffolded with a current-generation `shadcn` CLI (v4.18+) that differs a lot from the classic new-york/default + Radix setup: components are built on **Base UI** (`@base-ui/react`, not Radix), the style is a named preset (`base-nova`, not `new-york`), and there's no `tailwind.config.js` (Tailwind v4, CSS-native). Two consequences that have already caused real bugs here:
+This app was scaffolded with a current-generation `shadcn` CLI (v4.18+) that differs a lot from the classic new-york/default + Radix setup: components are built on **Base UI** (`@base-ui/react`, not Radix), the style is a named preset (`base-nova`, not `new-york`), and there's no `tailwind.config.js` (Tailwind v4, CSS-native). Four consequences that have already caused real bugs here:
 
 1. **No `asChild`.** Base UI components take a `render` prop instead: `<AlertDialogTrigger render={<Button variant="destructive" />}>Delete</AlertDialogTrigger>`. Check the actual component source in `src/components/ui/` before assuming Radix conventions - grep for `render=` to see the pattern already in use.
 2. **`Select.Value` needs a formatter.** `<SelectValue />` with no children renders blank for any value that isn't in a statically-known `items` array passed to `<Select.Root items={...}>`. Always pass a children function: `<SelectValue>{(v: string) => titleCase(v)}</SelectValue>` (see `src/lib/format.ts`'s `titleCase`, which is null-safe on purpose - the formatter gets called with `null` during transient render states, not just real values). `Select`'s `onValueChange` is also typed `string | null`.
+3. **`render={<Link/>}` on a `Button` needs `nativeButton={false}`.** `useButton` asserts in a dev-only effect that a component claiming native button semantics actually rendered a `<button>`; an anchor trips it on every visit to the page. `PaginationLink` in `src/components/ui/pagination.tsx` is the reference. `SidebarMenuButton` is exempt - it calls `useRender` directly and never goes through `useButton`.
+4. **`Textarea` is `field-sizing-content`.** It re-measures the whole value to size itself on every keystroke, and grows the page unbounded. Fine for short fields; for anything holding kilobytes (a CV, a campaign body) add `field-sizing-fixed` and let it scroll, or it will visibly stall typing.
 
 `--overwrite`-generated files in `src/components/ui/` are vendor code - prefer composing them from `src/components/` over hand-editing the generated files.
 
