@@ -30,6 +30,10 @@ pnpm dev      # hot reload
 pnpm build && pnpm start   # production build
 ```
 
+On Windows, `run.bat` does the production path in one step: it checks for pnpm and
+`.env.local`, installs dependencies only if `node_modules` is absent, builds, then serves.
+Double-clicking it works from any folder.
+
 ## Lint, type-check
 
 ```bash
