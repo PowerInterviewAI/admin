@@ -109,10 +109,17 @@ export const emailCampaignSchema = timestampsSchema.extend({
 
 export type EmailCampaign = z.infer<typeof emailCampaignSchema>;
 
-/** What the composer polls while a run is in flight. */
+/**
+ * What the composer polls while a run is in flight.
+ *
+ * `interrupted` travels in the payload rather than being inferred by the poller, because it is the
+ * only thing that can end the loop: a dead run stays `sending` in the database forever, so a
+ * poller watching `status` alone would keep asking every 1.5s for as long as the tab stays open.
+ */
 export interface EmailCampaignProgress {
   id: string;
   status: EmailCampaignStatus;
+  interrupted: boolean;
   total: number;
   sent_count: number;
   failed_count: number;
@@ -136,13 +143,23 @@ export type RecipientOption = z.infer<typeof recipientOptionSchema>;
  */
 export const CAMPAIGN_HEARTBEAT_TIMEOUT_MS = 60_000;
 
-export function isCampaignInterrupted(campaign: {
-  status: EmailCampaignStatus;
-  updated_at: number | null;
-}): boolean {
+/**
+ * The heartbeat only ticks once per recipient, so the threshold has to clear the configured pace
+ * or a healthy run looks dead between two sends. `EMAIL_SEND_DELAY_MS` has no upper bound - anyone
+ * throttling hard for a provider limit would otherwise watch every live campaign report itself as
+ * interrupted. Three intervals of slack absorbs an unusually slow SMTP round trip on top.
+ */
+export function campaignHeartbeatTimeoutMs(delayMs: number): number {
+  return Math.max(CAMPAIGN_HEARTBEAT_TIMEOUT_MS, delayMs * 3);
+}
+
+export function isCampaignInterrupted(
+  campaign: { status: EmailCampaignStatus; updated_at: number | null },
+  timeoutMs: number = CAMPAIGN_HEARTBEAT_TIMEOUT_MS,
+): boolean {
   if (campaign.status !== "sending") return false;
   if (campaign.updated_at === null) return false;
-  return Date.now() - campaign.updated_at > CAMPAIGN_HEARTBEAT_TIMEOUT_MS;
+  return Date.now() - campaign.updated_at > timeoutMs;
 }
 
 /**

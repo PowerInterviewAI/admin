@@ -138,8 +138,16 @@ export function EmailComposer({
 
         setProgress(result.data);
 
-        if (result.data.status === "sending") {
+        if (result.data.status === "sending" && !result.data.interrupted) {
           pollTimer.current = setTimeout(() => void tick(), POLL_INTERVAL_MS);
+          return;
+        }
+
+        // An interrupted run never reaches a terminal status of its own, so this is the only exit
+        // from the loop for one - without it the tab polls every 1.5s until it is closed.
+        if (result.data.interrupted) {
+          toast.error("Sending stopped before it finished. See the history for who was reached.");
+          router.refresh();
           return;
         }
 
@@ -584,7 +592,7 @@ function CampaignProgressCard({
 }) {
   const done = progress.sent_count + progress.failed_count;
   const percent = progress.total === 0 ? 0 : Math.round((done / progress.total) * 100);
-  const isRunning = progress.status === "sending";
+  const isRunning = progress.status === "sending" && !progress.interrupted;
 
   return (
     <Card>
@@ -592,6 +600,11 @@ function CampaignProgressCard({
         <CardTitle className="flex items-center gap-2">
           {isRunning ? (
             "Sending"
+          ) : progress.interrupted ? (
+            <>
+              <CircleX className="size-4 text-destructive" />
+              Sending was interrupted
+            </>
           ) : progress.failed_count === 0 ? (
             <>
               <CircleCheck className="size-4 text-emerald-600" />
@@ -607,7 +620,9 @@ function CampaignProgressCard({
         <CardDescription>
           {isRunning
             ? "Sending continues even if you navigate away from this page."
-            : "The full delivery log is in the campaign history."}
+            : progress.interrupted
+              ? "The dashboard restarted mid-send. Recipients still pending were never contacted."
+              : "The full delivery log is in the campaign history."}
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">

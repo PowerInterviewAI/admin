@@ -1,6 +1,10 @@
 import "server-only";
 
+import { createHash } from "node:crypto";
+
 import nodemailer, { type Transporter } from "nodemailer";
+
+import { campaignHeartbeatTimeoutMs } from "@/lib/schemas/email";
 
 /**
  * SMTP settings, read from the environment at call time rather than module scope so editing
@@ -74,6 +78,16 @@ export function readEmailConfig(): EmailConfigResult {
   };
 }
 
+/**
+ * How stale a campaign's heartbeat has to be before it counts as interrupted, given the pace this
+ * install actually sends at. Falls back to the default pace when SMTP is unconfigured, which is
+ * the only state in which no campaign can be running anyway.
+ */
+export function heartbeatTimeoutMs(): number {
+  const result = readEmailConfig();
+  return campaignHeartbeatTimeoutMs(result.ok ? result.config.delayMs : DEFAULT_DELAY_MS);
+}
+
 /** Everything about the mail setup that is safe to render in the browser. */
 export interface EmailSetup {
   configured: boolean;
@@ -119,8 +133,18 @@ declare global {
   var __adminMailTransport: { key: string; transporter: Transporter } | undefined;
 }
 
+/**
+ * Includes the credential, because a pooled transporter fixes its `auth` at creation. Keying on
+ * host/port/user alone meant a rotated Resend key kept failing against the old one until the
+ * process restarted - which contradicts `readEmailConfig` reading the environment at call time so
+ * that editing `.env.local` takes effect without a rebuild.
+ *
+ * Hashed rather than concatenated: the key lives on `globalThis` for the life of the process, and
+ * there is no reason to keep a second plaintext copy of an API key there.
+ */
 function transportKey(config: EmailConfig): string {
-  return `${config.host}:${config.port}:${config.user}`;
+  const secret = createHash("sha256").update(config.password).digest("hex");
+  return `${config.host}:${config.port}:${config.user}:${secret}`;
 }
 
 /**

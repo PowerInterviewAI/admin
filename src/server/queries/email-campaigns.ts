@@ -11,6 +11,7 @@ import {
 } from "@/lib/schemas/email";
 import { type EmailCampaignsSearchParams, PAGE_SIZE } from "@/lib/search-params";
 import { COLLECTIONS, type Document, toObjectId } from "@/server/db";
+import { heartbeatTimeoutMs } from "@/server/email/transport";
 import { findMany, findOne, findPage } from "@/server/repository";
 
 /** The delivery log is the bulk of a campaign document and no list view renders it. */
@@ -18,8 +19,8 @@ const WITHOUT_RECIPIENTS: Document = { recipients: 0 };
 
 const RECENT_CAMPAIGN_LIMIT = 5;
 
-function toRow(campaign: EmailCampaign): EmailCampaignRow {
-  return { ...campaign, interrupted: isCampaignInterrupted(campaign) };
+function toRow(campaign: EmailCampaign, timeoutMs: number): EmailCampaignRow {
+  return { ...campaign, interrupted: isCampaignInterrupted(campaign, timeoutMs) };
 }
 
 export async function listEmailCampaigns(
@@ -38,7 +39,8 @@ export async function listEmailCampaigns(
     projection: WITHOUT_RECIPIENTS,
   });
 
-  return { ...page, items: page.items.map(toRow) };
+  const timeoutMs = heartbeatTimeoutMs();
+  return { ...page, items: page.items.map((campaign) => toRow(campaign, timeoutMs)) };
 }
 
 /** Feeds the composer's "recent sends" strip, so the last campaign is visible while writing the next. */
@@ -51,7 +53,8 @@ export async function listRecentEmailCampaigns(): Promise<EmailCampaignRow[]> {
     projection: WITHOUT_RECIPIENTS,
   });
 
-  return campaigns.map(toRow);
+  const timeoutMs = heartbeatTimeoutMs();
+  return campaigns.map((campaign) => toRow(campaign, timeoutMs));
 }
 
 /** The full document, delivery log included. Read only when a campaign's detail dialog opens. */

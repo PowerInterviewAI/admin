@@ -10,12 +10,14 @@ import {
   type RecipientOption,
   emailCampaignInputSchema,
   emailTestSchema,
+  isCampaignInterrupted,
 } from "@/lib/schemas/email";
 import { COLLECTIONS, currentTimestampMs, getCollection, toObjectId } from "@/server/db";
 import { startCampaign } from "@/server/email/campaign-runner";
 import {
   type EmailConfig,
   describeSmtpError,
+  heartbeatTimeoutMs,
   readEmailConfig,
   sendEmail,
   verifyTransport,
@@ -161,6 +163,7 @@ export async function startEmailCampaign(
   return succeeded({
     id: campaignId,
     status: "sending",
+    interrupted: false,
     total: recipients.length,
     sent_count: 0,
     failed_count: 0,
@@ -215,13 +218,32 @@ export async function getCampaignProgress(
   try {
     const doc = await getCollection(COLLECTIONS.emailCampaigns).findOne(
       { _id: toObjectId(campaignId) },
-      { projection: { status: 1, total: 1, sent_count: 1, failed_count: 1, error: 1 } },
+      {
+        projection: {
+          status: 1,
+          total: 1,
+          sent_count: 1,
+          failed_count: 1,
+          error: 1,
+          updated_at: 1,
+        },
+      },
     );
     if (!doc) throw notFound("campaign");
 
+    const status =
+      doc.status === "sending" || doc.status === "failed" ? doc.status : "completed";
+
     return succeeded({
       id: campaignId,
-      status: doc.status === "sending" || doc.status === "failed" ? doc.status : "completed",
+      status,
+      // Reported so the poller has something terminal to stop on. A run whose process died stays
+      // `sending` in the database for good, so status alone would keep the composer asking every
+      // 1.5s for the entire life of the tab.
+      interrupted: isCampaignInterrupted(
+        { status, updated_at: typeof doc.updated_at === "number" ? doc.updated_at : null },
+        heartbeatTimeoutMs(),
+      ),
       total: Number(doc.total ?? 0),
       sent_count: Number(doc.sent_count ?? 0),
       failed_count: Number(doc.failed_count ?? 0),
