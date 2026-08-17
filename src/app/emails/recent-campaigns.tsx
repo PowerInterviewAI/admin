@@ -17,7 +17,7 @@ export function RecentCampaigns({ campaigns }: { campaigns: EmailCampaignRow[] }
         <CardTitle>Recent sends</CardTitle>
         <CardDescription>The last {campaigns.length} campaigns sent from here.</CardDescription>
         <CardAction>
-          <Button variant="ghost" size="sm" render={<Link href="/emails/history" />}>
+          <Button variant="ghost" size="sm" nativeButton={false} render={<Link href="/emails/history" />}>
             View all
           </Button>
         </CardAction>

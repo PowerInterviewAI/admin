@@ -21,7 +21,7 @@ export default async function EmailHistoryPage({ searchParams }: PageProps<"/ema
         title="Email history"
         description="Every campaign sent from this dashboard, with the delivery result for each recipient."
         actions={
-          <Button variant="outline" render={<Link href="/emails" />}>
+          <Button variant="outline" nativeButton={false} render={<Link href="/emails" />}>
             <PenLine data-icon="inline-start" />
             Compose
           </Button>

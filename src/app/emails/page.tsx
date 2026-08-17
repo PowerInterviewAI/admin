@@ -34,7 +34,9 @@ export default async function EmailsPage() {
         title="Email marketing"
         description="Compose an announcement, preview it exactly as it will arrive, and send it to one user, a chosen few, or the whole active user base."
         actions={
-          <Button variant="outline" render={<Link href="/emails/history" />}>
+          // `nativeButton={false}` because the render prop is an anchor: Base UI otherwise warns
+          // that it is stripping native button semantics. Same as `PaginationLink`.
+          <Button variant="outline" nativeButton={false} render={<Link href="/emails/history" />}>
             <History data-icon="inline-start" />
             History
           </Button>
