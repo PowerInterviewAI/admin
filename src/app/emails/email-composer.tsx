@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { inspectEmailBody } from "@/lib/email/body";
 import {
   EMAIL_ACCENTS,
   EMAIL_TEMPLATE_HINTS,
@@ -532,8 +533,14 @@ function PreviewPane({
 
         if (timer.current) clearTimeout(timer.current);
         timer.current = setTimeout(() => {
-          setMessage((current) => ({ ...current, ...pending.current }));
+          // Read out of the ref *before* queueing the update. React calls a state updater when it
+          // renders, not when the update is queued, so an updater closing over `pending.current`
+          // sees whatever the ref holds by then - an object this flush has already emptied. Only
+          // the very first flush escaped it, because React evaluates an updater eagerly while the
+          // fiber has no pending work, which froze the preview on the first edit of every session.
+          const flushing = pending.current;
           pending.current = {};
+          setMessage((current) => ({ ...current, ...flushing }));
         }, PREVIEW_DEBOUNCE_MS);
       },
     }),
@@ -560,12 +567,17 @@ function PreviewPane({
     [appName, message.subject, message.body, template, year],
   );
 
+  // Derived from the same debounced snapshot as `html`, so scanning the body costs one pass per
+  // typing burst rather than one per keystroke.
+  const warnings = useMemo(() => inspectEmailBody(message.body), [message.body]);
+
   return (
     <EmailPreview
       html={html}
       subject={message.subject}
       fromName={fromName}
       fromAddress={fromAddress}
+      warnings={warnings}
     />
   );
 }

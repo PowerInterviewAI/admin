@@ -1,6 +1,6 @@
 "use client";
 
-import { Monitor, Smartphone } from "lucide-react";
+import { Monitor, Smartphone, TriangleAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import type { EmailBodyWarning } from "@/lib/email/body";
 import { PREVIEW_RECIPIENT_NAME } from "@/lib/email/template";
 import { cn } from "@/lib/utils";
 
@@ -28,9 +29,17 @@ interface EmailPreviewProps {
   subject: string;
   fromName: string;
   fromAddress: string;
+  /** What this frame renders more kindly than a real client will. See `lib/email/body.ts`. */
+  warnings: EmailBodyWarning[];
 }
 
-export function EmailPreview({ html, subject, fromName, fromAddress }: EmailPreviewProps) {
+export function EmailPreview({
+  html,
+  subject,
+  fromName,
+  fromAddress,
+  warnings,
+}: EmailPreviewProps) {
   const [viewport, setViewport] = useState<Viewport>("desktop");
 
   return (
@@ -76,6 +85,25 @@ export function EmailPreview({ html, subject, fromName, fromAddress }: EmailPrev
           <dd className="truncate font-medium">{subject || "No subject yet"}</dd>
         </dl>
 
+        {warnings.length > 0 && (
+          <div className="mx-(--card-spacing) flex flex-col gap-2 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3">
+            <p className="flex items-center gap-2 text-xs font-medium">
+              <TriangleAlert className="size-3.5 shrink-0 text-amber-600" />
+              This frame is more forgiving than an inbox
+            </p>
+            <ul className="flex flex-col gap-1.5 text-xs text-muted-foreground">
+              {warnings.map((warning) => (
+                <li key={warning.code} className="flex gap-2">
+                  <span aria-hidden className="text-amber-600">
+                    &bull;
+                  </span>
+                  {warning.message}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         <div className="flex justify-center overflow-x-auto border-t bg-muted/40 p-4">
           <PreviewFrame html={html} width={VIEWPORT_WIDTH[viewport]} />
         </div>
@@ -111,18 +139,19 @@ function ViewportButton({
   );
 }
 
-/** Long enough that a burst of typing produces one reparse, short enough to feel live. */
-const WRITE_DEBOUNCE_MS = 300;
-
 /**
  * Renders the email in an isolated document.
  *
- * `srcdoc` is assigned imperatively rather than passed as a React prop, which is what lets the
- * assignment be debounced without holding the document in state. An earlier version drove this
- * with `document.open()/write()/close()` to preserve scroll; that tears down and rebuilds the
- * frame's whole document on every update, and doing it repeatedly through an editing session is
- * the single most expensive thing this page can do. Scroll is preserved here instead by stashing
- * the offset before the swap and restoring it on `load`.
+ * `srcdoc` is assigned imperatively rather than passed as a React prop, so the swap is not tied to
+ * React's own commit of this element. An earlier version drove this with
+ * `document.open()/write()/close()` to preserve scroll; that tears down and rebuilds the frame's
+ * whole document on every update, and doing it repeatedly through an editing session is the single
+ * most expensive thing this page can do. Scroll is preserved here instead by stashing the offset
+ * before the swap and restoring it on `load`.
+ *
+ * There is deliberately no debounce here. `html` is derived from a snapshot the composer already
+ * debounces, so every value that reaches this component is the end of a typing burst; a second
+ * timer added up to another `PREVIEW_DEBOUNCE_MS` of lag per edit and dropped nothing.
  *
  * `sandbox="allow-same-origin"` is only there to keep `contentDocument` readable for that scroll
  * restore. `allow-scripts` is deliberately withheld, so the raw author-written campaign body
@@ -130,32 +159,14 @@ const WRITE_DEBOUNCE_MS = 300;
  */
 function PreviewFrame({ html, width }: { html: string; width: number }) {
   const frameRef = useRef<HTMLIFrameElement>(null);
-  const hasRendered = useRef(false);
   const scrollTop = useRef(0);
 
-  /**
-   * Debounced, not deferred: `useDeferredValue` lowers the priority of work but still performs it
-   * for every intermediate value, and parsing a document is synchronous work that cannot yield.
-   * The cleanup cancels a pending swap, so a burst of typing reparses once, after it stops. The
-   * first render is immediate so the preview is not blank while the debounce elapses on mount.
-   */
   useEffect(() => {
-    const apply = () => {
-      const frame = frameRef.current;
-      if (!frame) return;
+    const frame = frameRef.current;
+    if (!frame) return;
 
-      scrollTop.current = frame.contentDocument?.documentElement.scrollTop ?? 0;
-      frame.srcdoc = html;
-      hasRendered.current = true;
-    };
-
-    if (!hasRendered.current) {
-      apply();
-      return;
-    }
-
-    const timer = setTimeout(apply, WRITE_DEBOUNCE_MS);
-    return () => clearTimeout(timer);
+    scrollTop.current = frame.contentDocument?.documentElement.scrollTop ?? 0;
+    frame.srcdoc = html;
   }, [html]);
 
   return (

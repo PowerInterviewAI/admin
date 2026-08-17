@@ -163,7 +163,27 @@ It carries no `server-only`, deliberately: the live preview and the actual send 
 
 `/emails` reads no search params, so it needs `await connection()` for the same reason the dashboard does. Without it Next prerenders it at build time - against a database that is not running, and baking in whatever `SMTP_*` values the build environment happened to have.
 
-The preview writes into the iframe's `contentDocument` rather than passing `srcDoc`, because `srcDoc` reloads the frame on every change and throws away scroll position - unusable while editing the bottom of a long email. That needs `sandbox="allow-same-origin"`; `allow-scripts` is deliberately not granted, so the raw author-written body cannot execute anything.
+**The preview is fed, and it is debounced exactly once.** The composer pushes a snapshot of the subject and body into `PreviewPane` imperatively rather than letting it subscribe, so a keystroke costs no React render; `PreviewPane` debounces that snapshot into state, and `PreviewFrame` assigns the rendered document to `iframe.srcdoc`. `PreviewFrame` deliberately has **no** debounce of its own - every `html` it sees is already the end of a typing burst, and a second timer only added latency.
+
+The flush snapshots the accumulated patch into a local before calling `setMessage`:
+
+```ts
+const flushing = pending.current;
+pending.current = {};
+setMessage((current) => ({ ...current, ...flushing }));
+```
+
+Reading `pending.current` from inside the updater instead is a bug that already shipped once. React calls a state updater during render, not when the update is queued, so the updater saw the ref the flush had already cleared and returned `{ ...current }` - the memoised `html` never changed and the preview froze. It survived review because React *does* evaluate an updater eagerly while the fiber has no pending work, which made the first edit of a session land and every one after it disappear. If you touch this flush, keep the read outside the updater.
+
+`srcdoc` is assigned imperatively rather than passed as a prop so the swap is not tied to React's commit of that element. Scroll survives it by stashing the offset before the swap and restoring it on `load`, which is what `sandbox="allow-same-origin"` is for; `allow-scripts` is deliberately not granted, so the raw author-written body cannot execute anything.
+
+### The campaign body is raw HTML, and `src/lib/email/body.ts` is what makes that survivable
+
+`normalizeEmailBody` runs **inside `renderEmailHtml`**, not at a call site, because that is what keeps the preview and the send byte-identical. It handles exactly one shape: a complete `<!doctype html>` document, which authors paste all the time out of a template tool. A browser parser silently discards a nested `<html>`/`<head>`/`<body>`, so without this the frame looks correct while the string handed to SMTP still carries the nesting - the preview lying about what a recipient receives is the one failure this whole isomorphic-renderer design exists to prevent.
+
+`inspectEmailBody` only describes; it never rewrites. An email body is hand-tuned HTML and quietly "fixing" it is a worse surprise than a wrong preview, so the composer renders the findings as non-blocking notes in the preview card and lets the admin decide. They are derived from the same debounced snapshot as `html`, so the scan costs one pass per typing burst.
+
+The tag-balance check tolerates HTML's optional end tags (`p`, `li`, `td`, `tr`, …) and skips comment contents, because `<p>one<p>two` and Outlook's `<!--[if mso]>` conditionals are both normal in email HTML and neither is a mistake. It is regex-based rather than DOM-based on purpose: `renderEmailHtml` runs in the browser and in Node, and Node has no `DOMParser`.
 
 ### Server/client boundary
 
