@@ -3,7 +3,15 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { CircleCheck, CircleX, FileCode2, Send, TriangleAlert, Users } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import {
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import { type Control, Controller, useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 
@@ -52,6 +60,16 @@ import { SendConfirmDialog } from "./send-confirm-dialog";
 
 const AUDIENCES: EmailAudience[] = ["one", "selected", "all"];
 const POLL_INTERVAL_MS = 1500;
+
+/** How long typing has to pause before the preview re-renders. */
+const PREVIEW_DEBOUNCE_MS = 300;
+
+/** The two fields the preview takes imperatively; `template` it subscribes to itself. */
+type PreviewMessage = Pick<EmailMessage, "subject" | "body">;
+
+interface PreviewHandle {
+  update: (patch: Partial<PreviewMessage>) => void;
+}
 
 interface EmailComposerProps {
   setup: EmailSetup;
@@ -102,6 +120,12 @@ export function EmailComposer({
 
   const recipientCount = audience === "all" ? mailableCount : selected.length;
   const isRunning = progress?.status === "sending";
+
+  // The preview is fed rather than subscribed - see `PreviewPane`. `register`'s own handler still
+  // runs first, so RHF stays the source of truth for validation and for what gets sent.
+  const previewRef = useRef<PreviewHandle>(null);
+  const subjectField = register("subject");
+  const bodyField = register("body");
 
   const poll = useCallback(
     (campaignId: string) => {
@@ -215,7 +239,11 @@ export function EmailComposer({
                     placeholder="What's new in Power Interview AI"
                     autoComplete="off"
                     aria-invalid={!!errors.subject}
-                    {...register("subject")}
+                    {...subjectField}
+                    onChange={(event) => {
+                      void subjectField.onChange(event);
+                      previewRef.current?.update({ subject: event.currentTarget.value });
+                    }}
                   />
                   <FieldDescription>
                     Also rendered as the heading at the top of the email.
@@ -263,12 +291,15 @@ export function EmailComposer({
                       variant="ghost"
                       size="sm"
                       disabled={isRunning}
-                      onClick={() =>
+                      onClick={() => {
                         setValue("body", STARTER_EMAIL_BODY, {
                           shouldValidate: true,
                           shouldDirty: true,
-                        })
-                      }
+                        });
+                        // `setValue` bypasses the textarea's onChange, so the preview has to be
+                        // told separately or it keeps showing the body this just replaced.
+                        previewRef.current?.update({ body: STARTER_EMAIL_BODY });
+                      }}
                     >
                       <FileCode2 data-icon="inline-start" />
                       Insert starter layout
@@ -284,7 +315,11 @@ export function EmailComposer({
                     // long enough for both to hurt, so this box is a fixed 16 rows that scrolls.
                     className="field-sizing-fixed resize-y overflow-y-auto font-mono text-xs"
                     aria-invalid={!!errors.body}
-                    {...register("body")}
+                    {...bodyField}
+                    onChange={(event) => {
+                      void bodyField.onChange(event);
+                      previewRef.current?.update({ body: event.currentTarget.value });
+                    }}
                   />
                   <FieldDescription>
                     Inline styles only, absolute URLs, no greeting and no sign-off - the layout
@@ -419,6 +454,7 @@ export function EmailComposer({
 
         <div className="xl:sticky xl:top-0">
           <PreviewPane
+            ref={previewRef}
             control={control}
             appName={setup.appName}
             fromName={setup.fromName}
@@ -445,44 +481,77 @@ export function EmailComposer({
 }
 
 /**
- * Subscribes to the message fields on its own, so typing re-renders the preview and nothing else -
- * the recipient picker in particular keeps its search results and scroll position.
+ * Renders the preview from a snapshot pushed in imperatively, not from a `useWatch` subscription.
+ *
+ * Subscribing re-rendered this subtree on every keystroke. Each of those renders is individually
+ * small, but they are unavoidable work on the critical path of typing, and together they made the
+ * editor unusable. Pushing a debounced snapshot instead means a keystroke does nothing but
+ * `register`'s own uncontrolled bookkeeping and reset a timer - no React render at all until
+ * typing stops.
+ *
+ * `template` stays on `useWatch`: it changes only when a select is used, so it costs nothing to
+ * subscribe to and keeps the accent colour instant.
  */
 function PreviewPane({
+  ref,
   control,
   appName,
   fromName,
   fromAddress,
   year,
 }: {
+  ref: React.Ref<PreviewHandle>;
   control: Control<EmailMessage>;
   appName: string;
   fromName: string;
   fromAddress: string;
   year: number;
 }) {
-  const subject = useWatch({ control, name: "subject" });
-  const body = useWatch({ control, name: "body" });
   const template = useWatch({ control, name: "template" });
+  const [message, setMessage] = useState({ subject: "", body: "" });
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Building the string is cheap; painting it is not. The expensive half is debounced inside
-  // `EmailPreview`, which is why there is no `useDeferredValue` here - it would only add a second
-  // render per keystroke without skipping any of the work that actually costs.
+  useImperativeHandle(
+    ref,
+    () => ({
+      update: (patch: Partial<PreviewMessage>) => {
+        if (timer.current) clearTimeout(timer.current);
+        timer.current = setTimeout(
+          () => setMessage((current) => ({ ...current, ...patch })),
+          PREVIEW_DEBOUNCE_MS,
+        );
+      },
+    }),
+    [],
+  );
+
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current);
+    },
+    [],
+  );
+
   const html = useMemo(
     () =>
       renderEmailHtml({
         appName,
         name: PREVIEW_RECIPIENT_NAME,
-        subject,
-        body,
+        subject: message.subject,
+        body: message.body,
         template,
         year,
       }),
-    [appName, subject, body, template, year],
+    [appName, message.subject, message.body, template, year],
   );
 
   return (
-    <EmailPreview html={html} subject={subject} fromName={fromName} fromAddress={fromAddress} />
+    <EmailPreview
+      html={html}
+      subject={message.subject}
+      fromName={fromName}
+      fromAddress={fromAddress}
+    />
   );
 }
 
