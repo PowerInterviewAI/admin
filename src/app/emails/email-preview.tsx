@@ -115,49 +115,46 @@ function ViewportButton({
 const WRITE_DEBOUNCE_MS = 300;
 
 /**
- * Writes the rendered email into the frame's document rather than passing it as `srcDoc`.
+ * Renders the email in an isolated document.
  *
- * `srcDoc` reloads the frame on every change, which throws away the reader's scroll position -
- * unusable while editing the bottom of a long email. Writing the document directly lets the scroll
- * offset be restored across renders.
+ * `srcdoc` is assigned imperatively rather than passed as a React prop, which is what lets the
+ * assignment be debounced without holding the document in state. An earlier version drove this
+ * with `document.open()/write()/close()` to preserve scroll; that tears down and rebuilds the
+ * frame's whole document on every update, and doing it repeatedly through an editing session is
+ * the single most expensive thing this page can do. Scroll is preserved here instead by stashing
+ * the offset before the swap and restoring it on `load`.
  *
- * `sandbox="allow-same-origin"` is what makes `contentDocument` reachable; without it the frame
- * gets an opaque origin and the write is impossible. Scripts stay blocked either way, since
- * `allow-scripts` is not granted - which also means the campaign body cannot execute anything,
- * even though it is raw author-written HTML.
+ * `sandbox="allow-same-origin"` is only there to keep `contentDocument` readable for that scroll
+ * restore. `allow-scripts` is deliberately withheld, so the raw author-written campaign body
+ * cannot execute anything.
  */
 function PreviewFrame({ html, width }: { html: string; width: number }) {
   const frameRef = useRef<HTMLIFrameElement>(null);
-  const hasWritten = useRef(false);
+  const hasRendered = useRef(false);
+  const scrollTop = useRef(0);
 
   /**
-   * Tearing down and reparsing a whole HTML document is by far the most expensive thing on this
-   * page, and running it per keystroke froze the editor. It is debounced rather than deferred:
-   * `useDeferredValue` only lowers the priority of the work, it still performs it for every
-   * intermediate value, and this particular work is synchronous DOM parsing that cannot yield.
-   *
-   * The cleanup cancels a pending write, so a burst of typing reparses once at the end of it. The
-   * first write is immediate, so the preview is not blank for the debounce interval on mount.
+   * Debounced, not deferred: `useDeferredValue` lowers the priority of work but still performs it
+   * for every intermediate value, and parsing a document is synchronous work that cannot yield.
+   * The cleanup cancels a pending swap, so a burst of typing reparses once, after it stops. The
+   * first render is immediate so the preview is not blank while the debounce elapses on mount.
    */
   useEffect(() => {
-    const write = () => {
-      const doc = frameRef.current?.contentDocument;
-      if (!doc) return;
+    const apply = () => {
+      const frame = frameRef.current;
+      if (!frame) return;
 
-      const scrollTop = doc.documentElement.scrollTop || doc.body?.scrollTop || 0;
-      doc.open();
-      doc.write(html);
-      doc.close();
-      doc.documentElement.scrollTop = scrollTop;
-      hasWritten.current = true;
+      scrollTop.current = frame.contentDocument?.documentElement.scrollTop ?? 0;
+      frame.srcdoc = html;
+      hasRendered.current = true;
     };
 
-    if (!hasWritten.current) {
-      write();
+    if (!hasRendered.current) {
+      apply();
       return;
     }
 
-    const timer = setTimeout(write, WRITE_DEBOUNCE_MS);
+    const timer = setTimeout(apply, WRITE_DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [html]);
 
@@ -167,6 +164,12 @@ function PreviewFrame({ html, width }: { html: string; width: number }) {
       title="Email preview"
       sandbox="allow-same-origin"
       style={{ width }}
+      // Reads the frame off the event rather than off `frameRef`: React Compiler rejects writing
+      // through a ref that an effect above also reads.
+      onLoad={(event) => {
+        const doc = event.currentTarget.contentDocument;
+        if (doc) doc.documentElement.scrollTop = scrollTop.current;
+      }}
       className={cn(
         "h-144 max-w-full shrink-0 rounded-md border bg-white transition-[width] duration-200",
       )}
