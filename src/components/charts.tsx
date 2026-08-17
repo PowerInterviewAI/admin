@@ -26,8 +26,13 @@ interface TrendChartProps {
   format?: "number" | "usd";
 }
 
+/**
+ * The bucket is a calendar day, not an instant. `new Date("2026-08-17")` is parsed as UTC midnight
+ * and `toLocaleDateString` then renders it in local time, which lands on the day before anywhere
+ * west of Greenwich; appending a time makes it a local-time parse instead.
+ */
 const dateFormatter = (value: string) =>
-  new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  new Date(`${value}T00:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 
 export function TrendChart({
   data,

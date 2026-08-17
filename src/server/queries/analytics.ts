@@ -12,15 +12,40 @@ const MS_PER_DAY = 86_400_000;
 const RECENT_ACTIVITY_LIMIT = 20;
 
 /**
- * `created_at`/`updated_at` are unix-ms integers rather than BSON dates, so bucketing by day has
- * to go through `$toDate` inside `$dateToString`; `$dateTrunc` cannot read a raw number.
+ * Node reads `TZ` for both `Intl` and `Date`'s local-time methods, so this and `windowCutoff` can
+ * never disagree about where a day starts. Overriding the zone means setting `TZ`, not a new var.
  */
-function dayBucket(field: string): MongoDocument {
-  return { $dateToString: { format: "%Y-%m-%d", date: { $toDate: `$${field}` } } };
+function reportingTimeZone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 }
 
+/**
+ * `created_at`/`updated_at` are unix-ms integers rather than BSON dates, so bucketing by day has
+ * to go through `$toDate` inside `$dateToString`; `$dateTrunc` cannot read a raw number.
+ *
+ * `timezone` is not optional. Without it `$dateToString` buckets by UTC day, which west of
+ * Greenwich files an evening's activity under tomorrow - so an admin who signs a user up at 8pm
+ * sees the dashboard's rightmost point stay flat.
+ */
+function dayBucket(field: string): MongoDocument {
+  return {
+    $dateToString: {
+      format: "%Y-%m-%d",
+      date: { $toDate: `$${field}` },
+      timezone: reportingTimeZone(),
+    },
+  };
+}
+
+/**
+ * Local midnight, not a rolling 30x24h from now: the buckets are calendar days, so a cutoff partway
+ * through one makes the oldest point a partial day whose height depends on the hour you loaded the
+ * page. Counting back `DAYS - 1` keeps today in the window as the 30th day.
+ */
 function windowCutoff(): number {
-  return currentTimestampMs() - ANALYTICS_WINDOW_DAYS * MS_PER_DAY;
+  const startOfToday = new Date(currentTimestampMs());
+  startOfToday.setHours(0, 0, 0, 0);
+  return startOfToday.getTime() - (ANALYTICS_WINDOW_DAYS - 1) * MS_PER_DAY;
 }
 
 async function dailyCounts(

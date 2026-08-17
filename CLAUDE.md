@@ -97,6 +97,10 @@ BSON does not survive React's serialization boundary, so `toPlainJson` converts 
 
 The overview's eleven aggregations run in one `Promise.all`, so the dashboard costs the slowest query rather than their sum. Keep additions inside that array.
 
+**A day bucket is a calendar day in one zone, and both ends have to agree on which.** `$dateToString` defaults to UTC and `new Date("2026-08-17")` parses as UTC midnight, so the original pair shifted in opposite directions and did not cancel: in `America/New_York` an event at 10am was labelled a day early, one at 9pm was labelled correctly, and the same day's activity split across two ticks. The symptom is the dashboard's rightmost point staying flat while the stat cards and the activity table - which format raw unix-ms, and are therefore right - already show the change.
+
+Both halves of the fix are required, and either alone just moves which rows are wrong. `dayBucket` passes `timezone: reportingTimeZone()`, and `dateFormatter` in `src/components/charts.tsx` parses `` `${value}T00:00:00` `` so the string is read as a local date. The zone comes from `Intl.DateTimeFormat().resolvedOptions().timeZone` rather than a new env var, because Node derives both that and `Date`'s local-time methods from `TZ` - which is what keeps `windowCutoff`'s local midnight in the same zone as the buckets it bounds. Set `TZ` to move them together.
+
 ### URL state, not component state
 
 Filters, sort, and page for every list view live in the URL and are parsed server-side by a schema in `src/lib/search-params.ts`. A view is therefore linkable, and the back button steps through it.
