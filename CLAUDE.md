@@ -177,6 +177,14 @@ Reading `pending.current` from inside the updater instead is a bug that already 
 
 `srcdoc` is assigned imperatively rather than passed as a prop so the swap is not tied to React's commit of that element. Scroll survives it by stashing the offset before the swap and restoring it on `load`, which is what `sandbox="allow-same-origin"` is for; `allow-scripts` is deliberately not granted, so the raw author-written body cannot execute anything.
 
+### The campaign body is raw HTML, and `src/lib/email/body.ts` is what makes that survivable
+
+`normalizeEmailBody` runs **inside `renderEmailHtml`**, not at a call site, because that is what keeps the preview and the send byte-identical. It handles exactly one shape: a complete `<!doctype html>` document, which authors paste all the time out of a template tool. A browser parser silently discards a nested `<html>`/`<head>`/`<body>`, so without this the frame looks correct while the string handed to SMTP still carries the nesting - the preview lying about what a recipient receives is the one failure this whole isomorphic-renderer design exists to prevent.
+
+`inspectEmailBody` only describes; it never rewrites. An email body is hand-tuned HTML and quietly "fixing" it is a worse surprise than a wrong preview, so the composer renders the findings as non-blocking notes in the preview card and lets the admin decide. They are derived from the same debounced snapshot as `html`, so the scan costs one pass per typing burst.
+
+The tag-balance check tolerates HTML's optional end tags (`p`, `li`, `td`, `tr`, …) and skips comment contents, because `<p>one<p>two` and Outlook's `<!--[if mso]>` conditionals are both normal in email HTML and neither is a mistake. It is regex-based rather than DOM-based on purpose: `renderEmailHtml` runs in the browser and in Node, and Node has no `DOMParser`.
+
 ### Server/client boundary
 
 `src/server/**` imports `server-only`, so leaking it into a client component is a build error rather than a runtime surprise.

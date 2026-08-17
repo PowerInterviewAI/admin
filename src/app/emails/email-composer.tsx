@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { inspectEmailBody } from "@/lib/email/body";
 import {
   EMAIL_ACCENTS,
   EMAIL_TEMPLATE_HINTS,
@@ -566,12 +567,17 @@ function PreviewPane({
     [appName, message.subject, message.body, template, year],
   );
 
+  // Derived from the same debounced snapshot as `html`, so scanning the body costs one pass per
+  // typing burst rather than one per keystroke.
+  const warnings = useMemo(() => inspectEmailBody(message.body), [message.body]);
+
   return (
     <EmailPreview
       html={html}
       subject={message.subject}
       fromName={fromName}
       fromAddress={fromAddress}
+      warnings={warnings}
     />
   );
 }

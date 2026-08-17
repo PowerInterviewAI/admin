@@ -11,6 +11,7 @@
  * the same function, so what an admin approves is byte-for-byte what leaves the SMTP server.
  */
 
+import { normalizeEmailBody } from "@/lib/email/body";
 import type { EmailTemplate } from "@/lib/schemas/email";
 
 /** Paints the card's 3px top border. One value per severity template, matching the `accent` block. */
@@ -37,7 +38,10 @@ export interface RenderEmailOptions {
   /** Recipient's display name. Rendered escaped into `Hi {name},`. */
   name: string;
   subject: string;
-  /** Raw HTML fragment. Injected unescaped, exactly as Jinja's `| safe` does. */
+  /**
+   * Raw HTML fragment. Injected unescaped, exactly as Jinja's `| safe` does, after
+   * `normalizeEmailBody` unwraps a complete document down to a fragment.
+   */
   body: string;
   template: EmailTemplate;
   /** Copyright year in the footer. Passed in so a server render and a client preview agree. */
@@ -76,6 +80,11 @@ export function renderEmailHtml({
   const safeTitle = escapeHtml(subject || appName);
   const safeAppName = escapeHtml(appName);
   const safeName = escapeHtml(name || "there");
+  // The only rewrite this function performs, and it happens here rather than at a call site so the
+  // preview and the send cannot end up with different strings. A pasted document is the one body
+  // shape where the two would otherwise disagree: an HTML parser drops a nested `<html>`/`<body>`
+  // without complaint, so the frame looks right while SMTP still receives the nesting.
+  const fragment = normalizeEmailBody(body);
 
   return `<!doctype html>
 <html lang="en">
@@ -121,7 +130,7 @@ export function renderEmailHtml({
                             </p>
 
                             <div style="font-size: 14px; line-height: 1.6; color: #1f2328;">
-                                ${body}
+                                ${fragment}
                             </div>
 
                             <p style="margin: 24px 0 0 0; font-size: 14px; line-height: 1.6; color: #1f2328;">

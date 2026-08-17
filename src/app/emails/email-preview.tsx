@@ -1,6 +1,6 @@
 "use client";
 
-import { Monitor, Smartphone } from "lucide-react";
+import { Monitor, Smartphone, TriangleAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import type { EmailBodyWarning } from "@/lib/email/body";
 import { PREVIEW_RECIPIENT_NAME } from "@/lib/email/template";
 import { cn } from "@/lib/utils";
 
@@ -28,9 +29,17 @@ interface EmailPreviewProps {
   subject: string;
   fromName: string;
   fromAddress: string;
+  /** What this frame renders more kindly than a real client will. See `lib/email/body.ts`. */
+  warnings: EmailBodyWarning[];
 }
 
-export function EmailPreview({ html, subject, fromName, fromAddress }: EmailPreviewProps) {
+export function EmailPreview({
+  html,
+  subject,
+  fromName,
+  fromAddress,
+  warnings,
+}: EmailPreviewProps) {
   const [viewport, setViewport] = useState<Viewport>("desktop");
 
   return (
@@ -75,6 +84,25 @@ export function EmailPreview({ html, subject, fromName, fromAddress }: EmailPrev
           <dt className="text-muted-foreground">Subject</dt>
           <dd className="truncate font-medium">{subject || "No subject yet"}</dd>
         </dl>
+
+        {warnings.length > 0 && (
+          <div className="mx-(--card-spacing) flex flex-col gap-2 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3">
+            <p className="flex items-center gap-2 text-xs font-medium">
+              <TriangleAlert className="size-3.5 shrink-0 text-amber-600" />
+              This frame is more forgiving than an inbox
+            </p>
+            <ul className="flex flex-col gap-1.5 text-xs text-muted-foreground">
+              {warnings.map((warning) => (
+                <li key={warning.code} className="flex gap-2">
+                  <span aria-hidden className="text-amber-600">
+                    &bull;
+                  </span>
+                  {warning.message}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         <div className="flex justify-center overflow-x-auto border-t bg-muted/40 p-4">
           <PreviewFrame html={html} width={VIEWPORT_WIDTH[viewport]} />
