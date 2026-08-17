@@ -23,12 +23,16 @@ Leave the `SMTP_*` values unset and `/emails` still composes and previews; only 
 
 ## Running
 
-One process, on `:3000`.
+One process, on `:13000` - a fixed port so it never collides with the marketing site (`../hero`, `:3000`).
 
 ```bash
 pnpm dev      # hot reload
 pnpm build && pnpm start   # production build
 ```
+
+On Windows, `run.bat` does the production path in one step: it checks for pnpm and
+`.env.local`, installs dependencies only if `node_modules` is absent, builds, then serves.
+Double-clicking it works from any folder.
 
 ## Lint, type-check
 

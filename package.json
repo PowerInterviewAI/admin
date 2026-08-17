@@ -4,9 +4,9 @@
   "private": true,
   "description": "Local admin dashboard for Power Interview AI - a Next.js app that reads and writes the product's MongoDB directly",
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -p 13000",
     "build": "next build",
-    "start": "next start",
+    "start": "next start -p 13000",
     "lint": "eslint",
     "typecheck": "tsc --noEmit"
   },

@@ -20,9 +20,9 @@ For Next.js specifically, the version-matched docs ship in the package: read `no
 
 ```bash
 pnpm install
-pnpm dev          # dev server on :3000, hot reload
+pnpm dev          # dev server on :13000, hot reload
 pnpm build        # production build (also type-checks the whole app)
-pnpm start        # serve the production build on :3000
+pnpm start        # serve the production build on :13000
 pnpm lint         # eslint
 pnpm typecheck    # tsc --noEmit
 ```
