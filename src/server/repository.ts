@@ -58,6 +58,12 @@ interface FindPageOptions<T> {
   sort?: Sort;
   offset?: number;
   limit: number;
+  /**
+   * Fields to exclude from the read. Only worth using for a field a list view never shows and a
+   * document can carry a lot of - an email campaign's per-recipient delivery log, say. The schema
+   * has to default the excluded field, since the key comes back absent rather than empty.
+   */
+  projection?: Document;
 }
 
 export async function findPage<T>({
@@ -67,13 +73,14 @@ export async function findPage<T>({
   sort,
   offset = 0,
   limit,
+  projection,
 }: FindPageOptions<T>): Promise<Page<T>> {
   const coll = getCollection(collection);
 
   // The page and its total are independent queries; awaiting them in sequence would double the
   // round trips for no reason.
   const [docs, total] = await Promise.all([
-    coll.find(filter, { sort, skip: offset, limit }).toArray(),
+    coll.find(filter, { sort, skip: offset, limit, projection }).toArray(),
     coll.countDocuments(filter),
   ]);
 
@@ -91,11 +98,25 @@ export async function findMany<T>({
   filter = {},
   sort,
   limit,
+  projection,
 }: Omit<FindPageOptions<T>, "offset">): Promise<T[]> {
   const docs = await getCollection(collection)
-    .find(filter, { sort, limit })
+    .find(filter, { sort, limit, projection })
     .toArray();
   return docs.map((doc) => parseDocument(schema, doc, collection));
+}
+
+export async function findOne<T>({
+  collection,
+  schema,
+  filter,
+}: {
+  collection: CollectionName;
+  schema: z.ZodType<T>;
+  filter: Filter<Document>;
+}): Promise<T | null> {
+  const doc = await getCollection(collection).findOne(filter);
+  return doc ? parseDocument(schema, doc, collection) : null;
 }
 
 export async function countBy(
@@ -148,6 +169,45 @@ export async function deleteById(
     if (result.deletedCount === 0) {
       throw notFound(what);
     }
+  } catch (error) {
+    throw describeWriteError(error, what);
+  }
+}
+
+/**
+ * Deletes everything matching `filter` and reports how many went. Unlike `deleteById`, matching
+ * nothing is a valid outcome, not a `not_found`: the callers here are clearing a set that is
+ * legitimately empty most of the time.
+ */
+export async function deleteMany(
+  collection: CollectionName,
+  filter: Filter<Document>,
+  what: string,
+): Promise<number> {
+  try {
+    const result = await getCollection(collection).deleteMany(filter);
+    return result.deletedCount;
+  } catch (error) {
+    throw describeWriteError(error, what);
+  }
+}
+
+/**
+ * Stamps the timestamps the way backend's `TimeStampedCRUDBase.create` does: `created_at` set,
+ * `updated_at` left null until something updates the document. Writing `updated_at` here instead
+ * would make a freshly inserted document sort as recently modified in every view that orders by it.
+ */
+export async function insertDocument(
+  collection: CollectionName,
+  doc: Document,
+  what: string,
+): Promise<void> {
+  try {
+    await getCollection(collection).insertOne({
+      ...doc,
+      created_at: currentTimestampMs(),
+      updated_at: null,
+    });
   } catch (error) {
     throw describeWriteError(error, what);
   }
