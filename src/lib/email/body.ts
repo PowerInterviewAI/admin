@@ -149,7 +149,12 @@ function findTagImbalance(html: string): TagImbalance | null {
   return unclosed ? { tag: unclosed, kind: "unclosed" } : null;
 }
 
-const RELATIVE_URL = /\b(?:href|src)\s*=\s*["'](?!(?:[a-z][a-z0-9+.-]*:|\/\/|#))([^"']*)["']/i;
+/**
+ * `+` rather than `*` on the capture: an empty `href=""` clears the lookahead and would otherwise
+ * be reported as `"" is a relative URL`, which names nothing an author can act on. Skipping the
+ * position lets the scan carry on to a later attribute that really is relative.
+ */
+const RELATIVE_URL = /\b(?:href|src)\s*=\s*["'](?!(?:[a-z][a-z0-9+.-]*:|\/\/|#))([^"']+)["']/i;
 
 /**
  * Describes everything about a body that the preview will render more kindly than a real inbox
