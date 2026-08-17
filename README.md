@@ -23,7 +23,7 @@ Leave the `SMTP_*` values unset and `/emails` still composes and previews; only 
 
 ## Running
 
-One process, on `:3000`.
+One process, on `:13000` - a fixed port so it never collides with the marketing site (`../hero`, `:3000`).
 
 ```bash
 pnpm dev      # hot reload
