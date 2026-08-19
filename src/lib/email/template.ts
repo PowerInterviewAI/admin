@@ -146,7 +146,7 @@ export function renderEmailHtml({
 
                             <p style="margin: 0 0 10px 0; font-size: 12px; line-height: 1.5; color: #59636e;">
                                 You are receiving this message because it relates to activity on your
-                                ${safeAppName} account. Need help? Reply to this email and our team will get back to
+                                ${safeAppName} account. Need help? Reach out to us and our team will get back to
                                 you.
                             </p>
 
