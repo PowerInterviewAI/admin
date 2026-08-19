@@ -4,7 +4,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { useMemo, useState } from "react";
 
 import { DataTable } from "@/components/data-table";
-import { DateFilter, FilterSelect } from "@/components/filters";
+import { DateFilter, FilterSelect, SearchInput } from "@/components/filters";
 import { Badge } from "@/components/ui/badge";
 import { useListParams } from "@/hooks/use-list-params";
 import { formatDate, titleCase } from "@/lib/format";
@@ -79,6 +79,13 @@ export function AuditLogsView({
   return (
     <>
       <div className="flex flex-wrap items-center gap-2 pb-4">
+        <SearchInput
+          label="Search by user"
+          placeholder="Search username or email..."
+          value={params.q}
+          onChange={(q) => setParams({ q }, { replace: true })}
+          className="max-w-xs"
+        />
         <FilterSelect
           label="Filter by event type"
           allLabel="All events"

@@ -67,6 +67,7 @@ export const emailCampaignsSearchParamsSchema = z.object({
 });
 
 export const auditLogsSearchParamsSchema = z.object({
+  q: z.string().optional().catch(undefined),
   event_type: auditEventTypeSchema.optional().catch(undefined),
   status: auditStatusSchema.optional().catch(undefined),
   user_id: z.string().optional().catch(undefined),
