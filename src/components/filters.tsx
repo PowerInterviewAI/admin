@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
 
 import { Input } from "@/components/ui/input";
 import {
@@ -83,12 +83,19 @@ export function SearchInput({
 }: SearchInputProps) {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Uncontrolled means `defaultValue` is only read on the first render, but Base UI reads it as a
+  // FieldControl default and warns when it changes identity afterwards - and it does change here:
+  // the debounced write puts the term in the URL, which comes straight back down as a new `value`.
+  // Latching it in state - never set again - keeps the prop stable and costs nothing, because what
+  // the box shows from then on is whatever was typed into it.
+  const [initialValue] = useState(() => value ?? "");
+
   return (
     <Input
       type="search"
       aria-label={label}
       placeholder={placeholder}
-      defaultValue={value ?? ""}
+      defaultValue={initialValue}
       className={className}
       onChange={(event) => {
         const next = event.target.value.trim();
