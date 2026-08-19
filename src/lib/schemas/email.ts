@@ -163,6 +163,18 @@ export function isCampaignInterrupted(
 }
 
 /**
+ * Whether a campaign's counters can still move, which is what every poller in the UI starts and
+ * stops on. An interrupted run is deliberately not live: its process is gone, so no amount of
+ * asking will ever change what it reports.
+ */
+export function isCampaignLive(campaign: {
+  status: EmailCampaignStatus;
+  interrupted: boolean;
+}): boolean {
+  return campaign.status === "sending" && !campaign.interrupted;
+}
+
+/**
  * A campaign as the tables receive it. `interrupted` is decided on the server rather than during
  * render, because it is a comparison against the current clock and a client re-deciding it during
  * hydration would be free to disagree with the markup it is hydrating.

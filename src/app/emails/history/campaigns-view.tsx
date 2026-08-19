@@ -1,12 +1,14 @@
 "use client";
 
 import type { ColumnDef } from "@tanstack/react-table";
-import { useMemo, useState, useTransition } from "react";
+import { useCallback, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { DataTable } from "@/components/data-table";
 import { FilterSelect } from "@/components/filters";
+import { CAMPAIGN_POLL_INTERVAL_MS, useLiveCampaigns } from "@/hooks/use-live-campaigns";
 import { useListParams } from "@/hooks/use-list-params";
+import { usePoll } from "@/hooks/use-poll";
 import { formatDate, formatNumber } from "@/lib/format";
 import type { Page } from "@/lib/schemas/common";
 import {
@@ -14,6 +16,7 @@ import {
   type EmailCampaign,
   type EmailCampaignRow,
   emailCampaignStatusSchema,
+  isCampaignLive,
 } from "@/lib/schemas/email";
 import {
   type EmailCampaignsSearchParams,
@@ -82,14 +85,26 @@ export function CampaignsView({
 }) {
   const { setParams, isPending } = useListParams(emailCampaignsSearchParamsSchema, params);
 
+  // Sending outlives the request that started it, so the rows this page was rendered with go stale
+  // on their own. Anything still running keeps its counters current here.
+  const rows = useLiveCampaigns(page.items);
+
   // The dialog opens from the row the table already has and fills in the delivery log when it
   // arrives, rather than making the admin wait on a round trip before anything appears.
-  const [selectedRow, setSelectedRow] = useState<EmailCampaignRow | null>(null);
+  const [selected, setSelected] = useState<EmailCampaignRow | null>(null);
   const [detail, setDetail] = useState<EmailCampaign | null>(null);
   const [isLoadingDetail, startLoadingDetail] = useTransition();
 
+  // The click captures a snapshot, but the dialog renders the live row where there still is one,
+  // so its badges move with the table's. The snapshot is the fallback for a row that left the page
+  // underneath an open dialog.
+  const selectedRow = useMemo(
+    () => (selected ? (rows.find((row) => row._id === selected._id) ?? selected) : null),
+    [rows, selected],
+  );
+
   const openCampaign = (row: EmailCampaignRow) => {
-    setSelectedRow(row);
+    setSelected(row);
     setDetail(null);
     startLoadingDetail(async () => {
       const result = await loadEmailCampaign(row._id);
@@ -102,9 +117,25 @@ export function CampaignsView({
   };
 
   const closeCampaign = () => {
-    setSelectedRow(null);
+    setSelected(null);
     setDetail(null);
   };
+
+  // The counters come from the table's poll, but the per-recipient list does not: it lives in the
+  // campaign document, which is the one read here. Reloaded outside `startLoadingDetail` so a
+  // refresh swaps the rows in place instead of replacing the open list with a skeleton, and only
+  // while the run is live - this is the app's one read that pulls a whole delivery log.
+  const reloadDetail = useCallback(async () => {
+    if (!selectedRow) return;
+    const result = await loadEmailCampaign(selectedRow._id);
+    if (result.ok) setDetail(result.data);
+  }, [selectedRow]);
+
+  usePoll(
+    selectedRow !== null && isCampaignLive(selectedRow),
+    CAMPAIGN_POLL_INTERVAL_MS,
+    reloadDetail,
+  );
 
   const pagination = useMemo(
     () => ({
@@ -141,7 +172,7 @@ export function CampaignsView({
 
       <DataTable
         columns={columns}
-        data={page.items}
+        data={rows}
         getRowId={(row) => row._id}
         onRowClick={openCampaign}
         emptyTitle="No campaigns yet"

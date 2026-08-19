@@ -12,7 +12,13 @@ import {
   emailTestSchema,
   isCampaignInterrupted,
 } from "@/lib/schemas/email";
-import { COLLECTIONS, currentTimestampMs, getCollection, toObjectId } from "@/server/db";
+import {
+  COLLECTIONS,
+  type Document,
+  currentTimestampMs,
+  getCollection,
+  toObjectId,
+} from "@/server/db";
 import { startCampaign } from "@/server/email/campaign-runner";
 import {
   type EmailConfig,
@@ -211,6 +217,36 @@ async function createCampaign(
   }
 }
 
+/** Counters and heartbeat only. The delivery log is the bulk of the document and no poller reads it. */
+const PROGRESS_PROJECTION = {
+  status: 1,
+  total: 1,
+  sent_count: 1,
+  failed_count: 1,
+  error: 1,
+  updated_at: 1,
+} as const;
+
+function toProgress(doc: Document, timeoutMs: number): EmailCampaignProgress {
+  const status = doc.status === "sending" || doc.status === "failed" ? doc.status : "completed";
+
+  return {
+    id: String(doc._id),
+    status,
+    // Reported so the poller has something terminal to stop on. A run whose process died stays
+    // `sending` in the database for good, so status alone would keep every open tab asking for as
+    // long as it stays open.
+    interrupted: isCampaignInterrupted(
+      { status, updated_at: typeof doc.updated_at === "number" ? doc.updated_at : null },
+      timeoutMs,
+    ),
+    total: Number(doc.total ?? 0),
+    sent_count: Number(doc.sent_count ?? 0),
+    failed_count: Number(doc.failed_count ?? 0),
+    error: typeof doc.error === "string" ? doc.error : null,
+  };
+}
+
 /** Polled by the composer while a run is in flight. Cheap: counters only, never the delivery log. */
 export async function getCampaignProgress(
   campaignId: string,
@@ -218,39 +254,42 @@ export async function getCampaignProgress(
   try {
     const doc = await getCollection(COLLECTIONS.emailCampaigns).findOne(
       { _id: toObjectId(campaignId) },
-      {
-        projection: {
-          status: 1,
-          total: 1,
-          sent_count: 1,
-          failed_count: 1,
-          error: 1,
-          updated_at: 1,
-        },
-      },
+      { projection: PROGRESS_PROJECTION },
     );
     if (!doc) throw notFound("campaign");
 
-    const status =
-      doc.status === "sending" || doc.status === "failed" ? doc.status : "completed";
-
-    return succeeded({
-      id: campaignId,
-      status,
-      // Reported so the poller has something terminal to stop on. A run whose process died stays
-      // `sending` in the database for good, so status alone would keep the composer asking every
-      // 1.5s for the entire life of the tab.
-      interrupted: isCampaignInterrupted(
-        { status, updated_at: typeof doc.updated_at === "number" ? doc.updated_at : null },
-        heartbeatTimeoutMs(),
-      ),
-      total: Number(doc.total ?? 0),
-      sent_count: Number(doc.sent_count ?? 0),
-      failed_count: Number(doc.failed_count ?? 0),
-      error: typeof doc.error === "string" ? doc.error : null,
-    });
+    return succeeded(toProgress(doc, heartbeatTimeoutMs()));
   } catch (error) {
     return failed(error instanceof AppError ? error.message : "Could not read this campaign");
+  }
+}
+
+/**
+ * The same counters for every run a list view currently shows as sending, in one round trip.
+ *
+ * The history table and the composer's recent-sends strip both render server-fetched rows that go
+ * stale the moment a background run advances; polling this and merging the result is what keeps
+ * their delivered counts moving without re-running the page's whole query every few seconds.
+ * Campaigns that vanished (deleted between renders) are simply absent from the result, which
+ * leaves the caller's server-rendered row in place rather than blanking it.
+ */
+export async function getCampaignsProgress(
+  campaignIds: string[],
+): Promise<ActionData<EmailCampaignProgress[]>> {
+  if (campaignIds.length === 0) return succeeded([]);
+
+  try {
+    const docs = await getCollection(COLLECTIONS.emailCampaigns)
+      .find(
+        { _id: { $in: campaignIds.map(toObjectId) } },
+        { projection: PROGRESS_PROJECTION },
+      )
+      .toArray();
+
+    const timeoutMs = heartbeatTimeoutMs();
+    return succeeded(docs.map((doc) => toProgress(doc, timeoutMs)));
+  } catch (error) {
+    return failed(error instanceof AppError ? error.message : "Could not read these campaigns");
   }
 }
 
