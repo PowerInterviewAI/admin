@@ -102,7 +102,7 @@ function CampaignBody({
   const shown = filter === "failed" ? failed : detail.recipients;
 
   return (
-    <Tabs defaultValue="recipients">
+    <Tabs defaultValue="recipients" className="min-w-0">
       <TabsList>
         <TabsTrigger value="recipients">Recipients</TabsTrigger>
         <TabsTrigger value="content">Content</TabsTrigger>
@@ -134,7 +134,7 @@ function CampaignBody({
       </TabsContent>
 
       <TabsContent value="content" className="pt-3">
-        <pre className="max-h-80 overflow-auto rounded-lg bg-muted p-3 text-xs whitespace-pre-wrap">
+        <pre className="max-h-80 overflow-auto rounded-lg bg-muted p-3 text-xs whitespace-pre-wrap break-words">
           {detail.body}
         </pre>
       </TabsContent>
