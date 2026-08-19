@@ -157,7 +157,16 @@ function ViewportButton({
  * restore. `allow-scripts` is deliberately withheld, so the raw author-written campaign body
  * cannot execute anything.
  */
-function PreviewFrame({ html, width }: { html: string; width: number }) {
+export function PreviewFrame({
+  html,
+  width,
+  className,
+}: {
+  html: string;
+  width: number;
+  /** Height override, for the shorter frame the campaign detail dialog has room for. */
+  className?: string;
+}) {
   const frameRef = useRef<HTMLIFrameElement>(null);
   const scrollTop = useRef(0);
 
@@ -183,6 +192,7 @@ function PreviewFrame({ html, width }: { html: string; width: number }) {
       }}
       className={cn(
         "h-144 max-w-full shrink-0 rounded-md border bg-white transition-[width] duration-200",
+        className,
       )}
     />
   );

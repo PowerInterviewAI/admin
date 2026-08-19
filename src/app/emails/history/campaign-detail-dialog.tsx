@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import {
@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PREVIEW_RECIPIENT_NAME, renderEmailHtml } from "@/lib/email/template";
 import { formatDate, formatNumber, titleCase } from "@/lib/format";
 import {
   EMAIL_AUDIENCE_LABELS,
@@ -21,6 +22,7 @@ import {
 } from "@/lib/schemas/email";
 
 import { CampaignStatusBadge } from "../campaign-status-badge";
+import { PreviewFrame } from "../email-preview";
 
 type DeliveryFilter = "all" | "failed";
 
@@ -30,6 +32,10 @@ interface CampaignDetailDialogProps {
   /** The same campaign with its delivery log, once the round trip finishes. */
   detail: EmailCampaign | null;
   isLoading: boolean;
+  /** Header and footer text of the email layout, for re-rendering what was sent. */
+  appName: string;
+  /** Footer year for a campaign with no recorded send date. Read on the server, never here. */
+  year: number;
   onClose: () => void;
 }
 
@@ -37,6 +43,8 @@ export function CampaignDetailDialog({
   campaign,
   detail,
   isLoading,
+  appName,
+  year,
   onClose,
 }: CampaignDetailDialogProps) {
   return (
@@ -72,7 +80,13 @@ export function CampaignDetailDialog({
             {campaign.error && <p className="text-sm text-destructive">{campaign.error}</p>}
 
             {/* Keyed by campaign so switching rows resets the tab and the filter. */}
-            <CampaignBody key={campaign._id} detail={detail} isLoading={isLoading} />
+            <CampaignBody
+              key={campaign._id}
+              detail={detail}
+              isLoading={isLoading}
+              appName={appName}
+              year={year}
+            />
           </>
         )}
       </DialogContent>
@@ -83,11 +97,35 @@ export function CampaignDetailDialog({
 function CampaignBody({
   detail,
   isLoading,
+  appName,
+  year,
 }: {
   detail: EmailCampaign | null;
   isLoading: boolean;
+  appName: string;
+  year: number;
 }) {
   const [filter, setFilter] = useState<DeliveryFilter>("all");
+
+  // What left the SMTP server, rebuilt from the stored fragment through the same renderer the send
+  // used. The greeting is the composer's stand-in rather than a real recipient's: every recipient
+  // got their own name, and picking whoever happens to sit first in the delivery log would show one
+  // arbitrary person's copy as if it were the campaign. The footer year comes from when the
+  // campaign was sent rather than from today, so an old campaign is not stamped with this year.
+  const html = useMemo(
+    () =>
+      detail
+        ? renderEmailHtml({
+            appName,
+            name: PREVIEW_RECIPIENT_NAME,
+            subject: detail.subject,
+            body: detail.body,
+            template: detail.template,
+            year: detail.created_at ? new Date(detail.created_at).getFullYear() : year,
+          })
+        : "",
+    [appName, detail, year],
+  );
 
   if (isLoading || !detail) {
     return (
@@ -105,7 +143,8 @@ function CampaignBody({
     <Tabs defaultValue="recipients" className="min-w-0">
       <TabsList>
         <TabsTrigger value="recipients">Recipients</TabsTrigger>
-        <TabsTrigger value="content">Content</TabsTrigger>
+        <TabsTrigger value="preview">Preview</TabsTrigger>
+        <TabsTrigger value="content">HTML</TabsTrigger>
       </TabsList>
 
       <TabsContent value="recipients" className="flex flex-col gap-2 pt-3">
@@ -130,6 +169,17 @@ function CampaignBody({
               ))}
             </ul>
           )}
+        </div>
+      </TabsContent>
+
+      <TabsContent value="preview" className="flex flex-col gap-2 pt-3">
+        <p className="text-xs text-muted-foreground">
+          Each recipient was addressed by their own name, shown as {PREVIEW_RECIPIENT_NAME} here.
+        </p>
+        <div className="flex justify-center overflow-x-auto rounded-lg border bg-muted/40 p-3">
+          {/* 640 shows the 560px card with its background gutter; `max-w-full` inside `PreviewFrame`
+              is what lets it fall back to the dialog's width. */}
+          <PreviewFrame html={html} width={640} className="h-96" />
         </div>
       </TabsContent>
 

@@ -79,9 +79,14 @@ const columns: ColumnDef<EmailCampaignRow, unknown>[] = [
 export function CampaignsView({
   params,
   page,
+  appName,
+  year,
 }: {
   params: EmailCampaignsSearchParams;
   page: Page<EmailCampaignRow>;
+  appName: string;
+  /** Read on the server so the preview's footer year is not a clock call during render. */
+  year: number;
 }) {
   const { setParams, isPending } = useListParams(emailCampaignsSearchParamsSchema, params);
 
@@ -186,6 +191,8 @@ export function CampaignsView({
         campaign={selectedRow}
         detail={detail}
         isLoading={isLoadingDetail}
+        appName={appName}
+        year={year}
         onClose={closeCampaign}
       />
     </>
