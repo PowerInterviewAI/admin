@@ -2,15 +2,12 @@ import "server-only";
 
 import type { Filter } from "mongodb";
 
+import { escapeRegExp } from "@/lib/regex";
 import type { Page } from "@/lib/schemas/common";
 import { type UserRow, userSchema } from "@/lib/schemas/user";
 import { PAGE_SIZE, type UsersSearchParams } from "@/lib/search-params";
 import { COLLECTIONS, type Document, getCollection, toObjectId } from "@/server/db";
 import { findPage } from "@/server/repository";
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
 
 /** Payment and session counts for a whole page of users, in two grouped queries rather than 2N. */
 async function getRelatedCounts(

@@ -2,6 +2,7 @@ import "server-only";
 
 import type { Filter } from "mongodb";
 
+import { escapeRegExp } from "@/lib/regex";
 import type { RecipientOption } from "@/lib/schemas/email";
 import { COLLECTIONS, type Document, getCollection, toObjectId } from "@/server/db";
 
@@ -23,10 +24,6 @@ const MAILABLE: Filter<Document> = {
   status: "active",
   email: { $type: "string", $ne: "" },
 };
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
 
 function toRecipient(doc: Document): EmailRecipient {
   return {
