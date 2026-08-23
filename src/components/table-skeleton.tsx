@@ -23,6 +23,12 @@ export function TablePageSkeleton({ columns, rows = 8, filters = 0 }: TablePageS
         </div>
       )}
 
+      {/* The export and column-visibility strip the table renders above itself. */}
+      <div className="flex items-center gap-2 pb-3">
+        <Skeleton className="h-8 w-28" />
+        <Skeleton className="ml-auto h-8 w-24" />
+      </div>
+
       <div className="rounded-lg border">
         <div className="flex items-center gap-4 border-b px-4 py-3">
           {Array.from({ length: columns }, (_, index) => (

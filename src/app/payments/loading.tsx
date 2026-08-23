@@ -1,5 +1,5 @@
 import { TablePageSkeleton } from "@/components/table-skeleton";
 
 export default function Loading() {
-  return <TablePageSkeleton columns={8} filters={2} />;
+  return <TablePageSkeleton columns={8} filters={6} />;
 }

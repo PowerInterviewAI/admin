@@ -5,14 +5,34 @@ import {
   type Header,
   type SortingState,
   type Updater,
+  type VisibilityState,
   flexRender,
   getCoreRowModel,
   useReactTable,
 } from "@tanstack/react-table";
-import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight } from "lucide-react";
-import { useMemo } from "react";
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  Columns3,
+} from "lucide-react";
+import { useMemo, useState } from "react";
 
+import { PageSizeSelect } from "@/components/filters";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import {
   Table,
@@ -31,6 +51,8 @@ export interface TablePagination {
   pageSize: number;
   total: number;
   onPageChange: (page: number) => void;
+  /** Omit to render a fixed page size with no selector. */
+  onPageSizeChange?: (pageSize: number) => void;
 }
 
 export interface TableSorting {
@@ -56,6 +78,12 @@ interface DataTableProps<T> {
    * query cannot order by would just return a confusingly ordered page.
    */
   sorting?: TableSorting;
+  /** Rendered on the left of the toolbar strip above the table (an export button, say). */
+  toolbar?: React.ReactNode;
+  /** Column ids hidden until an admin turns them on. Wide, rarely-needed columns belong here. */
+  defaultHiddenColumns?: string[];
+  /** Set false for tables with too few columns for hiding any to be useful. */
+  enableColumnToggle?: boolean;
 }
 
 function HeaderContent<T>({ header }: { header: Header<T, unknown> }) {
@@ -97,12 +125,22 @@ export function DataTable<T>({
   isPending,
   pagination,
   sorting,
+  toolbar,
+  defaultHiddenColumns,
+  enableColumnToggle = true,
 }: DataTableProps<T>) {
   // Sorting defaults to off per column, the inverse of TanStack's default, so a new column is
   // never accidentally sortable by a key the server does not accept.
   const resolvedColumns = useMemo(
     () => columns.map((column) => ({ enableSorting: false, ...column })),
     [columns],
+  );
+
+  // Column visibility is the one piece of table state that is *not* in the URL: it describes how
+  // this admin likes to look at the table, not which rows they are looking at, and putting it in
+  // the query string would make every shared link carry it.
+  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(() =>
+    Object.fromEntries((defaultHiddenColumns ?? []).map((id) => [id, false])),
   );
 
   const sortingState = useMemo<SortingState>(
@@ -121,7 +159,8 @@ export function DataTable<T>({
     // The list is always ordered by something, matching the query's `created_at desc` default.
     enableSortingRemoval: false,
     pageCount: pagination ? Math.max(1, Math.ceil(pagination.total / pagination.pageSize)) : 1,
-    state: { sorting: sortingState },
+    state: { sorting: sortingState, columnVisibility },
+    onColumnVisibilityChange: setColumnVisibility,
     onSortingChange: (updater: Updater<SortingState>) => {
       if (!sorting) return;
       const next = typeof updater === "function" ? updater(sortingState) : updater;
@@ -132,8 +171,56 @@ export function DataTable<T>({
     },
   });
 
+  const visibleColumnCount = table.getVisibleLeafColumns().length;
+  const showToolbar = !!toolbar || enableColumnToggle;
+
   return (
     <div className="flex flex-col gap-3">
+      {showToolbar && (
+        <div className="flex items-center gap-2">
+          {toolbar}
+          {enableColumnToggle && (
+            <div className="ml-auto">
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={<Button variant="outline" size="sm" aria-label="Toggle columns" />}
+                >
+                  <Columns3 data-icon="inline-start" />
+                  Columns
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-auto min-w-44">
+                  {/* The group is not decoration: `DropdownMenuLabel` is Base UI's
+                      `Menu.GroupLabel`, which throws "MenuGroupContext is missing" outside a
+                      `Menu.Group`. It labels the group for a screen reader, not the popup. */}
+                  <DropdownMenuGroup>
+                    <DropdownMenuLabel>Visible columns</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    {table.getAllLeafColumns().map((column) => {
+                      const header = column.columnDef.header;
+                      // Only columns with a real text header are offered. An action column has no
+                      // name to list, and hiding one would take away the row's only control.
+                      if (typeof header !== "string" || !header) return null;
+                      return (
+                        <DropdownMenuCheckboxItem
+                          key={column.id}
+                          checked={column.getIsVisible()}
+                          // The last visible column cannot be hidden: an empty table has no header
+                          // row to turn anything back on from.
+                          disabled={column.getIsVisible() && visibleColumnCount === 1}
+                          onCheckedChange={(checked) => column.toggleVisibility(checked)}
+                        >
+                          {header}
+                        </DropdownMenuCheckboxItem>
+                      );
+                    })}
+                  </DropdownMenuGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          )}
+        </div>
+      )}
+
       <div
         className={cn(
           "overflow-x-auto rounded-lg border transition-opacity",
@@ -156,7 +243,7 @@ export function DataTable<T>({
           <TableBody>
             {data.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={resolvedColumns.length} className="h-48 text-center">
+                <TableCell colSpan={visibleColumnCount} className="h-48 text-center">
                   <Empty>
                     <EmptyHeader>
                       <EmptyTitle>{emptyTitle}</EmptyTitle>
@@ -170,7 +257,22 @@ export function DataTable<T>({
                 <TableRow
                   key={row.id}
                   className={onRowClick ? "cursor-pointer hover:bg-muted/50" : undefined}
+                  // A click-only row is unreachable without a mouse. The row is not a native
+                  // control, so the keyboard affordance has to be spelled out.
+                  tabIndex={onRowClick ? 0 : undefined}
+                  role={onRowClick ? "button" : undefined}
                   onClick={onRowClick ? () => onRowClick(row.original) : undefined}
+                  onKeyDown={
+                    onRowClick
+                      ? (event) => {
+                          if (event.target !== event.currentTarget) return;
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            onRowClick(row.original);
+                          }
+                        }
+                      : undefined
+                  }
                 >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id}>
@@ -189,22 +291,40 @@ export function DataTable<T>({
   );
 }
 
-function TablePager({ page, pageSize, total, onPageChange }: TablePagination) {
+function TablePager({
+  page,
+  pageSize,
+  total,
+  onPageChange,
+  onPageSizeChange,
+}: TablePagination) {
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const rangeStart = total === 0 ? 0 : (page - 1) * pageSize + 1;
   const rangeEnd = Math.min(total, page * pageSize);
 
   return (
-    <div className="flex items-center justify-between text-sm text-muted-foreground">
-      <span>
-        {total > 0
-          ? `Showing ${formatNumber(rangeStart)}-${formatNumber(rangeEnd)} of ${formatNumber(total)}`
-          : "0 results"}
-      </span>
+    <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
+      <div className="flex items-center gap-3">
+        <span>
+          {total > 0
+            ? `Showing ${formatNumber(rangeStart)}-${formatNumber(rangeEnd)} of ${formatNumber(total)}`
+            : "0 results"}
+        </span>
+        {onPageSizeChange && <PageSizeSelect value={pageSize} onChange={onPageSizeChange} />}
+      </div>
       <div className="flex items-center gap-2">
         <span>
           Page {formatNumber(page)} of {formatNumber(pageCount)}
         </span>
+        <Button
+          variant="outline"
+          size="icon"
+          aria-label="First page"
+          disabled={page <= 1}
+          onClick={() => onPageChange(1)}
+        >
+          <ChevronsLeft />
+        </Button>
         <Button
           variant="outline"
           size="icon"
@@ -222,6 +342,15 @@ function TablePager({ page, pageSize, total, onPageChange }: TablePagination) {
           onClick={() => onPageChange(page + 1)}
         >
           <ChevronRight />
+        </Button>
+        <Button
+          variant="outline"
+          size="icon"
+          aria-label="Last page"
+          disabled={page >= pageCount}
+          onClick={() => onPageChange(pageCount)}
+        >
+          <ChevronsRight />
         </Button>
       </div>
     </div>

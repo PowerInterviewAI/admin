@@ -38,7 +38,11 @@ const columns: ColumnDef<AuditLog, unknown>[] = [
   },
 ];
 
-/** The dashboard's activity feed is a fixed slice of the newest events, so it has no pager. */
+/**
+ * The dashboard's activity feed is a fixed slice of the newest events, so it has no pager - and no
+ * column toggle either: four columns inside a card is not a table anyone needs to rearrange, and
+ * the control would sit above the card's own heading.
+ */
 export function RecentActivityTable({ entries }: { entries: AuditLog[] }) {
   return (
     <DataTable
@@ -47,6 +51,7 @@ export function RecentActivityTable({ entries }: { entries: AuditLog[] }) {
       getRowId={(row) => row._id}
       emptyTitle="No activity yet"
       emptyMessage="Nothing has been logged."
+      enableColumnToggle={false}
     />
   );
 }
