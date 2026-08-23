@@ -43,26 +43,32 @@ Five MongoDB collections owned by `../backend`, read/written here without any sc
 
 ### Analytics (`/`)
 
-All computed server-side from real documents (`src/server/queries/analytics.ts`), never from `global_state`, and issued as one parallel batch:
+All computed server-side from real documents (`src/server/queries/analytics.ts`), never from `global_state`, and issued as one parallel batch. The reporting window is selectable (7/30/90/180 days) and lives in the URL like every other view's state, so a particular reading of the numbers is linkable.
 
-- KPI cards: total users (+ admin count), lifetime revenue from `finished` payments, credits outstanding across all users, ASR sessions in the last 30 days
-- Signups per day and revenue per day (last 30 days), as trend charts
-- Users-by-role and payments-by-status distributions
+- KPI cards: total users (+ new in window), lifetime revenue from `finished` payments (+ revenue in window), credits outstanding, ASR sessions, active users (distinct accounts with any audit event in the window), paying users (+ conversion), revenue per paying user, and payment success rate
+- Trends over the window: signups per day, cumulative user total, revenue per day, and a three-series activity chart (logins, signups, ASR sessions)
+- Sign-in outcomes per day, stacked success against failure - the only place `status: "failure"` is visible in aggregate
+- Usage by hour of day, which the daily series structurally cannot answer
+- Distributions: users by role, users by status, payments by status, revenue by plan
 - Recent activity feed: latest 20 audit log entries
+
+Day buckets are dense: a day with no events is a zero rather than an absent row, so a quiet week renders as a flat line on the floor instead of a gentle slope between the days on either side.
 
 ### Users (`/users`)
 
-Search (username/email), filter by role and status, paginated table sortable by username, credits, or joined date. Row click opens an edit sheet: role, status, credits, username, email, and the user's interview configuration (full name, profile/CV, context) are all editable; the sheet also shows that user's payment and session counts, and has a delete action (destructive, confirmed via dialog).
+Search (username/email), filter by role, status, interview setup (whether the account has a name or CV - the product's activation signal), credit range, and joined date range. Paginated table sortable by username, email, credits, joined, or last updated, showing each account's payment and session counts. Row click opens an edit sheet: role, status, credits, username, email, and the user's interview configuration (full name, profile/CV, context) are all editable; the sheet links through to that user's payments, sessions, and audit log, and has a delete action (destructive, confirmed via dialog).
 
 The sheet also carries a **set-password** action, in its own dialog outside the edit form so it never rides along with an ordinary save. It overwrites `password_hash` without knowing the current password (which is what makes it an admin tool rather than a copy of backend's change-password endpoint), revokes every session that user holds, and records a `password_change` audit log entry. The hash is bcrypt in backend's exact format, so the user signs in through the normal login flow afterwards.
 
 ### Payments (`/payments`)
 
-Filter by status and plan, paginated table sortable by amount or created date, showing which user each payment belongs to. Row click opens an edit sheet for a manual `status`/`credits_applied` override - explicitly labeled as a support/manual tool, not a payment-provider action.
+Search by order id, NOWPayments id, purchase id, or buyer; filter by status, plan, whether credits were applied, USD amount range, and created date range. Paginated table sortable by status, amount, credits, created, or updated, showing which user each payment belongs to. Row click opens an edit sheet for a manual `status`/`credits_applied` override - explicitly labeled as a support/manual tool, not a payment-provider action.
 
 ### Sessions (`/sessions`)
 
-Paginated table of every active session across all users, sortable by start or last-active time, showing the account and device behind each one, with a revoke action (confirmed via dialog) that deletes the session document, forcing that device to re-authenticate.
+Paginated table of every session across all users, searchable by account and filterable by start date and by activity - active (seen in 24h), idle (1-7 days), or stale (7 days or more). Sortable by start or last-active time, showing the account and device behind each one, with a revoke action (confirmed via dialog) that deletes the session document, forcing that device to re-authenticate.
+
+The activity bucket is decided during the server render rather than in the cell, so a badge cannot disagree with the filter that selected it, and hydration cannot disagree with the markup it is hydrating.
 
 ### Email marketing (`/emails`)
 
@@ -85,11 +91,14 @@ A campaign whose Node process went away mid-send is shown as **Interrupted** rat
 
 ### Audit Logs (`/audit-logs`)
 
-Filterable (event type, status, date range) read-only table. Row click opens a dialog with the full record, including the raw `metadata` JSON.
+Read-only table, searchable by account and filterable by event type, status, IP address, and date range, ordered newest or oldest first. Row click opens a dialog with the full record, including the raw `metadata` JSON.
 
 ### Cross-cutting UI behaviour
 
-- Filters, sort, and page live in the URL: every view is linkable, and the back button steps through it
+- Filters, sort, and page live in the URL: every view is linkable, and the back button steps through it. A **Reset** control clears the filters while keeping sort order and page size, and carries a count of how many are currently narrowing the list
+- Rows per page is selectable (20/25/50/100/200) from an allowlist, and the pager offers first/last as well as next/previous
+- Columns can be hidden per table, in the browser rather than in the URL - it describes how one admin likes to read the table, not which rows they are reading, so a shared link should not carry it
+- **CSV export** on every list view, of the whole filtered result set rather than the page on screen (capped at 5,000 rows, and the toast says so when it truncates). Cells that would be read as spreadsheet formulas are neutralised on the way out
 - Light and dark themes, following the system preference by default with a toggle in the header
 - Every table distinguishes "no rows matched" from "the database could not be reached", the latter with a retry that re-runs the server render
 - Destructive actions (delete user, revoke session) and every campaign send go through a confirmation dialog

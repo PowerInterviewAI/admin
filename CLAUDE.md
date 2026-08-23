@@ -29,6 +29,14 @@ pnpm typecheck    # tsc --noEmit
 
 **Whenever you change anything under `src/`, run `pnpm build` before considering the change done** - `next build` type-checks the whole app and this project has already hit real bugs (see below) that only surfaced there, not in the editor.
 
+A build writes into the same `.next` a running `pnpm dev` is serving from, and the dev server then hands out a half-swapped manifest - the app dies with "Element type is invalid" until dev is restarted. `next.config.ts` reads `NEXT_DIST_DIR`, so a verification build can go somewhere harmless instead:
+
+```bash
+NEXT_DIST_DIR=.next-verify pnpm build   # safe to run while `pnpm dev` is up
+```
+
+Next rewrites `tsconfig.json` to add that directory's generated types, which is why both `.next/` and `.next-verify/` entries are in `include`. That file is tool-managed - leave what the build puts there. `.next-*/**` is in `eslint.config.mjs`'s ignore list for the same reason; without it `pnpm lint` reports ten thousand findings from generated output.
+
 ## Architecture
 
 One Next.js app. There is no separate API service: pages read MongoDB directly on the server and mutate it through server actions.
@@ -95,20 +103,34 @@ BSON does not survive React's serialization boundary, so `toPlainJson` converts 
 
 `src/server/queries/analytics.ts` computes everything from real documents - `created_at`/`updated_at` are unix-ms ints (not BSON dates), so pipelines bucket by day via `{"$toDate": "$field"}` inside `$dateToString`, not `$dateTrunc`. **`global_state.active_sessions` is deliberately never surfaced anywhere in the dashboard** - it's `random.gauss(260, 10)` in `backend/app/services/ping_client_service.py`, not a real metric. If you're asked to add a "live active users" widget, don't wire it to that field; it isn't real data.
 
-The overview's eleven aggregations run in one `Promise.all`, so the dashboard costs the slowest query rather than their sum. Keep additions inside that array.
+The overview's aggregations all run in one `Promise.all`, so the dashboard costs the slowest query rather than their sum. Keep additions inside that array.
+
+The window is a parameter (`?days=`, an allowlist of 7/30/90/180), not a constant, which is also why `/` no longer needs `await connection()`: it reads `searchParams` and is dynamic for the same reason every other route is.
+
+**Day series are densified before they leave the query.** A day with no events comes back absent from a `$group`, not as a zero. Left sparse, an area chart draws a straight line from the day before to the day after and the x-axis spaces its ticks by row rather than by date, so a quiet week renders as a gentle slope instead of a flat line on the floor. `densify` in `analytics.ts` fills every calendar day in the window; `windowDays` steps with `setDate` rather than adding 86,400,000ms, because across a DST change a day is 23 or 25 hours long and fixed-millisecond arithmetic eventually emits one day twice and skips another.
+
+The cumulative-users curve is seeded with `countDocuments({ created_at: { $lt: cutoff } })`. Without that baseline it would start at zero and read as if the product launched at the left edge of the window.
 
 **A day bucket is a calendar day in one zone, and both ends have to agree on which.** `$dateToString` defaults to UTC and `new Date("2026-08-17")` parses as UTC midnight, so the original pair shifted in opposite directions and did not cancel: in `America/New_York` an event at 10am was labelled a day early, one at 9pm was labelled correctly, and the same day's activity split across two ticks. The symptom is the dashboard's rightmost point staying flat while the stat cards and the activity table - which format raw unix-ms, and are therefore right - already show the change.
 
 Both halves of the fix are required, and either alone just moves which rows are wrong. `dayBucket` passes `timezone: reportingTimeZone()`, and `dateFormatter` in `src/components/charts.tsx` parses `` `${value}T00:00:00` `` so the string is read as a local date. The zone comes from `Intl.DateTimeFormat().resolvedOptions().timeZone` rather than a new env var, because Node derives both that and `Date`'s local-time methods from `TZ` - which is what keeps `windowCutoff`'s local midnight in the same zone as the buckets it bounds. Set `TZ` to move them together.
 
+`reportingTimeZone` lives in `src/server/queries/time.ts` alongside `dayRangeMs`, which is the same rule applied to a `from`/`to` filter. That one had the bug the other way round: it parsed `` `${from}T00:00:00.000Z` `` - UTC midnight, which west of Greenwich is the afternoon of the day before - so a date filter and a chart bucket disagreed about which day a row belonged to. The offset-less form is a local-time parse, which is the zone the buckets group by.
+
+`dayRangeMs` also rejects a date that matches `YYYY-MM-DD` and does not exist. JavaScript does not: `new Date("2026-02-31T00:00:00")` rolls over to 3 March, so a hand-edited URL would get a confident answer to a question nobody asked. Checking that the parsed date reports back the same calendar day is what turns that into "ignore this filter", which is how every other stale param degrades.
+
 ### URL state, not component state
 
 Filters, sort, and page for every list view live in the URL and are parsed server-side by a schema in `src/lib/search-params.ts`. A view is therefore linkable, and the back button steps through it.
 
-- Every field is `.catch()`ed, so a hand-edited or stale URL degrades to the default instead of throwing a parse error at an admin.
+- Every field is `.catch()`ed, so a hand-edited or stale URL degrades to the default instead of throwing a parse error at an admin. `user_id` is validated as a 24-character hex id for that reason and not only for tidiness: `toObjectId` *throws*, so a truncated link used to render the error boundary - "Invalid id" over a table that had nothing wrong with it. A well-formed id that matches nothing still shows an empty table, which is the right answer.
 - `sort_by` is an allowlist of real fields, not a raw Mongo field name. Offering a sort on a field the collection cannot usefully order by just produces a confusing result set.
 - `useListParams` resets `page` to 1 on any change other than an explicit page jump: page 3 of the old filter is not page 3 of the new one.
-- Writes go through `startTransition`, so the current rows stay on screen and dim (`isPending`) instead of being replaced by a skeleton. The search box writes with `replace` so typing does not fill the back stack - which is also why it can be uncontrolled, sidestepping an effect-based resync that this project's eslint config rejects (`react-hooks/set-state-in-effect`).
+- Writes go through `startTransition`, so the current rows stay on screen and dim (`isPending`) instead of being replaced by a skeleton. The search box writes with `replace` so typing does not fill the back stack - which is also why it can be uncontrolled, sidestepping an effect-based resync that this project's eslint config rejects (`react-hooks/set-state-in-effect`). `NumberRangeFilter` is uncontrolled for the same reason, and debounced for a second one: a number typed digit by digit would navigate once per keystroke, and `1` on the way to `150` is a filter that matches almost nothing.
+- `per_page` is an allowlist (`PAGE_SIZE_OPTIONS`), not a free integer. It goes straight into a Mongo `limit`, and `?per_page=100000` against a collection this app renders whole is a denial of service on the admin's own browser.
+- **Filters go into `$and`, not onto the filter object.** Two of them are each an `$or` (a search term, and the users view's `configured`), and a second assignment to `filter.$or` silently replaces the first - dropping the search while still looking like it applied. Every list query builds an `and: Document[]` and assigns once.
+- `useListParams` returns `resetFilters` and `activeFilterCount` alongside `setParams`. Reset navigates to a *replacement* params object (`withoutFilters`) rather than patching `setParams` with a bag of `undefined`s, which `buildQueryString` could not tell apart from "never set". It keeps sort order and page size - an admin who chose 100 rows wants that to survive clearing a search box - but drops `page`, because page 5 of the filtered list is not page 5 of the unfiltered one.
+- **Column visibility is deliberately *not* in the URL.** It describes how one admin likes to read a table, not which rows they are reading, so putting it in the query string would make every shared link carry it.
 
 ### One table component
 
@@ -116,6 +138,25 @@ Filters, sort, and page for every list view live in the URL and are parsed serve
 
 1. **Sorting is off per column by default** and a column opts in with `enableSorting: true`. That is the inverse of TanStack's default, and it exists so a new column is never accidentally sortable by a key the query does not accept.
 2. `manualPagination`/`manualSorting` are always on. The table never sorts or slices in the browser; it renders the page the server produced.
+3. A clickable row is not a native control, so the keyboard affordance is spelled out: `tabIndex`, `role="button"`, and an Enter/Space handler that ignores events bubbling up from a control inside the row (`event.target !== event.currentTarget`). Without that guard, revoking a session from the row's own button would also open the row.
+
+Only columns with a plain-string `header` are offered in the Columns menu - an action column has no name to list, and hiding one would take away the row's only control. The last visible column cannot be hidden either: an empty table has no header row to turn anything back on from. Pass `enableColumnToggle={false}` where the control makes no sense (the dashboard's activity feed, which is four columns inside a card).
+
+### Exports serialize the query, not the page
+
+`src/server/actions/exports.ts` re-runs each list query with `page: 1, per_page: EXPORT_LIMIT` and serializes the result. Serializing the rows already in the browser would have been less code and the wrong feature: an admin exporting "failed payments this month" wants all of them, and would have no way to tell they got the first twenty. The result carries `rows` and `truncated` so the toast can say when the cap cut the file short, rather than handing over a partial export silently.
+
+**`csvCell` neutralises formulas, and that is not decoration.** Every string in these files came out of the database and most of it was typed by a user - a username, an email, a user agent. A cell starting `=`, `+`, `-`, `@`, or a leading tab/CR is executed as a formula when the file is opened in Excel or Sheets, which turns "export the user list" into running whatever a signup form was willing to accept. The apostrophe prefix is what a spreadsheet reads as "this is text".
+
+`CSV_BOM` is built with `String.fromCharCode(0xfeff)` rather than written literally: without it Excel reads the bytes in the system codepage and every non-ASCII name arrives mojibaked, and a zero-width character sitting in source is invisible to review.
+
+These actions are reachable by direct POST like every other action here (see "No authentication" above). If this app ever stops being local-only they need an authorization check first - they are the ones that hand over the whole user table in a single call.
+
+### Session activity is decided on the server
+
+`SessionRow.activity` and `last_active_at` are computed during the server render, not derived in the cell, for the same reason `EmailCampaignRow.interrupted` is: they compare against the current clock, and a client recomputing them during hydration would be free to disagree with the markup it is hydrating. One `now` is taken for the whole page, so two rows a millisecond apart cannot land in different buckets.
+
+`src/lib/session-activity.ts` holds the thresholds and the classifier, and `queries/sessions.ts` expresses the same rule for the query engine. Both read "last seen" as `updated_at ?? created_at` - the query through `$expr` with `$ifNull`, which is why that filter cannot use an index. `updated_at` starts null and stays null until the account's next authenticated request, so reading it alone would file every brand-new session as the oldest thing in the table. If you move a threshold, move it in the shared module; the badge and the filter that selected it must not be able to disagree.
 
 ### Errors: unreachable database vs no rows
 
@@ -206,7 +247,9 @@ Token colours are GitHub's palette in `globals.css` (`--code-*`, one set per the
 
 `src/server/**` imports `server-only`, so leaking it into a client component is a build error rather than a runtime surprise.
 
-Functions cannot cross the boundary. `TrendChart` takes `format="usd"` rather than a formatter function, and `DistributionChart` title-cases its keys itself, because both are rendered from server components.
+Functions cannot cross the boundary. `TrendChart` takes `format="usd"` rather than a formatter function, and `DistributionChart` title-cases its keys itself, because both are rendered from server components. The multi-series charts take a `ChartSeries[]` of `{ key, label, color }` strings for the same reason - the colour is a CSS variable name, not a resolved value, so `ChartStyle` can emit one pair of light/dark definitions per series.
+
+`MultiTrendChart` draws lines and `StackedDayChart` stacks bars, and which one a chart gets is a claim about the data. Login attempts split by outcome stack honestly: the column height is the day's total and the split is what happened to it. Logins, signups, and ASR sessions do not - stacking them would invite reading the top edge as a total that means nothing.
 
 ### shadcn/ui is not the CLI you remember
 
@@ -227,9 +270,11 @@ This app was scaffolded with a current-generation `shadcn` CLI (v4.18+) that dif
 
 `globals.css` maps Tailwind's font theme keys to the `next/font` CSS variables inside `@theme inline` (`--font-sans: var(--font-inter), ...`). The `inline` option is load-bearing: the `next/font` variables are declared on `<html>` via the font loader's `className`, which is below the scope where a plain `@theme` would emit `--font-sans`, so utilities have to inline the *value* rather than reference the theme variable. This was previously written as `--font-sans: var(--font-sans)` - self-referential, so `font-sans` resolved to nothing and the whole app silently fell back to the browser default font while still loading and self-hosting the webfont. If you swap the font family, change the name in **both** `layout.tsx` (`variable:`) and `globals.css`, and confirm with `grep -o 'html{[^}]*}' .next/static/chunks/*.css` after `pnpm build` that the rule names the font variable you expect.
 
-### The dashboard needs `connection()`
+### Prerendering against a database that is not running
 
-`/` takes no search params, so without an explicit request dependency Next would try to prerender it at build time, against a database that is not running during the build. `await connection()` at the top of the page opts it out. Every other route reads `searchParams` and is dynamic already.
+Next tries to prerender any route with no request dependency, at build time, against a database that is not up. Reading `searchParams` is such a dependency, and every route here does - including `/`, since the dashboard's reporting window became a URL parameter. `/emails` is the exception: it reads no search params, so it still needs `await connection()`, without which Next would prerender it and bake in whatever `SMTP_*` values the build environment happened to have.
+
+`/` used to need the same call and no longer does. If you ever make the dashboard's window a constant again, put `await connection()` back.
 
 ### `mongodb+srv://` and `src/server/dns.ts`
 
