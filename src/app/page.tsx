@@ -1,29 +1,65 @@
-import { Activity, Coins, Users, Wallet } from "lucide-react";
-import { connection } from "next/server";
+import { Activity, CheckCircle2, Coins, CreditCard, TrendingUp, UserCheck, Users, Wallet } from "lucide-react";
 
-import { DistributionChart, TrendChart } from "@/components/charts";
+import {
+  DistributionChart,
+  HourHistogram,
+  MultiTrendChart,
+  StackedDayChart,
+  TrendChart,
+} from "@/components/charts";
 import { PageHeader } from "@/components/page-header";
 import { StatCard } from "@/components/stat-card";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { formatNumber, formatUsd } from "@/lib/format";
-import { ANALYTICS_WINDOW_DAYS, getAnalyticsOverview } from "@/server/queries/analytics";
+import { dashboardSearchParamsSchema, parseSearchParams } from "@/lib/search-params";
+import { getAnalyticsOverview } from "@/server/queries/analytics";
 
+import { RangeSelect } from "./range-select";
 import { RecentActivityTable } from "./recent-activity-table";
 
-export default async function DashboardPage() {
-  // This route takes no search params, so without an explicit request dependency Next would try
-  // to prerender it at build time - against a database that is not running during the build.
-  await connection();
+const ACTIVITY_SERIES = [
+  { key: "logins", label: "Logins", color: "var(--chart-1)" },
+  { key: "signups", label: "Signups", color: "var(--chart-2)" },
+  { key: "asr", label: "ASR sessions", color: "var(--chart-3)" },
+];
 
-  const data = await getAnalyticsOverview();
+const OUTCOME_SERIES = [
+  { key: "failure", label: "Failed", color: "var(--chart-5)" },
+  { key: "success", label: "Succeeded", color: "var(--chart-2)" },
+];
+
+function formatPercent(ratio: number): string {
+  return `${(ratio * 100).toFixed(ratio >= 0.1 ? 0 : 1)}%`;
+}
+
+export default async function DashboardPage({ searchParams }: PageProps<"/">) {
+  const { days } = parseSearchParams(dashboardSearchParamsSchema, await searchParams);
+  const data = await getAnalyticsOverview(days);
+
   const asrSessions = data.activity.asr_sessions_per_day.reduce((sum, day) => sum + day.count, 0);
+  const window = `last ${days} days`;
+
+  // Joined on the date rather than by index. The three series are each densified over the same
+  // window so they do line up today, but that is an invariant of a helper three awaits away - a
+  // silently misaligned chart is not something the shape of this code should be able to produce.
+  const signupsByDate = new Map(data.activity.signups_per_day.map((day) => [day.date, day.count]));
+  const asrByDate = new Map(data.activity.asr_sessions_per_day.map((day) => [day.date, day.count]));
+  const activitySeries = data.activity.logins_per_day.map((day) => ({
+    date: day.date,
+    logins: day.count,
+    signups: signupsByDate.get(day.date) ?? 0,
+    asr: asrByDate.get(day.date) ?? 0,
+  }));
+
+  const conversion = data.users.total > 0 ? data.revenue.paying_users / data.users.total : 0;
 
   return (
     <div className="flex flex-col">
       <PageHeader
         title="Dashboard"
         description="Real usage and revenue data, read directly from the Power Interview AI database."
+        actions={<RangeSelect value={days} />}
       />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -31,13 +67,13 @@ export default async function DashboardPage() {
           label="Total Users"
           value={formatNumber(data.users.total)}
           icon={Users}
-          hint={`${formatNumber(data.users.by_role.admin ?? 0)} admins`}
+          hint={`${formatNumber(data.users.new_in_window)} new in the ${window}`}
         />
         <StatCard
           label="Revenue (finished)"
           value={formatUsd(data.revenue.total_usd)}
           icon={Wallet}
-          hint="Lifetime, status = finished"
+          hint={`${formatUsd(data.revenue.window_usd)} in the ${window}`}
         />
         <StatCard
           label="Credits Outstanding"
@@ -46,18 +82,42 @@ export default async function DashboardPage() {
           hint="Sum across all users"
         />
         <StatCard
-          label={`ASR Sessions (${ANALYTICS_WINDOW_DAYS}d)`}
+          label="ASR Sessions"
           value={formatNumber(asrSessions)}
           icon={Activity}
-          hint={`asr_start events, last ${ANALYTICS_WINDOW_DAYS} days`}
+          hint={`asr_start events, ${window}`}
+        />
+        <StatCard
+          label="Active Users"
+          value={formatNumber(data.activity.active_users)}
+          icon={UserCheck}
+          hint={`Distinct accounts with any event, ${window}`}
+        />
+        <StatCard
+          label="Paying Users"
+          value={formatNumber(data.revenue.paying_users)}
+          icon={CreditCard}
+          hint={`${formatPercent(conversion)} of all accounts`}
+        />
+        <StatCard
+          label="Revenue per Payer"
+          value={formatUsd(data.revenue.avg_per_paying_user)}
+          icon={TrendingUp}
+          hint="Lifetime, across paying accounts"
+        />
+        <StatCard
+          label="Payment Success"
+          value={formatPercent(data.revenue.success_rate)}
+          icon={CheckCircle2}
+          hint="Finished, as a share of every payment"
         />
       </div>
 
       <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <ChartCard
           title="Signups"
-          description={`New users per day, last ${ANALYTICS_WINDOW_DAYS} days`}
-          isEmpty={data.users.signups_per_day.length === 0}
+          description={`New users per day, ${window}`}
+          isEmpty={data.users.new_in_window === 0}
         >
           <TrendChart
             data={data.users.signups_per_day.map((day) => ({ date: day.date, value: day.count }))}
@@ -67,9 +127,24 @@ export default async function DashboardPage() {
         </ChartCard>
 
         <ChartCard
+          title="Total users"
+          description={`Running total, ${window}`}
+          isEmpty={data.users.total === 0}
+        >
+          <TrendChart
+            data={data.users.cumulative_per_day.map((day) => ({
+              date: day.date,
+              value: day.count,
+            }))}
+            label="Users"
+            color="var(--chart-3)"
+          />
+        </ChartCard>
+
+        <ChartCard
           title="Revenue"
-          description={`Finished payments per day, last ${ANALYTICS_WINDOW_DAYS} days`}
-          isEmpty={data.revenue.per_day.length === 0}
+          description={`Finished payments per day, ${window}`}
+          isEmpty={data.revenue.window_usd === 0}
         >
           <TrendChart
             data={data.revenue.per_day.map((day) => ({ date: day.date, value: day.amount }))}
@@ -77,6 +152,33 @@ export default async function DashboardPage() {
             color="var(--chart-2)"
             format="usd"
           />
+        </ChartCard>
+
+        <ChartCard
+          title="Activity"
+          description={`Logins, signups, and ASR sessions per day, ${window}`}
+          isEmpty={activitySeries.every((day) => !day.logins && !day.signups && !day.asr)}
+        >
+          <MultiTrendChart data={activitySeries} series={ACTIVITY_SERIES} />
+        </ChartCard>
+
+        <ChartCard
+          title="Sign-in outcomes"
+          description={`Login and signup attempts by result, ${window}`}
+          isEmpty={data.activity.logins_by_outcome.every((day) => !day.success && !day.failure)}
+        >
+          <StackedDayChart
+            data={data.activity.logins_by_outcome.map((day) => ({ ...day }))}
+            series={OUTCOME_SERIES}
+          />
+        </ChartCard>
+
+        <ChartCard
+          title="Usage by hour"
+          description={`Logins and ASR starts by hour of day, ${window}`}
+          isEmpty={data.activity.by_hour.every((hour) => hour.count === 0)}
+        >
+          <HourHistogram data={data.activity.by_hour} />
         </ChartCard>
 
         <ChartCard
@@ -88,11 +190,27 @@ export default async function DashboardPage() {
         </ChartCard>
 
         <ChartCard
+          title="Users by status"
+          description="Active against inactive accounts"
+          isEmpty={Object.keys(data.users.by_status).length === 0}
+        >
+          <DistributionChart data={data.users.by_status} />
+        </ChartCard>
+
+        <ChartCard
           title="Payments by status"
           description="All-time, every payment record"
           isEmpty={Object.keys(data.revenue.payments_by_status).length === 0}
         >
           <DistributionChart data={data.revenue.payments_by_status} />
+        </ChartCard>
+
+        <ChartCard
+          title="Revenue by plan"
+          description="All-time, finished payments only"
+          isEmpty={Object.keys(data.revenue.by_plan_usd).length === 0}
+        >
+          <DistributionChart data={data.revenue.by_plan_usd} format="usd" />
         </ChartCard>
       </div>
 
