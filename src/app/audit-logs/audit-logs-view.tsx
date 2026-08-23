@@ -4,21 +4,21 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { useMemo, useState } from "react";
 
 import { DataTable } from "@/components/data-table";
-import { DateFilter, FilterSelect, SearchInput } from "@/components/filters";
+import { ExportButton } from "@/components/export-button";
+import {
+  DateRangeFilter,
+  FilterBar,
+  FilterChip,
+  FilterSelect,
+  SearchInput,
+} from "@/components/filters";
 import { Badge } from "@/components/ui/badge";
 import { useListParams } from "@/hooks/use-list-params";
 import { formatDate, titleCase } from "@/lib/format";
-import {
-  AUDIT_EVENT_TYPES,
-  AUDIT_STATUSES,
-  type AuditLog,
-} from "@/lib/schemas/audit-log";
+import { AUDIT_EVENT_TYPES, AUDIT_STATUSES, type AuditLog } from "@/lib/schemas/audit-log";
 import type { Page } from "@/lib/schemas/common";
-import {
-  AUDIT_LOG_PAGE_SIZE,
-  type AuditLogsSearchParams,
-  auditLogsSearchParamsSchema,
-} from "@/lib/search-params";
+import { type AuditLogsSearchParams, auditLogsSearchParamsSchema } from "@/lib/search-params";
+import { exportAuditLogsCsv } from "@/server/actions/exports";
 
 import { AuditLogDialog } from "./audit-log-dialog";
 
@@ -48,11 +48,24 @@ const columns: ColumnDef<AuditLog, unknown>[] = [
     cell: ({ row }) => row.original.ip_address ?? "—",
   },
   {
+    accessorKey: "user_agent",
+    header: "Device",
+    cell: ({ row }) => (
+      <span className="block max-w-md truncate text-xs text-muted-foreground">
+        {row.original.user_agent ?? "—"}
+      </span>
+    ),
+  },
+  {
     accessorKey: "created_at",
     header: "When",
+    enableSorting: true,
     cell: ({ row }) => formatDate(row.original.created_at),
   },
 ];
+
+/** Long enough to push everything else off screen, and only wanted when chasing one device. */
+const HIDDEN_BY_DEFAULT = ["user_agent"];
 
 export function AuditLogsView({
   params,
@@ -61,7 +74,10 @@ export function AuditLogsView({
   params: AuditLogsSearchParams;
   page: Page<AuditLog>;
 }) {
-  const { setParams, isPending } = useListParams(auditLogsSearchParamsSchema, params);
+  const { setParams, resetFilters, activeFilterCount, isPending } = useListParams(
+    auditLogsSearchParamsSchema,
+    params,
+  );
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const selected = selectedId ? (page.items.find((log) => log._id === selectedId) ?? null) : null;
@@ -69,16 +85,34 @@ export function AuditLogsView({
   const pagination = useMemo(
     () => ({
       page: params.page,
-      pageSize: AUDIT_LOG_PAGE_SIZE,
+      pageSize: params.per_page,
       total: page.total,
       onPageChange: (next: number) => setParams({ page: next }),
+      onPageSizeChange: (next: number) => setParams({ per_page: next }),
     }),
-    [page.total, params.page, setParams],
+    [page.total, params.page, params.per_page, setParams],
+  );
+
+  // The only sortable key is `created_at`; the table still routes it through the URL so a link to
+  // "oldest first" survives being shared.
+  const sorting = useMemo(
+    () => ({
+      sortBy: "created_at",
+      sortDir: params.sort_dir,
+      onSortChange: (_sortBy: string, sortDir: "asc" | "desc") => setParams({ sort_dir: sortDir }),
+    }),
+    [params.sort_dir, setParams],
   );
 
   return (
     <>
-      <div className="flex flex-wrap items-center gap-2 pb-4">
+      <FilterBar activeCount={activeFilterCount} onReset={resetFilters}>
+        {params.user_id && (
+          <FilterChip
+            label={`One user: ${page.items[0]?.email ?? params.user_id}`}
+            onClear={() => setParams({ user_id: undefined })}
+          />
+        )}
         <SearchInput
           label="Search by user"
           placeholder="Search username or email..."
@@ -102,20 +136,19 @@ export function AuditLogsView({
           onChange={(status) => setParams({ status })}
           className="w-40"
         />
-        <DateFilter
-          label="From date"
-          value={params.from}
-          onChange={(from) => setParams({ from })}
-          className="w-40"
+        <SearchInput
+          label="Filter by IP address"
+          placeholder="IP address..."
+          value={params.ip}
+          onChange={(ip) => setParams({ ip }, { replace: true })}
+          className="w-44"
         />
-        <span className="text-sm text-muted-foreground">to</span>
-        <DateFilter
-          label="To date"
-          value={params.to}
-          onChange={(to) => setParams({ to })}
-          className="w-40"
+        <DateRangeFilter
+          from={params.from}
+          to={params.to}
+          onChange={({ from, to }) => setParams({ from, to })}
         />
-      </div>
+      </FilterBar>
 
       <DataTable
         columns={columns}
@@ -125,6 +158,9 @@ export function AuditLogsView({
         emptyMessage="No audit events match these filters."
         isPending={isPending}
         pagination={pagination}
+        sorting={sorting}
+        defaultHiddenColumns={HIDDEN_BY_DEFAULT}
+        toolbar={<ExportButton run={() => exportAuditLogsCsv(params)} />}
       />
 
       <AuditLogDialog log={selected} onClose={() => setSelectedId(null)} />

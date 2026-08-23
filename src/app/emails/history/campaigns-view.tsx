@@ -5,7 +5,7 @@ import { useCallback, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { DataTable } from "@/components/data-table";
-import { FilterSelect } from "@/components/filters";
+import { FilterBar, FilterSelect } from "@/components/filters";
 import { CAMPAIGN_POLL_INTERVAL_MS, useLiveCampaigns } from "@/hooks/use-live-campaigns";
 import { useListParams } from "@/hooks/use-list-params";
 import { usePoll } from "@/hooks/use-poll";
@@ -88,7 +88,10 @@ export function CampaignsView({
   /** Read on the server so the preview's footer year is not a clock call during render. */
   year: number;
 }) {
-  const { setParams, isPending } = useListParams(emailCampaignsSearchParamsSchema, params);
+  const { setParams, resetFilters, activeFilterCount, isPending } = useListParams(
+    emailCampaignsSearchParamsSchema,
+    params,
+  );
 
   // Sending outlives the request that started it, so the rows this page was rendered with go stale
   // on their own. Anything still running keeps its counters current here.
@@ -164,7 +167,7 @@ export function CampaignsView({
 
   return (
     <>
-      <div className="flex flex-wrap items-center gap-2 pb-4">
+      <FilterBar activeCount={activeFilterCount} onReset={resetFilters}>
         <FilterSelect
           label="Filter by status"
           allLabel="All statuses"
@@ -173,7 +176,7 @@ export function CampaignsView({
           onChange={(status) => setParams({ status })}
           className="w-44"
         />
-      </div>
+      </FilterBar>
 
       <DataTable
         columns={columns}

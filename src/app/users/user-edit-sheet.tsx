@@ -6,7 +6,7 @@ import { useState, useTransition } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
 
-import { Badge } from "@/components/ui/badge";
+import { RelatedLink } from "@/components/related-link";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -137,10 +137,17 @@ function UserEditForm({ user, onClose }: { user: UserRow; onClose: () => void })
       <div className="flex-1 overflow-y-auto px-4">
         <form id="user-edit-form" onSubmit={onSubmit}>
           <FieldGroup>
-            <div className="flex items-center gap-3 text-sm text-muted-foreground">
-              <Badge variant="outline">{formatNumber(user.payment_count)} payments</Badge>
-              <Badge variant="outline">{formatNumber(user.session_count)} sessions</Badge>
-              <span>Joined {formatDate(user.created_at)}</span>
+            <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+              <RelatedLink
+                href={`/payments?user_id=${user._id}`}
+                label={`${formatNumber(user.payment_count)} payments`}
+              />
+              <RelatedLink
+                href={`/sessions?user_id=${user._id}`}
+                label={`${formatNumber(user.session_count)} sessions`}
+              />
+              <RelatedLink href={`/audit-logs?user_id=${user._id}`} label="Audit log" />
+              <span className="ml-auto">Joined {formatDate(user.created_at)}</span>
             </div>
 
             <Field data-invalid={!!errors.username}>

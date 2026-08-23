@@ -5,6 +5,7 @@ import { useTransition } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
 
+import { RelatedLink } from "@/components/related-link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -94,6 +95,20 @@ function PaymentEditForm({ payment, onClose }: { payment: PaymentRow; onClose: (
               <InfoRow label="Created" value={formatDate(payment.created_at)} />
               <InfoRow label="Updated" value={formatDate(payment.updated_at)} />
             </div>
+
+            {payment.user && (
+              <div className="flex flex-wrap items-center gap-2">
+                <RelatedLink
+                  href={`/users?q=${encodeURIComponent(payment.user.email)}`}
+                  label={payment.user.username}
+                />
+                <RelatedLink
+                  href={`/payments?user_id=${payment.user_id}`}
+                  label="Their payments"
+                />
+                <RelatedLink href={`/audit-logs?user_id=${payment.user_id}`} label="Audit log" />
+              </div>
+            )}
 
             <Field>
               <FieldLabel htmlFor="status">Status</FieldLabel>

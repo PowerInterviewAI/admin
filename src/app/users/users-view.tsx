@@ -4,13 +4,25 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { useMemo, useState } from "react";
 
 import { DataTable } from "@/components/data-table";
-import { FilterSelect, SearchInput } from "@/components/filters";
+import { ExportButton } from "@/components/export-button";
+import {
+  DateRangeFilter,
+  FilterBar,
+  FilterSelect,
+  NumberRangeFilter,
+  SearchInput,
+} from "@/components/filters";
 import { Badge } from "@/components/ui/badge";
 import { useListParams } from "@/hooks/use-list-params";
 import { formatDate, formatNumber, titleCase } from "@/lib/format";
 import type { Page } from "@/lib/schemas/common";
 import { USER_ROLES, USER_STATUSES, type UserRole, type UserRow } from "@/lib/schemas/user";
-import { PAGE_SIZE, type UsersSearchParams, usersSearchParamsSchema } from "@/lib/search-params";
+import {
+  YES_NO_OPTIONS,
+  type UsersSearchParams,
+  usersSearchParamsSchema,
+} from "@/lib/search-params";
+import { exportUsersCsv } from "@/server/actions/exports";
 
 import { UserEditSheet } from "./user-edit-sheet";
 
@@ -19,6 +31,11 @@ const ROLE_BADGE_VARIANT: Record<UserRole, "default" | "secondary" | "outline"> 
   user: "secondary",
   trial_user: "outline",
 };
+
+/** The product's activation signal: an account with a name or a CV has been set up for a session. */
+function isConfigured(user: UserRow): boolean {
+  return !!(user.interview_config?.full_name || user.interview_config?.profile_data);
+}
 
 const columns: ColumnDef<UserRow, unknown>[] = [
   {
@@ -31,6 +48,12 @@ const columns: ColumnDef<UserRow, unknown>[] = [
         <span className="text-xs text-muted-foreground">{row.original.email}</span>
       </div>
     ),
+  },
+  {
+    accessorKey: "email",
+    header: "Email",
+    enableSorting: true,
+    cell: ({ row }) => <span className="text-sm">{row.original.email}</span>,
   },
   {
     accessorKey: "role",
@@ -49,10 +72,30 @@ const columns: ColumnDef<UserRow, unknown>[] = [
     ),
   },
   {
+    id: "configured",
+    header: "Setup",
+    cell: ({ row }) =>
+      isConfigured(row.original) ? (
+        <Badge variant="secondary">Ready</Badge>
+      ) : (
+        <Badge variant="outline">Empty</Badge>
+      ),
+  },
+  {
     accessorKey: "credits",
     header: "Credits",
     enableSorting: true,
     cell: ({ row }) => formatNumber(row.original.credits),
+  },
+  {
+    accessorKey: "payment_count",
+    header: "Payments",
+    cell: ({ row }) => formatNumber(row.original.payment_count),
+  },
+  {
+    accessorKey: "session_count",
+    header: "Sessions",
+    cell: ({ row }) => formatNumber(row.original.session_count),
   },
   {
     accessorKey: "created_at",
@@ -60,10 +103,22 @@ const columns: ColumnDef<UserRow, unknown>[] = [
     enableSorting: true,
     cell: ({ row }) => formatDate(row.original.created_at),
   },
+  {
+    accessorKey: "updated_at",
+    header: "Updated",
+    enableSorting: true,
+    cell: ({ row }) => formatDate(row.original.updated_at),
+  },
 ];
 
+/** Already shown inside the User cell, or rarely needed - available from the Columns menu. */
+const HIDDEN_BY_DEFAULT = ["email", "updated_at"];
+
 export function UsersView({ params, page }: { params: UsersSearchParams; page: Page<UserRow> }) {
-  const { setParams, isPending } = useListParams(usersSearchParamsSchema, params);
+  const { setParams, resetFilters, activeFilterCount, isPending } = useListParams(
+    usersSearchParamsSchema,
+    params,
+  );
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   // Derived from the current page rather than held in state, so a row edited through the sheet
@@ -73,11 +128,12 @@ export function UsersView({ params, page }: { params: UsersSearchParams; page: P
   const pagination = useMemo(
     () => ({
       page: params.page,
-      pageSize: PAGE_SIZE,
+      pageSize: params.per_page,
       total: page.total,
       onPageChange: (next: number) => setParams({ page: next }),
+      onPageSizeChange: (next: number) => setParams({ per_page: next }),
     }),
-    [page.total, params.page, setParams],
+    [page.total, params.page, params.per_page, setParams],
   );
 
   const sorting = useMemo(
@@ -92,7 +148,7 @@ export function UsersView({ params, page }: { params: UsersSearchParams; page: P
 
   return (
     <>
-      <div className="flex flex-wrap items-center gap-2 pb-4">
+      <FilterBar activeCount={activeFilterCount} onReset={resetFilters}>
         <SearchInput
           label="Search users"
           placeholder="Search username or email..."
@@ -116,7 +172,29 @@ export function UsersView({ params, page }: { params: UsersSearchParams; page: P
           onChange={(status) => setParams({ status })}
           className="w-40"
         />
-      </div>
+        <FilterSelect
+          label="Filter by interview setup"
+          allLabel="Any setup"
+          value={params.configured}
+          options={YES_NO_OPTIONS}
+          onChange={(configured) => setParams({ configured })}
+          formatOption={(value) => (value === "yes" ? "Set up" : "Not set up")}
+          className="w-40"
+        />
+        <NumberRangeFilter
+          label="Credits"
+          min={params.min_credits}
+          max={params.max_credits}
+          onChange={({ min, max }) => setParams({ min_credits: min, max_credits: max })}
+        />
+        <DateRangeFilter
+          fromLabel="Joined from"
+          toLabel="Joined to"
+          from={params.from}
+          to={params.to}
+          onChange={({ from, to }) => setParams({ from, to })}
+        />
+      </FilterBar>
 
       <DataTable
         columns={columns}
@@ -127,6 +205,8 @@ export function UsersView({ params, page }: { params: UsersSearchParams; page: P
         isPending={isPending}
         pagination={pagination}
         sorting={sorting}
+        defaultHiddenColumns={HIDDEN_BY_DEFAULT}
+        toolbar={<ExportButton run={() => exportUsersCsv(params)} />}
       />
 
       <UserEditSheet user={selected} onClose={() => setSelectedId(null)} />
