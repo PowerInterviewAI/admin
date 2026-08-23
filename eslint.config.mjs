@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Where `NEXT_DIST_DIR` sends a build run while `pnpm dev` holds `.next` (see next.config.ts).
+    // It is generated output, and linting it buries the real findings under ten thousand of its own.
+    ".next-*/**",
   ]),
 ]);
 

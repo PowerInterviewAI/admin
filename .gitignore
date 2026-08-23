@@ -10,6 +10,8 @@
 
 # next.js
 /.next/
+# NEXT_DIST_DIR target for a build run while `pnpm dev` holds `.next`
+/.next-verify/
 /out/
 /build
 
