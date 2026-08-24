@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 
 import { DataTable } from "@/components/data-table";
 import { ExportButton } from "@/components/export-button";
+import { FilterTabs } from "@/components/filter-tabs";
 import {
   DateRangeFilter,
   FilterBar,
@@ -17,6 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { UserCell } from "@/components/user-cell";
 import { useListParams } from "@/hooks/use-list-params";
 import { formatDate, formatUsd, titleCase } from "@/lib/format";
+import { PAYMENTS_TABS, type ListTabCounts } from "@/lib/list-tabs";
 import type { Page } from "@/lib/schemas/common";
 import {
   PAYMENT_PLANS,
@@ -126,9 +128,11 @@ const HIDDEN_BY_DEFAULT = ["pay_currency", "updated_at"];
 export function PaymentsView({
   params,
   page,
+  tabCounts,
 }: {
   params: PaymentsSearchParams;
   page: Page<PaymentRow>;
+  tabCounts: ListTabCounts;
 }) {
   const { setParams, resetFilters, activeFilterCount, isPending } = useListParams(
     paymentsSearchParamsSchema,
@@ -163,6 +167,13 @@ export function PaymentsView({
 
   return (
     <>
+      <FilterTabs
+        tabs={PAYMENTS_TABS}
+        params={params}
+        counts={tabCounts}
+        onSelect={(patch) => setParams(patch)}
+      />
+
       <FilterBar activeCount={activeFilterCount} onReset={resetFilters}>
         {params.user_id && (
           <FilterChip

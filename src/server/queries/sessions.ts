@@ -2,6 +2,8 @@ import "server-only";
 
 import type { Filter, Sort } from "mongodb";
 
+import { SESSIONS_TABS } from "@/lib/list-tabs";
+import type { SessionsSummary } from "@/lib/schemas/analytics";
 import type { Page } from "@/lib/schemas/common";
 import { type SessionRow, sessionSchema } from "@/lib/schemas/session";
 import type { SessionsSearchParams } from "@/lib/search-params";
@@ -12,7 +14,14 @@ import {
   classifySessionActivity,
   lastActiveAt,
 } from "@/lib/session-activity";
-import { COLLECTIONS, type Document, currentTimestampMs, toObjectId } from "@/server/db";
+import {
+  COLLECTIONS,
+  type Document,
+  currentTimestampMs,
+  getCollection,
+  toObjectId,
+} from "@/server/db";
+import { countDistinctSet, countListTabs, countWhere, summarize } from "@/server/queries/list-stats";
 import { getUserLabels } from "@/server/queries/user-labels";
 import { dayRangeMs } from "@/server/queries/time";
 import { findUserIdsMatching } from "@/server/queries/user-search";
@@ -23,20 +32,33 @@ import { findPage } from "@/server/repository";
  * `updated_at` when backend has touched the session, `created_at` otherwise. Keeping the two in
  * step is what stops the filter and the badge disagreeing about a session backend has not written
  * to since it was created - a real case, since `updated_at` starts null.
+ *
+ * A session with neither timestamp coalesces to null, and null sorts below every number in BSON, so
+ * it fails `$gte` and passes `$lt` - landing on "stale", which is what `classifySessionActivity`
+ * decides for the same row.
  */
-function lastActiveExpr(operator: "$gte" | "$lt", cutoff: number): Document {
-  return { $expr: { [operator]: [{ $ifNull: ["$updated_at", "$created_at"] }, cutoff] } };
+const LAST_SEEN: Document = { $ifNull: ["$updated_at", "$created_at"] };
+
+function seenExpr(operator: "$gte" | "$lt", cutoff: number): Document {
+  return { [operator]: [LAST_SEEN, cutoff] };
 }
 
-function activityClause(activity: SessionActivity): Document {
-  const now = currentTimestampMs();
+/**
+ * One activity bucket as a bare aggregation expression. The filter wraps it in `$expr` and the
+ * summary counts with it directly, so the tab, its count, and the badge on the row cannot drift.
+ */
+function activityExpr(activity: SessionActivity, now: number): Document {
   const activeCutoff = now - SESSION_ACTIVE_WINDOW_MS;
   const idleCutoff = now - SESSION_IDLE_WINDOW_MS;
 
-  if (activity === "active") return lastActiveExpr("$gte", activeCutoff);
-  if (activity === "stale") return lastActiveExpr("$lt", idleCutoff);
+  if (activity === "active") return seenExpr("$gte", activeCutoff);
+  if (activity === "stale") return seenExpr("$lt", idleCutoff);
 
-  return { $and: [lastActiveExpr("$gte", idleCutoff), lastActiveExpr("$lt", activeCutoff)] };
+  return { $and: [seenExpr("$gte", idleCutoff), seenExpr("$lt", activeCutoff)] };
+}
+
+function activityClause(activity: SessionActivity): Document {
+  return { $expr: activityExpr(activity, currentTimestampMs()) };
 }
 
 async function buildSessionsFilter(params: SessionsSearchParams): Promise<Filter<Document>> {
@@ -89,4 +111,36 @@ export async function listSessions(params: SessionsSearchParams): Promise<Page<S
       };
     }),
   };
+}
+
+export async function getSessionsSummary(params: SessionsSearchParams): Promise<SessionsSummary> {
+  // One clock for all three buckets, for the same reason the page takes one: two sessions a
+  // millisecond apart must not be counted against different cutoffs.
+  const now = currentTimestampMs();
+
+  return summarize<SessionsSummary>({
+    collection: COLLECTIONS.sessions,
+    filter: await buildSessionsFilter(params),
+    group: {
+      total: { $sum: 1 },
+      active: countWhere(activityExpr("active", now)),
+      idle: countWhere(activityExpr("idle", now)),
+      stale: countWhere(activityExpr("stale", now)),
+      user_ids: { $addToSet: "$user_id" },
+    },
+    project: {
+      total: 1,
+      active: 1,
+      idle: 1,
+      stale: 1,
+      users: countDistinctSet("user_ids"),
+    },
+    empty: { total: 0, active: 0, idle: 0, stale: 0, users: 0 },
+  });
+}
+
+export function countSessionsTabs(params: SessionsSearchParams) {
+  return countListTabs(SESSIONS_TABS, params, async (tab) =>
+    getCollection(COLLECTIONS.sessions).countDocuments(await buildSessionsFilter(tab)),
+  );
 }

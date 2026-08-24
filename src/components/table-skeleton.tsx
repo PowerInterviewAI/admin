@@ -4,16 +4,46 @@ interface TablePageSkeletonProps {
   columns: number;
   rows?: number;
   filters?: number;
+  /** How many quick-filter tabs sit above the filter row. Zero for a list that has none. */
+  tabs?: number;
+  /** The summary strip. Every list page has one; kept a prop so the shape stays describable. */
+  summary?: boolean;
 }
 
 /** Shape of a list page while its first render streams in, used as each route's loading fallback. */
-export function TablePageSkeleton({ columns, rows = 8, filters = 0 }: TablePageSkeletonProps) {
+export function TablePageSkeleton({
+  columns,
+  rows = 8,
+  filters = 0,
+  tabs = 0,
+  summary = true,
+}: TablePageSkeletonProps) {
   return (
     <div className="flex flex-col">
       <div className="flex flex-col gap-2 pb-6">
         <Skeleton className="h-8 w-48" />
         <Skeleton className="h-4 w-80" />
       </div>
+
+      {summary && (
+        <div className="mb-4 flex flex-wrap gap-px overflow-hidden rounded-lg border bg-border">
+          {Array.from({ length: 5 }, (_, index) => (
+            <div key={index} className="flex min-w-40 flex-1 flex-col gap-2 bg-card px-4 py-3">
+              <Skeleton className="h-3 w-24" />
+              <Skeleton className="h-6 w-16" />
+              <Skeleton className="h-3 w-20" />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {tabs > 0 && (
+        <div className="mb-4 flex w-fit items-center gap-1 rounded-lg bg-muted p-0.75">
+          {Array.from({ length: tabs }, (_, index) => (
+            <Skeleton key={index} className="h-6 w-20" />
+          ))}
+        </div>
+      )}
 
       {filters > 0 && (
         <div className="flex flex-wrap items-center gap-2 pb-4">

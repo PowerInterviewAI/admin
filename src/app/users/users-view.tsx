@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 
 import { DataTable } from "@/components/data-table";
 import { ExportButton } from "@/components/export-button";
+import { FilterTabs } from "@/components/filter-tabs";
 import {
   DateRangeFilter,
   FilterBar,
@@ -15,6 +16,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { useListParams } from "@/hooks/use-list-params";
 import { formatDate, formatNumber, titleCase } from "@/lib/format";
+import { USERS_TABS, type ListTabCounts } from "@/lib/list-tabs";
 import type { Page } from "@/lib/schemas/common";
 import { USER_ROLES, USER_STATUSES, type UserRole, type UserRow } from "@/lib/schemas/user";
 import {
@@ -114,7 +116,15 @@ const columns: ColumnDef<UserRow, unknown>[] = [
 /** Already shown inside the User cell, or rarely needed - available from the Columns menu. */
 const HIDDEN_BY_DEFAULT = ["email", "updated_at"];
 
-export function UsersView({ params, page }: { params: UsersSearchParams; page: Page<UserRow> }) {
+export function UsersView({
+  params,
+  page,
+  tabCounts,
+}: {
+  params: UsersSearchParams;
+  page: Page<UserRow>;
+  tabCounts: ListTabCounts;
+}) {
   const { setParams, resetFilters, activeFilterCount, isPending } = useListParams(
     usersSearchParamsSchema,
     params,
@@ -148,6 +158,13 @@ export function UsersView({ params, page }: { params: UsersSearchParams; page: P
 
   return (
     <>
+      <FilterTabs
+        tabs={USERS_TABS}
+        params={params}
+        counts={tabCounts}
+        onSelect={(patch) => setParams(patch)}
+      />
+
       <FilterBar activeCount={activeFilterCount} onReset={resetFilters}>
         <SearchInput
           label="Search users"

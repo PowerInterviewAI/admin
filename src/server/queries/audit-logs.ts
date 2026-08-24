@@ -2,11 +2,14 @@ import "server-only";
 
 import type { Filter, Sort } from "mongodb";
 
-import { type AuditLog, auditLogSchema } from "@/lib/schemas/audit-log";
+import { AUDIT_LOGS_TABS } from "@/lib/list-tabs";
+import type { AuditLogsSummary } from "@/lib/schemas/analytics";
+import { AUDIT_EVENT_GROUPS, type AuditLog, auditLogSchema } from "@/lib/schemas/audit-log";
 import type { Page } from "@/lib/schemas/common";
 import { escapeRegExp } from "@/lib/regex";
 import type { AuditLogsSearchParams } from "@/lib/search-params";
-import { type Document, COLLECTIONS, toObjectId } from "@/server/db";
+import { type Document, COLLECTIONS, getCollection, toObjectId } from "@/server/db";
+import { countDistinctSet, countListTabs, countWhere, summarize } from "@/server/queries/list-stats";
 import { dayRangeMs } from "@/server/queries/time";
 import { findUserIdsMatching } from "@/server/queries/user-search";
 import { findPage } from "@/server/repository";
@@ -37,6 +40,7 @@ async function buildAuditLogsFilter(
   const and: Document[] = [];
 
   if (params.event_type) and.push({ event_type: params.event_type });
+  if (params.group) and.push({ event_type: { $in: AUDIT_EVENT_GROUPS[params.group] } });
   if (params.status) and.push({ status: params.status });
   if (params.user_id) and.push({ user_id: toObjectId(params.user_id) });
   if (params.ip) and.push({ ip_address: new RegExp(escapeRegExp(params.ip), "i") });
@@ -61,4 +65,36 @@ export async function listAuditLogs(params: AuditLogsSearchParams): Promise<Page
     offset: (params.page - 1) * params.per_page,
     limit: params.per_page,
   });
+}
+
+export async function getAuditLogsSummary(
+  params: AuditLogsSearchParams,
+): Promise<AuditLogsSummary> {
+  return summarize<AuditLogsSummary>({
+    collection: COLLECTIONS.auditLogs,
+    filter: await buildAuditLogsFilter(params),
+    group: {
+      total: { $sum: 1 },
+      failures: countWhere({ $eq: ["$status", "failure"] }),
+      // `$max` over the filtered set rather than the newest row on screen, which is only the newest
+      // in the window when the table is sorted newest-first and sitting on page one.
+      latest: { $max: "$created_at" },
+      user_ids: { $addToSet: "$user_id" },
+      ip_addresses: { $addToSet: "$ip_address" },
+    },
+    project: {
+      total: 1,
+      failures: 1,
+      latest: 1,
+      users: countDistinctSet("user_ids"),
+      ips: countDistinctSet("ip_addresses"),
+    },
+    empty: { total: 0, failures: 0, users: 0, ips: 0, latest: null },
+  });
+}
+
+export function countAuditLogsTabs(params: AuditLogsSearchParams) {
+  return countListTabs(AUDIT_LOGS_TABS, params, async (tab) =>
+    getCollection(COLLECTIONS.auditLogs).countDocuments(await buildAuditLogsFilter(tab)),
+  );
 }

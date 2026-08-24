@@ -5,6 +5,7 @@ import { useMemo } from "react";
 
 import { DataTable } from "@/components/data-table";
 import { ExportButton } from "@/components/export-button";
+import { FilterTabs } from "@/components/filter-tabs";
 import {
   DateRangeFilter,
   FilterBar,
@@ -16,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { UserCell } from "@/components/user-cell";
 import { useListParams } from "@/hooks/use-list-params";
 import { formatDate, titleCase } from "@/lib/format";
+import { SESSIONS_TABS, type ListTabCounts } from "@/lib/list-tabs";
 import type { Page } from "@/lib/schemas/common";
 import type { SessionRow } from "@/lib/schemas/session";
 import { type SessionsSearchParams, sessionsSearchParamsSchema } from "@/lib/search-params";
@@ -73,9 +75,11 @@ const columns: ColumnDef<SessionRow, unknown>[] = [
 export function SessionsView({
   params,
   page,
+  tabCounts,
 }: {
   params: SessionsSearchParams;
   page: Page<SessionRow>;
+  tabCounts: ListTabCounts;
 }) {
   const { setParams, resetFilters, activeFilterCount, isPending } = useListParams(
     sessionsSearchParamsSchema,
@@ -105,6 +109,13 @@ export function SessionsView({
 
   return (
     <>
+      <FilterTabs
+        tabs={SESSIONS_TABS}
+        params={params}
+        counts={tabCounts}
+        onSelect={(patch) => setParams(patch)}
+      />
+
       <FilterBar activeCount={activeFilterCount} onReset={resetFilters}>
         {params.user_id && (
           <FilterChip

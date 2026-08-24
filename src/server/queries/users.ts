@@ -2,11 +2,20 @@ import "server-only";
 
 import type { Filter, Sort } from "mongodb";
 
+import { USERS_TABS } from "@/lib/list-tabs";
 import { escapeRegExp } from "@/lib/regex";
+import type { UsersSummary } from "@/lib/schemas/analytics";
 import type { Page } from "@/lib/schemas/common";
 import { type UserRow, userSchema } from "@/lib/schemas/user";
 import type { UsersSearchParams } from "@/lib/search-params";
-import { COLLECTIONS, type Document, getCollection, toObjectId } from "@/server/db";
+import {
+  COLLECTIONS,
+  type Document,
+  currentTimestampMs,
+  getCollection,
+  toObjectId,
+} from "@/server/db";
+import { countListTabs, countWhere, summarize } from "@/server/queries/list-stats";
 import { findPage } from "@/server/repository";
 import { dayRangeMs } from "@/server/queries/time";
 
@@ -19,6 +28,22 @@ const CONFIGURED_CLAUSES: Document[] = [
   { "interview_config.full_name": { $nin: ["", null] } },
   { "interview_config.profile_data": { $nin: ["", null] } },
 ];
+
+/**
+ * The same rule as an aggregation expression, for the summary's count.
+ *
+ * `$ifNull` is what makes the two agree on a missing field: a query `$nin: ["", null]` does not
+ * match a document with no `interview_config` at all, and without the coalesce this expression
+ * would compare `missing` to `""` and call the account set up.
+ */
+const CONFIGURED_EXPR: Document = {
+  $or: [
+    { $ne: [{ $ifNull: ["$interview_config.full_name", ""] }, ""] },
+    { $ne: [{ $ifNull: ["$interview_config.profile_data", ""] }, ""] },
+  ],
+};
+
+const WEEK_MS = 7 * 24 * 3_600_000;
 
 /** Payment and session counts for a whole page of users, in two grouped queries rather than 2N. */
 async function getRelatedCounts(
@@ -95,4 +120,31 @@ export async function listUsers(params: UsersSearchParams): Promise<Page<UserRow
       session_count: counts.sessions.get(user._id) ?? 0,
     })),
   };
+}
+
+export async function getUsersSummary(params: UsersSearchParams): Promise<UsersSummary> {
+  const weekAgo = currentTimestampMs() - WEEK_MS;
+
+  const summary = await summarize<UsersSummary>({
+    collection: COLLECTIONS.users,
+    filter: buildUsersFilter(params),
+    group: {
+      total: { $sum: 1 },
+      active: countWhere({ $eq: ["$status", "active"] }),
+      configured: countWhere(CONFIGURED_EXPR),
+      credits: { $sum: "$credits" },
+      // A rolling week, not a calendar one: this answers "has anyone signed up lately", where the
+      // dashboard's day buckets answer "when", and only the latter needs aligning to a day.
+      new_in_week: countWhere({ $gte: [{ $ifNull: ["$created_at", 0] }, weekAgo] }),
+    },
+    empty: { total: 0, active: 0, configured: 0, credits: 0, new_in_week: 0 },
+  });
+
+  return { ...summary, credits: Math.round(summary.credits) };
+}
+
+export function countUsersTabs(params: UsersSearchParams) {
+  return countListTabs(USERS_TABS, params, (tab) =>
+    getCollection(COLLECTIONS.users).countDocuments(buildUsersFilter(tab)),
+  );
 }

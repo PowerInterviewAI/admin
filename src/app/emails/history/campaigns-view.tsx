@@ -5,11 +5,13 @@ import { useCallback, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { DataTable } from "@/components/data-table";
+import { FilterTabs } from "@/components/filter-tabs";
 import { FilterBar, FilterSelect } from "@/components/filters";
 import { CAMPAIGN_POLL_INTERVAL_MS, useLiveCampaigns } from "@/hooks/use-live-campaigns";
 import { useListParams } from "@/hooks/use-list-params";
 import { usePoll } from "@/hooks/use-poll";
 import { formatDate, formatNumber } from "@/lib/format";
+import { CAMPAIGNS_TABS, type ListTabCounts } from "@/lib/list-tabs";
 import type { Page } from "@/lib/schemas/common";
 import {
   EMAIL_AUDIENCE_LABELS,
@@ -79,11 +81,13 @@ const columns: ColumnDef<EmailCampaignRow, unknown>[] = [
 export function CampaignsView({
   params,
   page,
+  tabCounts,
   appName,
   year,
 }: {
   params: EmailCampaignsSearchParams;
   page: Page<EmailCampaignRow>;
+  tabCounts: ListTabCounts;
   appName: string;
   /** Read on the server so the preview's footer year is not a clock call during render. */
   year: number;
@@ -167,6 +171,13 @@ export function CampaignsView({
 
   return (
     <>
+      <FilterTabs
+        tabs={CAMPAIGNS_TABS}
+        params={params}
+        counts={tabCounts}
+        onSelect={(patch) => setParams(patch)}
+      />
+
       <FilterBar activeCount={activeFilterCount} onReset={resetFilters}>
         <FilterSelect
           label="Filter by status"

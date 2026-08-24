@@ -2,11 +2,19 @@ import "server-only";
 
 import type { Filter, Sort } from "mongodb";
 
+import { PAYMENTS_TABS } from "@/lib/list-tabs";
 import { escapeRegExp } from "@/lib/regex";
+import type { PaymentsSummary } from "@/lib/schemas/analytics";
 import type { Page } from "@/lib/schemas/common";
-import { type PaymentRow, paymentSchema } from "@/lib/schemas/payment";
+import {
+  PAYMENT_STATUS_BUCKETS,
+  type PaymentBucket,
+  type PaymentRow,
+  paymentSchema,
+} from "@/lib/schemas/payment";
 import type { PaymentsSearchParams } from "@/lib/search-params";
-import { COLLECTIONS, type Document, toObjectId } from "@/server/db";
+import { COLLECTIONS, type Document, getCollection, toObjectId } from "@/server/db";
+import { countListTabs, countWhere, summarize } from "@/server/queries/list-stats";
 import { getUserLabels } from "@/server/queries/user-labels";
 import { dayRangeMs } from "@/server/queries/time";
 import { findUserIdsMatching } from "@/server/queries/user-search";
@@ -34,12 +42,25 @@ async function searchClauses(q: string): Promise<Document[]> {
   return clauses;
 }
 
+/**
+ * `unapplied` is a finished payment whose credits were never granted, so it is a clause rather than
+ * a status list. Kept here beside the status buckets so the tab, its count, and the summary's
+ * "credits owed" figure cannot come to mean three different things.
+ */
+function bucketClause(bucket: PaymentBucket): Document {
+  if (bucket === "unapplied") {
+    return { status: { $in: PAYMENT_STATUS_BUCKETS.finished }, credits_applied: { $ne: true } };
+  }
+  return { status: { $in: PAYMENT_STATUS_BUCKETS[bucket] } };
+}
+
 async function buildPaymentsFilter(
   params: PaymentsSearchParams,
 ): Promise<Filter<Document>> {
   const and: Document[] = [];
 
   if (params.status) and.push({ status: params.status });
+  if (params.bucket) and.push(bucketClause(params.bucket));
   if (params.plan) and.push({ plan: params.plan });
   if (params.user_id) and.push({ user_id: toObjectId(params.user_id) });
   if (params.applied) and.push({ credits_applied: params.applied === "yes" });
@@ -79,4 +100,31 @@ export async function listPayments(params: PaymentsSearchParams): Promise<Page<P
       user: labels.get(payment.user_id) ?? null,
     })),
   };
+}
+
+/** Aggregation-expression forms of the two clauses above, so the strip and the tabs agree. */
+const FINISHED_EXPR: Document = { $in: ["$status", PAYMENT_STATUS_BUCKETS.finished] };
+const UNAPPLIED_EXPR: Document = {
+  $and: [FINISHED_EXPR, { $ne: [{ $ifNull: ["$credits_applied", false] }, true] }],
+};
+
+export async function getPaymentsSummary(params: PaymentsSearchParams): Promise<PaymentsSummary> {
+  return summarize<PaymentsSummary>({
+    collection: COLLECTIONS.payments,
+    filter: await buildPaymentsFilter(params),
+    group: {
+      total: { $sum: 1 },
+      revenue_usd: { $sum: { $cond: [FINISHED_EXPR, { $ifNull: ["$price_amount", 0] }, 0] } },
+      finished: countWhere(FINISHED_EXPR),
+      in_flight: countWhere({ $in: ["$status", PAYMENT_STATUS_BUCKETS.in_flight] }),
+      credits_owed: countWhere(UNAPPLIED_EXPR),
+    },
+    empty: { total: 0, revenue_usd: 0, finished: 0, in_flight: 0, credits_owed: 0 },
+  });
+}
+
+export function countPaymentsTabs(params: PaymentsSearchParams) {
+  return countListTabs(PAYMENTS_TABS, params, async (tab) =>
+    getCollection(COLLECTIONS.payments).countDocuments(await buildPaymentsFilter(tab)),
+  );
 }

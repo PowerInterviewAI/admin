@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 
 import { DataTable } from "@/components/data-table";
 import { ExportButton } from "@/components/export-button";
+import { FilterTabs } from "@/components/filter-tabs";
 import {
   DateRangeFilter,
   FilterBar,
@@ -15,6 +16,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { useListParams } from "@/hooks/use-list-params";
 import { formatDate, titleCase } from "@/lib/format";
+import { AUDIT_LOGS_TABS, type ListTabCounts } from "@/lib/list-tabs";
 import { AUDIT_EVENT_TYPES, AUDIT_STATUSES, type AuditLog } from "@/lib/schemas/audit-log";
 import type { Page } from "@/lib/schemas/common";
 import { type AuditLogsSearchParams, auditLogsSearchParamsSchema } from "@/lib/search-params";
@@ -70,9 +72,11 @@ const HIDDEN_BY_DEFAULT = ["user_agent"];
 export function AuditLogsView({
   params,
   page,
+  tabCounts,
 }: {
   params: AuditLogsSearchParams;
   page: Page<AuditLog>;
+  tabCounts: ListTabCounts;
 }) {
   const { setParams, resetFilters, activeFilterCount, isPending } = useListParams(
     auditLogsSearchParamsSchema,
@@ -106,6 +110,13 @@ export function AuditLogsView({
 
   return (
     <>
+      <FilterTabs
+        tabs={AUDIT_LOGS_TABS}
+        params={params}
+        counts={tabCounts}
+        onSelect={(patch) => setParams(patch)}
+      />
+
       <FilterBar activeCount={activeFilterCount} onReset={resetFilters}>
         {params.user_id && (
           <FilterChip

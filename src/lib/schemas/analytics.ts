@@ -74,3 +74,55 @@ export interface AnalyticsOverview {
   activity: ActivityAnalytics;
   recent_activity: AuditLog[];
 }
+
+/**
+ * The strip above each list table.
+ *
+ * Every one of these describes the *filtered* set, not the collection: they are computed from the
+ * same filter the list query built, so the numbers on top always answer "what am I looking at"
+ * rather than "what exists". They never cross to the client - each list's server component reads
+ * them and renders the strip itself.
+ */
+export interface UsersSummary {
+  total: number;
+  active: number;
+  /** Accounts with a name or a CV filled in: the product's activation signal. */
+  configured: number;
+  credits: number;
+  new_in_week: number;
+}
+
+export interface PaymentsSummary {
+  total: number;
+  /** Finished payments only, matching how the dashboard counts revenue. */
+  revenue_usd: number;
+  finished: number;
+  in_flight: number;
+  /** Finished and never granted. The number that means somebody is owed something. */
+  credits_owed: number;
+}
+
+export interface SessionsSummary {
+  total: number;
+  active: number;
+  idle: number;
+  stale: number;
+  /** Distinct accounts, which is not the row count: one person can hold many sessions. */
+  users: number;
+}
+
+export interface AuditLogsSummary {
+  total: number;
+  failures: number;
+  users: number;
+  ips: number;
+  latest: number | null;
+}
+
+export interface CampaignsSummary {
+  total: number;
+  recipients: number;
+  delivered: number;
+  failed: number;
+  latest: number | null;
+}

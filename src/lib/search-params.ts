@@ -1,9 +1,13 @@
 import { z } from "zod";
 
-import { auditEventTypeSchema, auditStatusSchema } from "@/lib/schemas/audit-log";
+import {
+  auditEventGroupSchema,
+  auditEventTypeSchema,
+  auditStatusSchema,
+} from "@/lib/schemas/audit-log";
 import { objectIdSchema, sortDirSchema } from "@/lib/schemas/common";
 import { emailCampaignStatusSchema } from "@/lib/schemas/email";
-import { paymentPlanSchema, paymentStatusSchema } from "@/lib/schemas/payment";
+import { paymentBucketSchema, paymentPlanSchema, paymentStatusSchema } from "@/lib/schemas/payment";
 import { userRoleSchema, userStatusSchema } from "@/lib/schemas/user";
 import { SESSION_ACTIVITIES } from "@/lib/session-activity";
 
@@ -92,6 +96,11 @@ export const usersSearchParamsSchema = z.object({
 export const paymentsSearchParamsSchema = z.object({
   q: z.string().optional().catch(undefined),
   status: paymentStatusSchema.optional().catch(undefined),
+  /**
+   * The quick-filter tabs' dimension. Kept separate from `status` rather than overloading it: three
+   * of the four buckets are several statuses, and one of them is not a status at all.
+   */
+  bucket: paymentBucketSchema.optional().catch(undefined),
   plan: paymentPlanSchema.optional().catch(undefined),
   user_id: userIdSchema,
   from: dateSchema,
@@ -129,6 +138,8 @@ export const emailCampaignsSearchParamsSchema = z.object({
 export const auditLogsSearchParamsSchema = z.object({
   q: z.string().optional().catch(undefined),
   event_type: auditEventTypeSchema.optional().catch(undefined),
+  /** A whole family of event types, for the tabs. Composes with `event_type`, which narrows to one. */
+  group: auditEventGroupSchema.optional().catch(undefined),
   status: auditStatusSchema.optional().catch(undefined),
   user_id: userIdSchema,
   ip: z.string().optional().catch(undefined),
