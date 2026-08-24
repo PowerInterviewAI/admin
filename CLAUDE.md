@@ -52,12 +52,13 @@ src/
     db.ts                  pooled MongoClient, collection names, ObjectId helpers
     repository.ts          paged find, grouped counts, update/delete, document validation
     errors.ts              AppError plus duplicate-key mapping
-    queries/               one module per entity, plus analytics and user-labels
+    queries/               one module per entity, plus analytics, user-labels, and list-stats
     actions/               "use server" mutations
     email/                 SMTP transport and the background campaign runner
   lib/
     schemas/             zod schemas: the single source of truth for the app's types
     search-params.ts     per-route URL state schemas and query-string building
+    list-tabs.ts         the quick-filter tabs each list offers, as params patches
     action-result.ts     the { ok } | { ok: false, error } shape every action returns
     email/               the shared email layout, ported from backend's Jinja templates
   components/
@@ -131,6 +132,34 @@ Filters, sort, and page for every list view live in the URL and are parsed serve
 - **Filters go into `$and`, not onto the filter object.** Two of them are each an `$or` (a search term, and the users view's `configured`), and a second assignment to `filter.$or` silently replaces the first - dropping the search while still looking like it applied. Every list query builds an `and: Document[]` and assigns once.
 - `useListParams` returns `resetFilters` and `activeFilterCount` alongside `setParams`. Reset navigates to a *replacement* params object (`withoutFilters`) rather than patching `setParams` with a bag of `undefined`s, which `buildQueryString` could not tell apart from "never set". It keeps sort order and page size - an admin who chose 100 rows wants that to survive clearing a search box - but drops `page`, because page 5 of the filtered list is not page 5 of the unfiltered one.
 - **Column visibility is deliberately *not* in the URL.** It describes how one admin likes to read a table, not which rows they are reading, so putting it in the query string would make every shared link carry it.
+- A **tab is an ordinary filter**, which is why `bucket` and `group` are not in `LAYOUT_KEYS`: they count toward the Reset badge and Reset returns the strip to "All". See "Every list page" below.
+
+### Every list page: a summary strip, then tabs, then the filter row
+
+Three layers sit above each table, and which layer owns what is the point.
+
+**The summary strip (`src/components/list-summary.tsx`) is computed from the list's own filter.** `getUsersSummary` and friends take the same `params` the list query took and run `buildXFilter` over them, so the five figures on top describe exactly the rows the table is showing. A total that ignored the filters would sit above a filtered table claiming to be about it, which is the one reading of these numbers that cannot be defended. The first stat's label flips to "Matching ..." as soon as `countActiveFilters` is non-zero, so the distinction is on screen rather than implied.
+
+It is rendered by the route's **server component**, not inside the client view. Nothing crosses the boundary, and `latest`-style stats cannot be recomputed in the browser against a different clock.
+
+`summarize` in `src/server/queries/list-stats.ts` is one `$match` + `$group` + `$project`. Two things about it:
+
+- **`$group` emits no row at all when nothing matched**, so every caller passes an `empty`. Without it a filter that matches nothing renders `undefined` in five cells.
+- It cannot use `aggregate<T>`: the driver constrains that type parameter to a document with an index signature, and the summary interfaces in `src/lib/schemas/analytics.ts` deliberately have none. The `$project` is what makes the shape true and the assertion lives in `summarize` rather than at every call site.
+
+Distinct counts (`countDistinctSet`) build an `$addToSet` and take its `$size`, filtering out null and `""` - a failed login for an address with no account has no `user_id`, and "nobody" is not a person. That is affordable on `audit_logs` despite the row count because a set is bounded by *distinct* values, and this product has few users and few IPs.
+
+**Tabs are URL filters, not component state.** `src/lib/list-tabs.ts` holds the definitions and `FilterTabs` renders them; the active tab is *derived* from the params rather than held in state, so a tab is linkable and the back button steps through it. Three consequences are load-bearing:
+
+1. **Selecting a tab clears every key any tab in the group touches, then applies its own patch.** Without that, "Trial" followed by "Admins" would accumulate into `role=trial_user AND role=admin` - a filter matching nobody that still looks like it applied. `tabPatch` is what makes the strip behave as one single-select control. Filters set *below* the strip are untouched: tabs and filters compose.
+2. **No tab is highlighted when the params match none of them**, which is reachable by picking a value the tabs do not offer (`?event_type=login`, `?group=asr&status=failure`). Base UI's `Tabs.Root` takes `value={null}` for exactly this. Highlighting a tab whose filter is not the one in force would be worse than highlighting nothing.
+3. **Tab counts are measured with that tab's filter substituted for whatever tab is selected**, and with the view's other filters still applied (`countListTabs`). So "Failed 3" means three failed payments among the admin's current filters *whichever tab they are on*, rather than collapsing to zero on every tab but one. Counting the naive way would make four of the five numbers useless.
+
+`Tabs.Root`'s `onValueChange` carries a reason, and only `'none'` is user-initiated. `FilterTabs` ignores the rest: a controlled root emits nothing else today, but an automatic fallback writing params would be a navigation nobody asked for.
+
+**Two params exist only for tabs, and both are named sets rather than overloaded enums.** `payments.bucket` (`PAYMENT_STATUS_BUCKETS`) because three of its four values are several statuses and `unapplied` is not a status at all - it is finished-and-never-granted, a job rather than a state. `audit_logs.group` (`AUDIT_EVENT_GROUPS`) because twenty event types is too many to scan. Both are built by naming the specific sets and deriving the catch-all as the complement, and the direction matters: a new NOWPayments status lands in "in flight" rather than being reported as money that failed, and a new backend event type lands in "accounts" rather than disappearing from every tab. `src/server/queries/payments.ts` carries the same two clauses again as aggregation expressions (`FINISHED_EXPR`, `UNAPPLIED_EXPR`) so the tab, its count, and the strip's "credits owed" cannot come to mean three different things; `activityExpr` in `queries/sessions.ts` is the same arrangement for the session buckets, and is now the single definition the filter, the count, and the badge all read.
+
+The strip and the counts run inside the page's `Promise.all` beside the list query, so a list page costs the slowest of the three rather than their sum.
 
 ### One table component
 
@@ -149,6 +178,8 @@ Only columns with a plain-string `header` are offered in the Columns menu - an a
 **`csvCell` neutralises formulas, and that is not decoration.** Every string in these files came out of the database and most of it was typed by a user - a username, an email, a user agent. A cell starting `=`, `+`, `-`, `@`, or a leading tab/CR is executed as a formula when the file is opened in Excel or Sheets, which turns "export the user list" into running whatever a signup form was willing to accept. The apostrophe prefix is what a spreadsheet reads as "this is text".
 
 `CSV_BOM` is built with `String.fromCharCode(0xfeff)` rather than written literally: without it Excel reads the bytes in the system codepage and every non-ASCII name arrives mojibaked, and a zero-width character sitting in source is invisible to review.
+
+Because the exports re-run the list query from `params`, the tab filters (`bucket`, `group`) come along for free: exporting from the "Credits owed" tab exports the payments that are actually owed.
 
 These actions are reachable by direct POST like every other action here (see "No authentication" above). If this app ever stops being local-only they need an authorization check first - they are the ones that hand over the whole user table in a single call.
 

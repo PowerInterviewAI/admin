@@ -35,7 +35,7 @@ Five MongoDB collections owned by `../backend`, read/written here without any sc
 | `users`       | `username`, `email`, `role` (`user`/`trial_user`/`admin`), `status` (`active`/`inactive`), `credits`, `interview_config` (`full_name`, `profile_data`, `context`) | `password_hash` has no field in the schema, so it is stripped on read and never reaches a client. It is write-only here: the set-password action is the one thing that touches it |
 | `payments`    | `user_id`, `plan` (`starter`/`pro`/`enterprise`), `status` (10-value enum), `price_amount`, `credits_amount`, `credits_applied` | Status/`credits_applied` are manually editable here - editing does **not** call NOWPayments or replay webhook logic |
 | `sessions`    | `token`, `user_id`, `device_info` (`ip_address`, `user_agent`)                                        | Deleting one force-logs-out that device. `token` has no field in the schema - it is a live bearer credential |
-| `audit_logs`  | `event_type` (17-value enum), `user_id`, `email`, `status`, `metadata` (free-form dict)               | Read-only in the UI. The one entry this app writes is the `password_change` it records for its own overwrites |
+| `audit_logs`  | `event_type` (20-value enum), `user_id`, `email`, `status`, `metadata` (free-form dict)               | Read-only in the UI. The one entry this app writes is the `password_change` it records for its own overwrites |
 | `global_state`| `active_sessions`                                                                                      | **Not used anywhere in this app** - it's a simulated `random.gauss(260, 10)` value in backend, not real data |
 | `email_campaigns` | `subject`, `template`, `body`, `audience`, `status`, `total`, `sent_count`, `failed_count`, `recipients[]` | **Owned by this app**, not backend. Written by the email marketing page; nothing else reads it. `recipients[]` is the per-address delivery log |
 
@@ -56,17 +56,17 @@ Day buckets are dense: a day with no events is a zero rather than an absent row,
 
 ### Users (`/users`)
 
-Search (username/email), filter by role, status, interview setup (whether the account has a name or CV - the product's activation signal), credit range, and joined date range. Paginated table sortable by username, email, credits, joined, or last updated, showing each account's payment and session counts. Row click opens an edit sheet: role, status, credits, username, email, and the user's interview configuration (full name, profile/CV, context) are all editable; the sheet links through to that user's payments, sessions, and audit log, and has a delete action (destructive, confirmed via dialog).
+Quick-filter tabs across the top - all, active, trial, admins, not set up - over a summary strip carrying the matching account count, how many are active, how many have an interview set up (and how many never have), and the credits those accounts hold. Below that: search (username/email), filter by role, status, interview setup (whether the account has a name or CV - the product's activation signal), credit range, and joined date range. Paginated table sortable by username, email, credits, joined, or last updated, showing each account's payment and session counts. Row click opens an edit sheet: role, status, credits, username, email, and the user's interview configuration (full name, profile/CV, context) are all editable; the sheet links through to that user's payments, sessions, and audit log, and has a delete action (destructive, confirmed via dialog).
 
 The sheet also carries a **set-password** action, in its own dialog outside the edit form so it never rides along with an ordinary save. It overwrites `password_hash` without knowing the current password (which is what makes it an admin tool rather than a copy of backend's change-password endpoint), revokes every session that user holds, and records a `password_change` audit log entry. The hash is bcrypt in backend's exact format, so the user signs in through the normal login flow afterwards.
 
 ### Payments (`/payments`)
 
-Search by order id, NOWPayments id, purchase id, or buyer; filter by status, plan, whether credits were applied, USD amount range, and created date range. Paginated table sortable by status, amount, credits, created, or updated, showing which user each payment belongs to. Row click opens an edit sheet for a manual `status`/`credits_applied` override - explicitly labeled as a support/manual tool, not a payment-provider action.
+Tabs for the coarse question an admin actually asks - all, in flight, finished, failed, and **credits owed**, the last being a finished payment whose credits were never granted - over a summary strip carrying the matching payment count, revenue from the finished ones, and the same three counts. Below that: search by order id, NOWPayments id, purchase id, or buyer; filter by status, plan, whether credits were applied, USD amount range, and created date range. Paginated table sortable by status, amount, credits, created, or updated, showing which user each payment belongs to. Row click opens an edit sheet for a manual `status`/`credits_applied` override - explicitly labeled as a support/manual tool, not a payment-provider action.
 
 ### Sessions (`/sessions`)
 
-Paginated table of every session across all users, searchable by account and filterable by start date and by activity - active (seen in 24h), idle (1-7 days), or stale (7 days or more). Sortable by start or last-active time, showing the account and device behind each one, with a revoke action (confirmed via dialog) that deletes the session document, forcing that device to re-authenticate.
+Tabs for the three activity buckets, over a summary strip carrying the matching session count, how many distinct accounts hold them and how many sessions that is each, and the split across active/idle/stale. Below that: a paginated table of every session across all users, searchable by account and filterable by start date and by activity - active (seen in 24h), idle (1-7 days), or stale (7 days or more). Sortable by start or last-active time, showing the account and device behind each one, with a revoke action (confirmed via dialog) that deletes the session document, forcing that device to re-authenticate.
 
 The activity bucket is decided during the server render rather than in the cell, so a badge cannot disagree with the filter that selected it, and hydration cannot disagree with the markup it is hydrating.
 
@@ -85,17 +85,21 @@ Recipients are active users with a non-empty `email`, deduplicated by address. F
 
 ### Email history (`/emails/history`)
 
-Paginated, status-filterable table of every campaign sent from here, sortable by recipient count or date. Row click opens the full record: the delivery result for every address, filterable to just the failures, alongside the HTML that was sent.
+Tabs for the three campaign states, over a summary strip carrying the campaign count, how many addresses were on those send lists, and how many were delivered and failed. Paginated, status-filterable table of every campaign sent from here, sortable by recipient count or date. Row click opens the full record: the delivery result for every address, filterable to just the failures, alongside the HTML that was sent.
 
 A campaign whose Node process went away mid-send is shown as **Interrupted** rather than as still sending, decided from a stale heartbeat on `updated_at`.
 
 ### Audit Logs (`/audit-logs`)
 
-Read-only table, searchable by account and filterable by event type, status, IP address, and date range, ordered newest or oldest first. Row click opens a dialog with the full record, including the raw `metadata` JSON.
+Tabs grouping twenty event types into three families - accounts, payments, ASR - plus a **failures** tab that cuts across all three, since the failures are what the page gets opened for. Over a summary strip carrying the matching event count, the failures and their share, how many distinct accounts and IP addresses are involved, and when the newest matching event happened. Below that: a read-only table, searchable by account and filterable by event type, status, IP address, and date range, ordered newest or oldest first. Row click opens a dialog with the full record, including the raw `metadata` JSON.
+
+The three groups are exhaustive by construction: payments and ASR are named explicitly and "accounts" is everything else, so an event type backend adds later shows up under a tab rather than disappearing from all of them.
 
 ### Cross-cutting UI behaviour
 
 - Filters, sort, and page live in the URL: every view is linkable, and the back button steps through it. A **Reset** control clears the filters while keeping sort order and page size, and carries a count of how many are currently narrowing the list
+- Every list page opens with a **summary strip** of five figures describing the rows the filters currently select, not the collection - so the numbers on top always answer "what am I looking at" rather than "what exists". Anything meaning work is outstanding (credits owed, failures) is coloured
+- Every list page carries **quick-filter tabs** above the filter row, each labelled with how many rows sit behind it. A tab is an ordinary URL filter, so it is linkable and the back button steps through it; the counts are measured against the view's *other* filters, so "Failed 3" keeps meaning three failed rows whichever tab is selected. Tabs and filters compose, and no tab is highlighted when the filter row has been set to something no tab offers
 - Rows per page is selectable (20/25/50/100/200) from an allowlist, and the pager offers first/last as well as next/previous
 - Columns can be hidden per table, in the browser rather than in the URL - it describes how one admin likes to read the table, not which rows they are reading, so a shared link should not carry it
 - **CSV export** on every list view, of the whole filtered result set rather than the page on screen (capped at 5,000 rows, and the toast says so when it truncates). Cells that would be read as spreadsheet formulas are neutralised on the way out
