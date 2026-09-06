@@ -34,6 +34,20 @@ On Windows, `run.bat` does the production path in one step: it checks for pnpm a
 `.env.local`, installs dependencies only if `node_modules` is absent, builds, then serves.
 Double-clicking it works from any folder.
 
+## Mock data
+
+An empty database makes every page an empty state. `pnpm seed` fills the local one with a
+product's worth of history - 217 accounts, their payments, sessions, audit trail, and a few email
+campaigns - spread over the current year to date.
+
+```bash
+pnpm seed
+```
+
+It refuses to run against anything but a local `MONGO_URL`, keeps the admin account already in the
+database (the one you sign in with), and replaces everything else it wrote before, so re-running it
+is safe. Seeded accounts all share the password `Interview!2026`.
+
 ## Lint, type-check
 
 ```bash
