@@ -107,6 +107,16 @@ const FINISHED_EXPR: Document = { $in: ["$status", PAYMENT_STATUS_BUCKETS.finish
 const UNAPPLIED_EXPR: Document = {
   $and: [FINISHED_EXPR, { $ne: [{ $ifNull: ["$credits_applied", false] }, true] }],
 };
+/**
+ * Revenue counts finished *orders*, not finished payment documents. A partially-paid order is
+ * completed by a follow-up leg priced at the remainder, and backend marks the root `finished` too
+ * once that leg lands - so summing `price_amount` over everything `finished` bills the remainder
+ * twice. The root's `price_amount` is the whole order total, so roots alone is the exact figure.
+ * See the matching note in `analytics.ts`.
+ */
+const FINISHED_ORDER_EXPR: Document = {
+  $and: [FINISHED_EXPR, { $eq: [{ $ifNull: ["$root_payment_id", null] }, null] }],
+};
 
 export async function getPaymentsSummary(params: PaymentsSearchParams): Promise<PaymentsSummary> {
   return summarize<PaymentsSummary>({
@@ -114,7 +124,7 @@ export async function getPaymentsSummary(params: PaymentsSearchParams): Promise<
     filter: await buildPaymentsFilter(params),
     group: {
       total: { $sum: 1 },
-      revenue_usd: { $sum: { $cond: [FINISHED_EXPR, { $ifNull: ["$price_amount", 0] }, 0] } },
+      revenue_usd: { $sum: { $cond: [FINISHED_ORDER_EXPR, { $ifNull: ["$price_amount", 0] }, 0] } },
       finished: countWhere(FINISHED_EXPR),
       in_flight: countWhere({ $in: ["$status", PAYMENT_STATUS_BUCKETS.in_flight] }),
       credits_owed: countWhere(UNAPPLIED_EXPR),
