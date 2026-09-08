@@ -21,6 +21,7 @@ export const auditEventTypeSchema = z.enum([
   "payment_failed",
   "payment_error",
   "credits_applied",
+  "credits_consumed",
   "asr_start",
   "asr_stop",
 ]);
@@ -45,6 +46,10 @@ const PAYMENT_EVENTS = [
   "payment_failed",
   "payment_error",
   "credits_applied",
+  // The other half of the credit record: `credits_applied` is what was bought, this is what was
+  // spent. Grouped with payments rather than under `auth`, because the question an admin opens
+  // this tab to answer - where did this account's credits go - is answered by the two together.
+  "credits_consumed",
 ] as const;
 
 const ASR_EVENTS = ["asr_start", "asr_stop"] as const;
