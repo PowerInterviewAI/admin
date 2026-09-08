@@ -70,6 +70,12 @@ export interface AnalyticsOverview {
   window_days: number;
   users: UsersAnalytics;
   revenue: RevenueAnalytics;
+  /**
+   * The sum of every non-trial, non-admin user's `credits` balance - not a count, and not the
+   * same thing `PaymentsSummary.credits_owed` below measures despite the similar name. Rendered
+   * next to `revenue.total_usd` as if it were a liability against money received, which is why
+   * trial grants and admin-set balances are excluded: neither ever had a payment behind it.
+   */
   credits_outstanding: number;
   activity: ActivityAnalytics;
   recent_activity: AuditLog[];
@@ -98,7 +104,12 @@ export interface PaymentsSummary {
   revenue_usd: number;
   finished: number;
   in_flight: number;
-  /** Finished and never granted. The number that means somebody is owed something. */
+  /**
+   * A *count of payment documents* that are finished and never granted - not a sum of credits,
+   * despite the name reading like a cousin of `AnalyticsOverview.credits_outstanding` above,
+   * which sums a balance. The number that means somebody is owed something, in "how many orders"
+   * rather than "how many credits".
+   */
   credits_owed: number;
 }
 

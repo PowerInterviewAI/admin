@@ -246,6 +246,12 @@ async function countDistinct(
  */
 export async function getAnalyticsOverview(days: AnalyticsRange): Promise<AnalyticsOverview> {
   const finished = { status: "finished" };
+  // `credits_outstanding` reads next to `revenue.total_usd` on the same KPI row, which frames it
+  // as a liability against money received. Summed over every user it is not that: a 600-credit
+  // trial grant never had a payment behind it, and neither does a balance an admin hand-set
+  // through the edit sheet. Excluding both is what keeps the figure answering the question its
+  // position on the dashboard implies.
+  const excludingTrialAndAdmin = { role: { $nin: ["trial_user", "admin"] } };
   const cutoff = windowCutoff(days);
 
   // Independent aggregations, all awaited together: the dashboard costs the slowest of them rather
@@ -282,7 +288,7 @@ export async function getAnalyticsOverview(days: AnalyticsRange): Promise<Analyt
     sumBy(COLLECTIONS.payments, finished, "plan", "price_amount"),
     countDistinct(COLLECTIONS.payments, finished, "user_id"),
     getCollection(COLLECTIONS.payments).countDocuments({}),
-    sumField(COLLECTIONS.users, {}, "credits"),
+    sumField(COLLECTIONS.users, excludingTrialAndAdmin, "credits"),
     dailyCounts(COLLECTIONS.auditLogs, { event_type: "login" }, "created_at", days),
     dailyCounts(COLLECTIONS.auditLogs, { event_type: "signup" }, "created_at", days),
     dailyCounts(COLLECTIONS.auditLogs, { event_type: "asr_start" }, "created_at", days),

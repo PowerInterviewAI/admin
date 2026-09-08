@@ -35,7 +35,7 @@ Five MongoDB collections owned by `../backend`, read/written here without any sc
 | `users`       | `username`, `email`, `role` (`user`/`trial_user`/`admin`), `status` (`active`/`inactive`), `credits`, `interview_config` (`full_name`, `profile_data`, `context`) | `password_hash` has no field in the schema, so it is stripped on read and never reaches a client. It is write-only here: the set-password action is the one thing that touches it |
 | `payments`    | `user_id`, `plan` (`starter`/`pro`/`enterprise`), `status` (10-value enum), `price_amount`, `credits_amount`, `credits_applied` | Status/`credits_applied` are manually editable here - editing does **not** call NOWPayments or replay webhook logic |
 | `sessions`    | `token`, `user_id`, `device_info` (`ip_address`, `user_agent`)                                        | Deleting one force-logs-out that device. `token` has no field in the schema - it is a live bearer credential |
-| `audit_logs`  | `event_type` (20-value enum), `user_id`, `email`, `status`, `metadata` (free-form dict)               | Read-only in the UI. The one entry this app writes is the `password_change` it records for its own overwrites |
+| `audit_logs`  | `event_type` (23-value enum, plus an `unknown` fallback this app adds for a value it does not yet recognize), `user_id`, `email`, `status`, `metadata` (free-form dict) | Read-only in the UI. The two entries this app writes are `password_change` (for its own password overwrites) and `credits_adjusted` (for its own credit edits) |
 | `global_state`| `active_sessions`                                                                                      | **Not used anywhere in this app** - it's a simulated `random.gauss(260, 10)` value in backend, not real data |
 | `email_campaigns` | `subject`, `template`, `body`, `audience`, `status`, `total`, `sent_count`, `failed_count`, `recipients[]` | **Owned by this app**, not backend. Written by the email marketing page; nothing else reads it. `recipients[]` is the per-address delivery log |
 
@@ -45,7 +45,7 @@ Five MongoDB collections owned by `../backend`, read/written here without any sc
 
 All computed server-side from real documents (`src/server/queries/analytics.ts`), never from `global_state`, and issued as one parallel batch. The reporting window is selectable (7/30/90/180 days) and lives in the URL like every other view's state, so a particular reading of the numbers is linkable.
 
-- KPI cards: total users (+ new in window), lifetime revenue from `finished` payments (+ revenue in window), credits outstanding, ASR sessions, active users (distinct accounts with any audit event in the window), paying users (+ conversion), revenue per paying user, and payment success rate
+- KPI cards: total users (+ new in window), lifetime revenue from `finished` payments (+ revenue in window), credits outstanding (the sum of every non-trial, non-admin user's balance - trial grants and admin-set balances are excluded, since neither ever had a payment behind it), ASR sessions, active users (distinct accounts with any audit event in the window), paying users (+ conversion), revenue per paying user, and payment success rate
 - Trends over the window: signups per day, cumulative user total, revenue per day, and a three-series activity chart (logins, signups, ASR sessions)
 - Sign-in outcomes per day, stacked success against failure - the only place `status: "failure"` is visible in aggregate
 - Usage by hour of day, which the daily series structurally cannot answer
@@ -91,7 +91,7 @@ A campaign whose Node process went away mid-send is shown as **Interrupted** rat
 
 ### Audit Logs (`/audit-logs`)
 
-Tabs grouping twenty event types into three families - accounts, payments, ASR - plus a **failures** tab that cuts across all three, since the failures are what the page gets opened for. Over a summary strip carrying the matching event count, the failures and their share, how many distinct accounts and IP addresses are involved, and when the newest matching event happened. Below that: a read-only table, searchable by account and filterable by event type, status, IP address, and date range, ordered newest or oldest first. Row click opens a dialog with the full record, including the raw `metadata` JSON.
+Tabs grouping twenty-three event types into three families - accounts, payments, ASR - plus a **failures** tab that cuts across all three, since the failures are what the page gets opened for. Over a summary strip carrying the matching event count, the failures and their share, how many distinct accounts and IP addresses are involved, and when the newest matching event happened. Below that: a read-only table, searchable by account and filterable by event type, status, IP address, and date range, ordered newest or oldest first. Row click opens a dialog with the full record, including the raw `metadata` JSON.
 
 The three groups are exhaustive by construction: payments and ASR are named explicitly and "accounts" is everything else, so an event type backend adds later shows up under a tab rather than disappearing from all of them.
 
