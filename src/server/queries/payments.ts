@@ -43,13 +43,21 @@ async function searchClauses(q: string): Promise<Document[]> {
 }
 
 /**
- * `unapplied` is a finished payment whose credits were never granted, so it is a clause rather than
+ * `unapplied` is a finished *order* whose credits were never granted, so it is a clause rather than
  * a status list. Kept here beside the status buckets so the tab, its count, and the summary's
  * "credits owed" figure cannot come to mean three different things.
  */
 function bucketClause(bucket: PaymentBucket): Document {
   if (bucket === "unapplied") {
-    return { status: { $in: PAYMENT_STATUS_BUCKETS.finished }, credits_applied: { $ne: true } };
+    // `root_payment_id: null` matches a missing field as well as an explicit null, so this is
+    // "roots only" and picks up documents written before the field existed. It mirrors
+    // `UNAPPLIED_EXPR`, which the summary counts with - see there for why a follow-up leg is
+    // never something credits can be owed for.
+    return {
+      status: { $in: PAYMENT_STATUS_BUCKETS.finished },
+      credits_applied: { $ne: true },
+      root_payment_id: null,
+    };
   }
   return { status: { $in: PAYMENT_STATUS_BUCKETS[bucket] } };
 }
@@ -104,9 +112,6 @@ export async function listPayments(params: PaymentsSearchParams): Promise<Page<P
 
 /** Aggregation-expression forms of the two clauses above, so the strip and the tabs agree. */
 const FINISHED_EXPR: Document = { $in: ["$status", PAYMENT_STATUS_BUCKETS.finished] };
-const UNAPPLIED_EXPR: Document = {
-  $and: [FINISHED_EXPR, { $ne: [{ $ifNull: ["$credits_applied", false] }, true] }],
-};
 /**
  * Revenue counts finished *orders*, not finished payment documents. A partially-paid order is
  * completed by a follow-up leg priced at the remainder, and backend marks the root `finished` too
@@ -116,6 +121,20 @@ const UNAPPLIED_EXPR: Document = {
  */
 const FINISHED_ORDER_EXPR: Document = {
   $and: [FINISHED_EXPR, { $eq: [{ $ifNull: ["$root_payment_id", null] }, null] }],
+};
+/**
+ * Built on `FINISHED_ORDER_EXPR`, not on `FINISHED_EXPR`, for the same root-vs-leg reason revenue
+ * is: backend claims an order's credits against its *root* document and never writes
+ * `credits_applied` onto the follow-up leg that completed it. A leg therefore sits at `finished`
+ * with `credits_applied` false permanently, and counting it here reported every successfully
+ * settled partial payment as an order somebody is still owed credits for - a KPI that alerts (see
+ * `payments/page.tsx`) and a tab that lists rows no admin can ever action, because there is
+ * nothing wrong with them. Restricting to roots is exact rather than merely quieter: a root whose
+ * grant genuinely failed still carries `credits_applied` false and is still counted, whether the
+ * order was paid in one leg or several.
+ */
+const UNAPPLIED_EXPR: Document = {
+  $and: [FINISHED_ORDER_EXPR, { $ne: [{ $ifNull: ["$credits_applied", false] }, true] }],
 };
 
 export async function getPaymentsSummary(params: PaymentsSearchParams): Promise<PaymentsSummary> {

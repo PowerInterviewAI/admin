@@ -27,7 +27,9 @@ export const PAYMENT_STATUSES = paymentStatusSchema.options;
 /**
  * The coarse question an admin actually asks of this list: did the money land, is it still moving,
  * or did it go away. `unapplied` is the odd one out and is not a status set at all - it is a
- * finished payment whose credits were never granted, which is a job rather than a state.
+ * finished *order* whose credits were never granted, which is a job rather than a state. An order
+ * rather than a payment document, because a follow-up leg is credited against its root and never
+ * carries `credits_applied` itself; see `bucketClause` in `server/queries/payments.ts`.
  */
 export const paymentBucketSchema = z.enum(["in_flight", "finished", "failed", "unapplied"]);
 export type PaymentBucket = z.infer<typeof paymentBucketSchema>;

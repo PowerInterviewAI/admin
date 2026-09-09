@@ -74,7 +74,9 @@ export interface AnalyticsOverview {
    * The sum of every non-trial, non-admin user's `credits` balance - not a count, and not the
    * same thing `PaymentsSummary.credits_owed` below measures despite the similar name. Rendered
    * next to `revenue.total_usd` as if it were a liability against money received, which is why
-   * trial grants and admin-set balances are excluded: neither ever had a payment behind it.
+   * trial and admin *accounts* are excluded: neither role's balance ever had a payment behind it.
+   * A hand-set balance on an ordinary account is still included - see the note in
+   * `server/queries/analytics.ts` for why that one is left to the audit trail instead.
    */
   credits_outstanding: number;
   activity: ActivityAnalytics;
@@ -105,10 +107,14 @@ export interface PaymentsSummary {
   finished: number;
   in_flight: number;
   /**
-   * A *count of payment documents* that are finished and never granted - not a sum of credits,
-   * despite the name reading like a cousin of `AnalyticsOverview.credits_outstanding` above,
-   * which sums a balance. The number that means somebody is owed something, in "how many orders"
-   * rather than "how many credits".
+   * A *count of orders* that are finished and never granted - not a sum of credits, despite the
+   * name reading like a cousin of `AnalyticsOverview.credits_outstanding` above, which sums a
+   * balance. The number that means somebody is owed something, in "how many orders" rather than
+   * "how many credits".
+   *
+   * Orders, not payment documents: a follow-up leg is excluded, because an order's credits are
+   * claimed against its root and a leg never carries `credits_applied` at all. See
+   * `UNAPPLIED_EXPR` in `server/queries/payments.ts`.
    */
   credits_owed: number;
 }

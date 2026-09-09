@@ -258,9 +258,15 @@ export async function getAnalyticsOverview(days: AnalyticsRange): Promise<Analyt
   const finishedOrders = { ...finished, root_payment_id: null };
   // `credits_outstanding` reads next to `revenue.total_usd` on the same KPI row, which frames it
   // as a liability against money received. Summed over every user it is not that: a 600-credit
-  // trial grant never had a payment behind it, and neither does a balance an admin hand-set
-  // through the edit sheet. Excluding both is what keeps the figure answering the question its
-  // position on the dashboard implies.
+  // trial grant never had a payment behind it, and neither does the balance on a staff account.
+  // Excluding both roles is what keeps the figure answering the question its position on the
+  // dashboard implies.
+  //
+  // It excludes accounts, not adjustments - a balance an admin hand-set through the edit sheet on
+  // an ordinary `user` account is still counted here, because nothing on the user document says
+  // where its credits came from. Netting those out would mean replaying the `credits_adjusted`
+  // audit rows `updateUser` now writes, which is a different (and much heavier) query than this
+  // one; the trail those rows leave is what that question gets answered from for now.
   const excludingTrialAndAdmin = { role: { $nin: ["trial_user", "admin"] } };
   const cutoff = windowCutoff(days);
 
