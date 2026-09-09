@@ -215,7 +215,10 @@ function UserEditForm({ user, onClose }: { user: UserRow; onClose: () => void })
                 aria-invalid={!!errors.credits}
                 {...register("credits", { valueAsNumber: true })}
               />
-              <FieldDescription>Selects the LLM tier; does not gate access.</FieldDescription>
+              <FieldDescription>
+                Also gates mock interviews: the desktop client refuses to start one it cannot see
+                through to its report on this balance, on top of selecting the LLM tier.
+              </FieldDescription>
               <FieldError errors={[errors.credits]} />
             </Field>
 

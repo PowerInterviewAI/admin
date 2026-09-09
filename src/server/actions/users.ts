@@ -1,6 +1,7 @@
 "use server";
 
 import { refresh } from "next/cache";
+import { z } from "zod";
 
 import { type ActionResult, failed, ok } from "@/lib/action-result";
 import { type User, userPasswordSchema, userPatchSchema, userSchema } from "@/lib/schemas/user";
@@ -9,6 +10,29 @@ import { AppError, notFound } from "@/server/errors";
 import { deleteById, deleteMany, findOne, insertDocument, updateById } from "@/server/repository";
 import { hashPassword } from "@/server/password";
 
+/**
+ * Reads only `credits`, deliberately not `userSchema`. `updateUser` needs the balance before its
+ * write so it can audit the change, but the full schema throws on any document that has drifted
+ * out of it (a role or interview_config shape the model has moved past) - and editing is
+ * plausibly how an admin fixes such a row. A read that requires whole-document validity would
+ * make exactly that row uneditable. Failing (or finding nothing) here degrades to "write without
+ * an audit row", never to a failed save - see `readPreviousCredits`.
+ */
+const creditsOnlySchema = z.object({ credits: z.number().int() });
+
+async function readPreviousCredits(userId: string): Promise<number | null> {
+  try {
+    const doc = await findOne({
+      collection: COLLECTIONS.users,
+      schema: creditsOnlySchema,
+      filter: { _id: toObjectId(userId) },
+    });
+    return doc?.credits ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export async function updateUser(userId: string, input: unknown): Promise<ActionResult> {
   const parsed = userPatchSchema.safeParse(input);
   if (!parsed.success) {
@@ -16,15 +40,58 @@ export async function updateUser(userId: string, input: unknown): Promise<Action
   }
 
   try {
+    const previousBalance = await readPreviousCredits(userId);
+
     // `$set` replaces `interview_config` wholesale rather than merging into it, which is why the
     // edit sheet always submits all three inner fields.
     await updateById(COLLECTIONS.users, userId, parsed.data, "user");
+
+    if (previousBalance !== null && previousBalance !== parsed.data.credits) {
+      await recordCreditsAdjusted(userId, parsed.data.email, previousBalance, parsed.data.credits);
+    }
   } catch (error) {
     return failed(error instanceof AppError ? error.message : "Could not update this user");
   }
 
   refresh();
   return ok;
+}
+
+/**
+ * Backend keeps a two-sided credit ledger - `credits_applied` for purchases, `credits_consumed`
+ * for spend - so an admin balance edit is a third mutation source, and one that wrote no trail at
+ * all until this existed. Mirrors `recordPasswordChange` below: `source` marks which side wrote
+ * it, and a failure here must never fail the action, since the balance is already changed by the
+ * time this runs.
+ */
+async function recordCreditsAdjusted(
+  userId: string,
+  email: string,
+  previousBalance: number,
+  newBalance: number,
+): Promise<void> {
+  try {
+    await insertDocument(
+      COLLECTIONS.auditLogs,
+      {
+        event_type: "credits_adjusted",
+        user_id: toObjectId(userId),
+        email,
+        status: "success",
+        ip_address: null,
+        user_agent: null,
+        metadata: {
+          source: "admin_dashboard",
+          previous_balance: previousBalance,
+          new_balance: newBalance,
+          credits_amount: newBalance - previousBalance,
+        },
+      },
+      "audit log",
+    );
+  } catch (error) {
+    console.error("Credits were adjusted, but the audit log entry could not be written", error);
+  }
 }
 
 /**

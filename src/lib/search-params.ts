@@ -137,6 +137,10 @@ export const emailCampaignsSearchParamsSchema = z.object({
 
 export const auditLogsSearchParamsSchema = z.object({
   q: z.string().optional().catch(undefined),
+  // `auditEventTypeSchema` now includes the `unknown` sentinel (see its docstring), so
+  // `?event_type=unknown` parses as that literal instead of falling through `.catch()` - it
+  // matches only rows whose real type this app does not recognize, which is a legitimate filter
+  // to have typed by hand even though nothing links to it.
   event_type: auditEventTypeSchema.optional().catch(undefined),
   /** A whole family of event types, for the tabs. Composes with `event_type`, which narrows to one. */
   group: auditEventGroupSchema.optional().catch(undefined),

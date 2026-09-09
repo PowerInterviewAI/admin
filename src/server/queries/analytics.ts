@@ -246,6 +246,28 @@ async function countDistinct(
  */
 export async function getAnalyticsOverview(days: AnalyticsRange): Promise<AnalyticsOverview> {
   const finished = { status: "finished" };
+  // Money sums use this instead of `finished` alone. A partially-paid order is completed by a
+  // *second* payment document - a follow-up leg, priced at the remainder and linked back by
+  // `root_payment_id` - and backend now marks the root `finished` too once a leg finishes it. Both
+  // documents therefore match `finished`, so summing `price_amount` across them bills the
+  // remainder twice: a $100 order settled as $60 + $40 would report $140. The root's own
+  // `price_amount` is the whole order total by construction, so counting roots alone is the exact
+  // figure. (An order completed by a leg *before* backend began advancing the root is the one gap:
+  // its root is still `partially_paid` and it now contributes nothing rather than the remainder it
+  // used to. Bounded, historical, and in the honest direction for a revenue number.)
+  const finishedOrders = { ...finished, root_payment_id: null };
+  // `credits_outstanding` reads next to `revenue.total_usd` on the same KPI row, which frames it
+  // as a liability against money received. Summed over every user it is not that: a 600-credit
+  // trial grant never had a payment behind it, and neither does the balance on a staff account.
+  // Excluding both roles is what keeps the figure answering the question its position on the
+  // dashboard implies.
+  //
+  // It excludes accounts, not adjustments - a balance an admin hand-set through the edit sheet on
+  // an ordinary `user` account is still counted here, because nothing on the user document says
+  // where its credits came from. Netting those out would mean replaying the `credits_adjusted`
+  // audit rows `updateUser` now writes, which is a different (and much heavier) query than this
+  // one; the trail those rows leave is what that question gets answered from for now.
+  const excludingTrialAndAdmin = { role: { $nin: ["trial_user", "admin"] } };
   const cutoff = windowCutoff(days);
 
   // Independent aggregations, all awaited together: the dashboard costs the slowest of them rather
@@ -276,13 +298,13 @@ export async function getAnalyticsOverview(days: AnalyticsRange): Promise<Analyt
     countBy(COLLECTIONS.users, "role"),
     countBy(COLLECTIONS.users, "status"),
     dailyCounts(COLLECTIONS.users, {}, "created_at", days),
-    sumField(COLLECTIONS.payments, finished, "price_amount"),
-    dailyAmounts(COLLECTIONS.payments, finished, "updated_at", "price_amount", days),
+    sumField(COLLECTIONS.payments, finishedOrders, "price_amount"),
+    dailyAmounts(COLLECTIONS.payments, finishedOrders, "updated_at", "price_amount", days),
     countBy(COLLECTIONS.payments, "status"),
-    sumBy(COLLECTIONS.payments, finished, "plan", "price_amount"),
+    sumBy(COLLECTIONS.payments, finishedOrders, "plan", "price_amount"),
     countDistinct(COLLECTIONS.payments, finished, "user_id"),
     getCollection(COLLECTIONS.payments).countDocuments({}),
-    sumField(COLLECTIONS.users, {}, "credits"),
+    sumField(COLLECTIONS.users, excludingTrialAndAdmin, "credits"),
     dailyCounts(COLLECTIONS.auditLogs, { event_type: "login" }, "created_at", days),
     dailyCounts(COLLECTIONS.auditLogs, { event_type: "signup" }, "created_at", days),
     dailyCounts(COLLECTIONS.auditLogs, { event_type: "asr_start" }, "created_at", days),
