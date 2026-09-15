@@ -7,7 +7,7 @@ import { toast } from "sonner";
 
 import { ReadOnlyNotice } from "@/components/read-only-notice";
 import { RelatedLink } from "@/components/related-link";
-import { useCanWrite } from "@/components/session-context";
+import { useCanAccess, useCanWrite } from "@/components/session-context";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -64,6 +64,7 @@ export function PaymentEditSheet({ payment, onClose }: PaymentEditSheetProps) {
 
 function PaymentEditForm({ payment, onClose }: { payment: PaymentRow; onClose: () => void }) {
   const canWrite = useCanWrite();
+  const canSeeAuditLog = useCanAccess("/audit-logs");
   const [isSaving, startSaving] = useTransition();
 
   const { control, handleSubmit, formState } = useForm<PaymentPatch>({
@@ -117,7 +118,10 @@ function PaymentEditForm({ payment, onClose }: { payment: PaymentRow; onClose: (
                   href={`/payments?user_id=${payment.user_id}`}
                   label="Their payments"
                 />
-                <RelatedLink href={`/audit-logs?user_id=${payment.user_id}`} label="Audit log" />
+                {/* `/audit-logs` is admin-only, so a guest gets no link to it. */}
+                {canSeeAuditLog && (
+                  <RelatedLink href={`/audit-logs?user_id=${payment.user_id}`} label="Audit log" />
+                )}
               </div>
             )}
 

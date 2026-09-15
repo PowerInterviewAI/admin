@@ -4,7 +4,7 @@ Project specification for the Power Interview AI admin dashboard - a production-
 
 ## Overview
 
-`admin` is a single Next.js application that reads and writes the same MongoDB database `../backend` uses for the Power Interview AI product. It does not call backend's API - it talks to MongoDB directly, since backend exposes no admin-facing endpoints today. It is meant to run on a single machine, opened in a browser. Access is gated by its own email/password sign-in, kept in a separate database from the product's own users: a built-in admin comes from the environment, everyone else signs up and waits for an admin to approve them, and an approved account is either an `admin` (writes) or a `guest` (reads).
+`admin` is a single Next.js application that reads and writes the same MongoDB database `../backend` uses for the Power Interview AI product. It does not call backend's API - it talks to MongoDB directly, since backend exposes no admin-facing endpoints today. It is meant to run on a single machine, opened in a browser. Access is gated by its own email/password sign-in, kept in a separate database from the product's own users: a built-in admin comes from the environment, everyone else signs up and waits for an admin to approve them, and an approved account is either an `admin` (everything) or a `guest` (reads the dashboard, users and payments - sessions, audit logs, email and the access panel are admins only).
 
 It also sends mail. `/emails` replaces `../../power-interview-email`, a one-shot Python CLI whose campaign lived in a gitignored `content.py` and whose only record of a send was a log file.
 
@@ -73,11 +73,15 @@ Tabs for the coarse question an admin actually asks - all, in flight, finished, 
 
 ### Sessions (`/sessions`)
 
+Admins only - a session row carries a user's device and IP detail, which is not part of what a read-only account is here to see.
+
 Tabs for the three activity buckets, over a summary strip carrying the matching session count, how many distinct accounts hold them and how many sessions that is each, and the split across active/idle/stale. Below that: a paginated table of every session across all users, searchable by account and filterable by start date and by activity - active (seen in 24h), idle (1-7 days), or stale (7 days or more). Sortable by start or last-active time, showing the account and device behind each one, with a revoke action (confirmed via dialog) that deletes the session document, forcing that device to re-authenticate.
 
 The activity bucket is decided during the server render rather than in the cell, so a badge cannot disagree with the filter that selected it, and hydration cannot disagree with the markup it is hydrating.
 
 ### Email marketing (`/emails`)
+
+Admins only, `/emails/history` included: everything on this page ends in mail leaving the product's own address.
 
 Composes one announcement and sends it through the same layout the product's transactional mail uses.
 
@@ -98,6 +102,8 @@ A campaign whose Node process went away mid-send is shown as **Interrupted** rat
 
 ### Audit Logs (`/audit-logs`)
 
+Admins only - it is the record of what every account did, IP addresses included.
+
 Tabs grouping twenty-three event types into three families - accounts, payments, ASR - plus a **failures** tab that cuts across all three, since the failures are what the page gets opened for. Over a summary strip carrying the matching event count, the failures and their share, how many distinct accounts and IP addresses are involved, and when the newest matching event happened. Below that: a read-only table, searchable by account and filterable by event type, status, IP address, and date range, ordered newest or oldest first. Row click opens a dialog with the full record, including the raw `metadata` JSON.
 
 The three groups are exhaustive by construction: payments and ASR are named explicitly and "accounts" is everything else, so an event type backend adds later shows up under a tab rather than disappearing from all of them.
@@ -108,7 +114,7 @@ The admin user management panel. A summary strip (waiting for approval, approved
 
 A row opens a sheet to approve or revoke access, change the role, set a password, sign that account out of every device, or delete it. Admins can also create an account outright, with its role and password set on the spot - approved immediately, because an admin typing someone's password in is the approval.
 
-Readable by guests like every other page, with the controls disabled rather than hidden. An admin cannot demote, revoke, sign out, or delete **their own** account, which is what makes it impossible to lock the last admin out. The built-in admin named by `ADMIN_EMAIL` is protected the same way, because a restart would grant its access back anyway.
+Admins only: a guest gets an "Admins only" panel, and no sidebar or account-menu entry for it. An admin cannot demote, revoke, sign out, or delete **their own** account, which is what makes it impossible to lock the last admin out. The built-in admin named by `ADMIN_EMAIL` is protected the same way, because a restart would grant its access back anyway.
 
 ### Your account (`/account`)
 
@@ -134,7 +140,8 @@ There is always one way in: `ADMIN_EMAIL`/`ADMIN_PASSWORD` name a built-in admin
 - Every table distinguishes "no rows matched" from "the database could not be reached", the latter with a retry that re-runs the server render
 - Destructive actions (delete user, revoke session) and every campaign send go through a confirmation dialog
 - Every mutation reports success or failure as a toast, driven by the action's return value rather than a thrown error
-- A guest sees every page an admin sees, with the write controls disabled and a note saying why. Every server action re-checks the role before doing anything, so the disabled controls are an explanation rather than the enforcement
+- A guest sees the dashboard, users and payments, with the write controls disabled and a note saying why. `/sessions`, `/audit-logs`, `/emails` and `/access` are admins only: the sidebar drops them, and the segment's layout renders an "Admins only" panel instead of the page, so the page's queries never run
+- Every server action re-checks the role before doing anything, so the disabled controls and hidden links are an explanation rather than the enforcement
 
 ## Out of Scope
 

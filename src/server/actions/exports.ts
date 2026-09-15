@@ -8,7 +8,7 @@ import {
   sessionsSearchParamsSchema,
   usersSearchParamsSchema,
 } from "@/lib/search-params";
-import { denyRead } from "@/server/auth/guard";
+import { denyAdminArea, denyRead } from "@/server/auth/guard";
 import { AppError } from "@/server/errors";
 import { listAuditLogs } from "@/server/queries/audit-logs";
 import { listPayments } from "@/server/queries/payments";
@@ -157,7 +157,9 @@ export async function exportPaymentsCsv(input: unknown): Promise<ActionData<CsvE
 }
 
 export async function exportSessionsCsv(input: unknown): Promise<ActionData<CsvExport>> {
-  const denied = await denyRead();
+  // `denyAdminArea`, not `denyRead`: `/sessions` is admin-only, so this file is exactly the rows
+  // a guest is refused on screen.
+  const denied = await denyAdminArea();
   if (denied) return denied;
 
   const params = sessionsSearchParamsSchema.safeParse(input);
@@ -187,7 +189,9 @@ export async function exportSessionsCsv(input: unknown): Promise<ActionData<CsvE
 }
 
 export async function exportAuditLogsCsv(input: unknown): Promise<ActionData<CsvExport>> {
-  const denied = await denyRead();
+  // Admin-only for the same reason as the sessions export: `/audit-logs` is gated, so this file
+  // is the rows a guest is refused on screen.
+  const denied = await denyAdminArea();
   if (denied) return denied;
 
   const params = auditLogsSearchParamsSchema.safeParse(input);

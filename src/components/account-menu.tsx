@@ -6,7 +6,7 @@ import { useTransition } from "react";
 import { toast } from "sonner";
 
 import { RoleBadge } from "@/components/role-badge";
-import { useSession } from "@/components/session-context";
+import { useCanAccess, useSession } from "@/components/session-context";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -18,7 +18,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { SIGN_IN_PATH } from "@/lib/auth-routes";
-import { ACCOUNT_ROLE_DESCRIPTIONS, type AccountRole } from "@/lib/schemas/account";
+import type { AccountRole } from "@/lib/schemas/account";
 import { signOut } from "@/server/actions/auth";
 
 /** First letter of the name, falling back to the email - an avatar without an image to load. */
@@ -28,6 +28,7 @@ function initial(name: string, email: string): string {
 
 export function AccountMenu() {
   const account = useSession();
+  const canAccessAccess = useCanAccess("/access");
   const router = useRouter();
   const [isSigningOut, startSigningOut] = useTransition();
 
@@ -78,10 +79,12 @@ export function AccountMenu() {
             Your account
           </DropdownMenuItem>
 
-          <DropdownMenuItem onClick={() => router.push("/access")}>
-            <ShieldCheck />
-            Dashboard access
-          </DropdownMenuItem>
+          {canAccessAccess && (
+            <DropdownMenuItem onClick={() => router.push("/access")}>
+              <ShieldCheck />
+              Dashboard access
+            </DropdownMenuItem>
+          )}
 
           <DropdownMenuSeparator />
 
@@ -95,6 +98,10 @@ export function AccountMenu() {
   );
 }
 
+/**
+ * Two words beside the badge, not the role's full description: the dropdown is 16rem wide and the
+ * long form now has to name three admin-only pages. `/account` renders the whole thing.
+ */
 function describeAccess(role: AccountRole): string {
-  return role === "admin" ? "Full access" : (ACCOUNT_ROLE_DESCRIPTIONS.guest.split(".")[0] ?? "");
+  return role === "admin" ? "Full access" : "Read-only, some pages hidden";
 }

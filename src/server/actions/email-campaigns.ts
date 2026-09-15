@@ -19,7 +19,7 @@ import {
   getCollection,
   toObjectId,
 } from "@/server/db";
-import { denyRead, denyWrite } from "@/server/auth/guard";
+import { denyAdminArea, denyWrite } from "@/server/auth/guard";
 import { startCampaign } from "@/server/email/campaign-runner";
 import {
   type EmailConfig,
@@ -41,7 +41,7 @@ import {
 
 /** Backs the recipient picker's search box. Reads only, so it needs no confirmation or refresh. */
 export async function findRecipients(query: string): Promise<ActionData<RecipientOption[]>> {
-  const denied = await denyRead();
+  const denied = await denyAdminArea();
   if (denied) return denied;
 
   try {
@@ -261,7 +261,7 @@ function toProgress(doc: Document, timeoutMs: number): EmailCampaignProgress {
 export async function getCampaignProgress(
   campaignId: string,
 ): Promise<ActionData<EmailCampaignProgress>> {
-  const denied = await denyRead();
+  const denied = await denyAdminArea();
   if (denied) return denied;
 
   try {
@@ -289,7 +289,7 @@ export async function getCampaignProgress(
 export async function getCampaignsProgress(
   campaignIds: string[],
 ): Promise<ActionData<EmailCampaignProgress[]>> {
-  const denied = await denyRead();
+  const denied = await denyAdminArea();
   if (denied) return denied;
 
   if (campaignIds.length === 0) return succeeded([]);
@@ -313,7 +313,7 @@ export async function getCampaignsProgress(
 export async function loadEmailCampaign(
   campaignId: string,
 ): Promise<ActionData<EmailCampaign>> {
-  const denied = await denyRead();
+  const denied = await denyAdminArea();
   if (denied) return denied;
 
   try {

@@ -8,7 +8,7 @@ import { toast } from "sonner";
 
 import { ReadOnlyNotice } from "@/components/read-only-notice";
 import { RelatedLink } from "@/components/related-link";
-import { useCanWrite } from "@/components/session-context";
+import { useCanAccess, useCanWrite } from "@/components/session-context";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -89,6 +89,8 @@ export function UserEditSheet({ user, onClose }: UserEditSheetProps) {
 
 function UserEditForm({ user, onClose }: { user: UserRow; onClose: () => void }) {
   const canWrite = useCanWrite();
+  const canSeeSessions = useCanAccess("/sessions");
+  const canSeeAuditLog = useCanAccess("/audit-logs");
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [isSaving, startSaving] = useTransition();
   const [isDeleting, startDeleting] = useTransition();
@@ -154,11 +156,17 @@ function UserEditForm({ user, onClose }: { user: UserRow; onClose: () => void })
                 href={`/payments?user_id=${user._id}`}
                 label={`${formatNumber(user.payment_count)} payments`}
               />
-              <RelatedLink
-                href={`/sessions?user_id=${user._id}`}
-                label={`${formatNumber(user.session_count)} sessions`}
-              />
-              <RelatedLink href={`/audit-logs?user_id=${user._id}`} label="Audit log" />
+              {/* Dropped for a guest rather than left pointing at the gate: both targets are
+                  admin-only, and a link to a refusal is worse than no link. */}
+              {canSeeSessions && (
+                <RelatedLink
+                  href={`/sessions?user_id=${user._id}`}
+                  label={`${formatNumber(user.session_count)} sessions`}
+                />
+              )}
+              {canSeeAuditLog && (
+                <RelatedLink href={`/audit-logs?user_id=${user._id}`} label="Audit log" />
+              )}
               <span className="ml-auto">Joined {formatDate(user.created_at)}</span>
             </div>
 

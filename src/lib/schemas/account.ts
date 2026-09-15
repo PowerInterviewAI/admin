@@ -22,7 +22,9 @@ export const ACCOUNT_ROLE_LABELS: Record<AccountRole, string> = {
 
 export const ACCOUNT_ROLE_DESCRIPTIONS: Record<AccountRole, string> = {
   admin: "Reads everything, and can edit, delete, set passwords, and send email.",
-  guest: "Reads everything. Every write is refused, on the server as well as in the UI.",
+  guest:
+    "Reads the dashboard, users, and payments. Sessions, audit logs, email, and this page are " +
+    "admin-only, and every write is refused on the server as well as in the UI.",
 };
 
 /**

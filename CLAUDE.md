@@ -58,7 +58,7 @@ src/
     repository.ts          paged find, grouped counts, update/delete, document validation
     errors.ts              AppError plus duplicate-key mapping
     auth/                  accounts, sessions, the built-in admin bootstrap, the
-                           denyWrite/denyRead guards, sign-in throttle
+                           denyWrite/denyAdminArea/denyRead guards, sign-in throttle
     queries/               one module per entity, plus analytics, user-labels, and list-stats
     actions/               "use server" mutations
     email/                 SMTP transport and the background campaign runner
@@ -82,7 +82,7 @@ Route-specific components are colocated with their route; only genuinely shared 
 
 ### Authentication: two roles, and where each is enforced
 
-The dashboard is behind an email/password sign-in with two roles. `admin` does everything; `guest` reads everything and writes nothing.
+The dashboard is behind an email/password sign-in with two roles. `admin` does everything; `guest` reads the dashboard, users and payments, and writes nothing. Four routes are not part of "reads": `/sessions`, `/audit-logs`, `/emails` and `/access` are admins only.
 
 **An admin account is not a product user.** `admin_accounts` and `admin_sessions` live in their own database (`ADMIN_MONGO_DB`, default `pia_admin`), not beside backend's collections, and `accountRoleSchema` is a separate enum from `userRoleSchema`. The two never join: a `users` row with `role: "admin"` is a customer of the product and grants nothing here, and an `admin_accounts` row grants nothing in the product. Keeping them apart is what stops a backend role change from silently becoming a permission in this app - and it is why `getCollection` is the only thing that knows which database a collection name belongs to.
 
@@ -98,13 +98,16 @@ The dashboard is behind an email/password sign-in with two roles. `admin` does e
 
 Both enums `.catch()` to their *least* privileged value, so a row carrying a word this build has never heard of degrades to a pending guest rather than throwing. Rows written before the gate existed have no `status` at all, and `accountSchema` would read that as pending - which would have locked out everybody who already had a working account the moment this shipped. `backfillMissingStatus` approves exactly those rows (`$exists: false`, so it can never touch one an admin deliberately set to pending).
 
-Authorization is checked in three places, and only one of them is a control:
+Authorization is checked in four places, and only two of them are controls:
 
 1. **`src/proxy.ts` is optimistic and knows only whether a cookie is present.** It runs ahead of every request including prefetches, so a database lookup there would put one on the path of every hovered link. What it buys is that a signed-out visitor lands on the form instead of watching a dashboard render and vanish.
 2. **`requireAccount()` in `(dashboard)/layout.tsx` is the real route check.** It resolves the cookie against the database, so a forged or revoked cookie gets past the proxy and dies here. It lives in the layout so no route underneath can forget it.
-3. **Every server action starts with `denyWrite()` or `denyRead()`**, before it validates its input or touches the database. Actions are reachable by direct POST, not only through the UI, so a hidden button is a courtesy and never a control. `denyWrite` is admins only; `denyRead` requires any signed-in account and is what the CSV exports, the recipient search, and the campaign pollers use - a guest may run those, because they return what that guest can already see on the page calling them.
+3. **`AdminGate` in the layout of each segment under `ADMIN_ONLY_PATHS` is the route check for the four admin-only routes.** It renders an "Admins only" panel *instead of* `children`, so the page component is never invoked and its queries never run - nothing about those rows is fetched, let alone serialised. It sits in the segment layout for the same reason `requireAccount` sits in the group layout: a route added under `/emails` tomorrow inherits it. It explains rather than redirects, because a guest bounced to the dashboard would be looking at a page they did not ask for with nothing saying why.
+4. **Every server action starts with `denyWrite()`, `denyAdminArea()` or `denyRead()`**, before it validates its input or touches the database. Actions are reachable by direct POST, not only through the UI, so a hidden button is a courtesy and never a control. `denyWrite` is admins only. `denyRead` requires any signed-in account and is what the users, payments and own-account actions use - a guest may run those, because they return what that guest can already see on the page calling them. `denyAdminArea` is the third because the other two each say the wrong thing about an action that only reads a page a guest cannot open: the recipient search, the campaign pollers, and the sessions and audit-log exports would hand a guest by direct POST exactly the rows `AdminGate` withholds, while `denyWrite` would refuse them with a message about a change nobody attempted.
 
-`useCanWrite()` and `ReadOnlyNotice` gate the UI, and gate nothing: a guest who edits the role in memory gets the buttons back and every one of them fails in the action. They exist so the interface tells the truth about what will work.
+`ADMIN_ONLY_PATHS` in `src/lib/auth-routes.ts` is the single list, prefix-matched and free of any database import so the client can ask the same question. `useCanAccess(href)` is what drops the sidebar entries, the account menu's access item, and the "sessions"/"audit log" cross-links in the user and payment sheets - a link to a refusal is worse than no link.
+
+`useCanWrite()`, `useCanAccess()` and `ReadOnlyNotice` gate the UI, and gate nothing: a guest who edits the role in memory gets the buttons and the nav entries back, and every one of them fails in the action or at the gate. They exist so the interface tells the truth about what will work.
 
 **The account page's four actions are guarded by `denyRead`, not `denyWrite`**, and that is deliberate rather than an oversight: they act only on the caller. Changing your own password, renaming yourself, and signing out your own devices are not writes a guest should have to ask permission for - they are the things every signed-in account must be able to do regardless of role. `changeOwnPassword` additionally demands the current password, which `setAccountPassword` (an admin resetting someone else's) cannot: you always have your own, and requiring it is what stops a borrowed session from locking the real owner out in one step.
 
@@ -231,7 +234,7 @@ Only columns with a plain-string `header` are offered in the Columns menu - an a
 
 Because the exports re-run the list query from `params`, the tab filters (`bucket`, `group`) come along for free: exporting from the "Credits owed" tab exports the payments that are actually owed.
 
-These actions are reachable by direct POST like every other action here, so each one opens with `denyRead()` (see "Authentication" above). They are readable by a guest on purpose: an export returns the rows of the list the guest is already looking at, and refusing would make read-only mean something narrower than it says.
+These actions are reachable by direct POST like every other action here, so each one opens with a guard (see "Authentication" above), and which guard follows the page rather than the action: the users and payments exports take `denyRead` and are runnable by a guest on purpose - an export returns the rows of the list that guest is already looking at, and refusing would make read-only mean something narrower than it says. The sessions and audit-log exports take `denyAdminArea`, because those two pages are admins only and a CSV is not a loophole in that.
 
 ### Session activity is decided on the server
 

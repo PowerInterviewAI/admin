@@ -2,6 +2,7 @@
 
 import { createContext, useContext } from "react";
 
+import { isAdminOnlyPath } from "@/lib/auth-routes";
 import type { AccountSummary } from "@/lib/schemas/account";
 
 const SessionContext = createContext<AccountSummary | null>(null);
@@ -37,4 +38,17 @@ export function useSession(): AccountSummary {
 /** True for an admin. The one question the UI asks about a role, so it gets its own hook. */
 export function useCanWrite(): boolean {
   return useSession().role === "admin";
+}
+
+/**
+ * Whether this account may open `href` at all - false only for a guest and one of
+ * `ADMIN_ONLY_PATHS`. Used to drop links to those pages rather than leave them pointing at the
+ * gate's "Admins only" panel.
+ *
+ * Like `useCanWrite`, it gates the interface and gates nothing else: `AdminGate` is what actually
+ * refuses the page, and `denyAdminArea` what refuses the actions behind it.
+ */
+export function useCanAccess(href: string): boolean {
+  const { role } = useSession();
+  return role === "admin" || !isAdminOnlyPath(href);
 }

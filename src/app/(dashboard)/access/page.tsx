@@ -13,9 +13,9 @@ export const metadata: Metadata = { title: "Dashboard access" };
 /**
  * Who can sign in to this dashboard, and as what.
  *
- * Readable by guests like every other page here, which is the whole shape of the two roles: a
- * guest sees the same thing an admin sees and can change none of it. The controls are disabled
- * rather than hidden so the panel still explains what an admin would be able to do.
+ * Admins only - `layout.tsx` gates the segment, so a guest gets the "Admins only" panel instead of
+ * this page. Who may sign in is not something a read-only account has any use for knowing, and the
+ * table lists every operator's address and live session count.
  */
 export default async function AccessPage() {
   // Resolved again rather than passed down, so the table can mark which row is you - and so the

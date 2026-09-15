@@ -13,6 +13,8 @@ import {
   UserRound,
 } from "lucide-react";
 
+import { isAdminOnlyPath } from "@/lib/auth-routes";
+import { useSession } from "@/components/session-context";
 import {
   Sidebar,
   SidebarContent,
@@ -52,6 +54,12 @@ const ADMIN_NAV_ITEMS: NavEntry[] = [
 
 export function AppSidebar({ pendingCount = 0 }: { pendingCount?: number }) {
   const pathname = usePathname();
+  const isAdmin = useSession().role === "admin";
+
+  // A guest gets no entry for a page the gate would refuse. Listing them disabled was the other
+  // option and it reads worse: the sidebar is a map of where you can go, and five of the six
+  // entries above are places this account genuinely can.
+  const visible = (item: NavEntry) => isAdmin || !isAdminOnlyPath(item.href);
 
   return (
     <Sidebar collapsible="icon">
@@ -71,7 +79,7 @@ export function AppSidebar({ pendingCount = 0 }: { pendingCount?: number }) {
           <SidebarGroupLabel>Overview</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {NAV_ITEMS.map((item) => (
+              {NAV_ITEMS.filter(visible).map((item) => (
                 <NavItem key={item.href} item={item} pathname={pathname} />
               ))}
             </SidebarMenu>
@@ -82,7 +90,7 @@ export function AppSidebar({ pendingCount = 0 }: { pendingCount?: number }) {
           <SidebarGroupLabel>This dashboard</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {ADMIN_NAV_ITEMS.map((item) => (
+              {ADMIN_NAV_ITEMS.filter(visible).map((item) => (
                 <NavItem
                   key={item.href}
                   item={item}
