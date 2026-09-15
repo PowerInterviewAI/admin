@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
-import { AppShell } from "@/components/app-shell";
+import { AppProviders } from "@/components/app-providers";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -21,9 +21,15 @@ export const metadata: Metadata = {
     default: "Dashboard | Power Interview AI Admin",
     template: "%s | Power Interview AI Admin",
   },
-  description: "Local admin dashboard for Power Interview AI",
+  description: "Admin dashboard for Power Interview AI",
 };
 
+/**
+ * Only the document and the providers. The sidebar and header moved into `(dashboard)/layout.tsx`
+ * when sign-in arrived: those routes render outside the chrome, and a shell that had to be told
+ * which pathname it was on to decide whether to draw itself would be the wrong shape for what is
+ * really two different layouts.
+ */
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
@@ -32,7 +38,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${inter.variable} ${jetbrainsMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <AppShell>{children}</AppShell>
+        <AppProviders>{children}</AppProviders>
       </body>
     </html>
   );

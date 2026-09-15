@@ -6,7 +6,9 @@ import { useState, useTransition } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
 
+import { ReadOnlyNotice } from "@/components/read-only-notice";
 import { RelatedLink } from "@/components/related-link";
+import { useCanWrite } from "@/components/session-context";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -86,6 +88,7 @@ export function UserEditSheet({ user, onClose }: UserEditSheetProps) {
 }
 
 function UserEditForm({ user, onClose }: { user: UserRow; onClose: () => void }) {
+  const canWrite = useCanWrite();
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [isSaving, startSaving] = useTransition();
   const [isDeleting, startDeleting] = useTransition();
@@ -135,7 +138,16 @@ function UserEditForm({ user, onClose }: { user: UserRow; onClose: () => void })
   return (
     <>
       <div className="flex-1 overflow-y-auto px-4">
+        <ReadOnlyNotice
+          className="mt-4"
+          message="Your account has read-only access, so this user can be viewed but not changed."
+        />
+
         <form id="user-edit-form" onSubmit={onSubmit}>
+          {/* One `disabled` on the fieldset rather than on twenty inputs: the browser takes every
+              control inside out of the tab order and refuses to submit them, which is exactly the
+              read-only behaviour, and it cannot be forgotten on a field added later. */}
+          <fieldset disabled={!canWrite}>
           <FieldGroup>
             <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
               <RelatedLink
@@ -261,6 +273,7 @@ function UserEditForm({ user, onClose }: { user: UserRow; onClose: () => void })
               </FieldDescription>
             </Field>
           </FieldGroup>
+          </fieldset>
         </form>
 
         {/* Outside the form on purpose. The footer's submit is bound to `user-edit-form` by id, so
@@ -276,12 +289,17 @@ function UserEditForm({ user, onClose }: { user: UserRow; onClose: () => void })
                 Sets a new password without the current one. Signs out every device.
               </FieldDescription>
             </FieldContent>
-            <SetPasswordDialog user={user} />
+            {canWrite ? (
+              <SetPasswordDialog user={user} />
+            ) : (
+              <span className="text-sm text-muted-foreground">Admins only</span>
+            )}
           </Field>
         </FieldGroup>
       </div>
 
       <SheetFooter className="flex-row justify-between border-t">
+        {canWrite ? (
         <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
           <AlertDialogTrigger render={<Button variant="destructive" size="sm" />}>
             <Trash2 data-icon="inline-start" />
@@ -302,8 +320,15 @@ function UserEditForm({ user, onClose }: { user: UserRow; onClose: () => void })
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+        ) : (
+          <span />
+        )}
 
-        <Button type="submit" form="user-edit-form" disabled={!isDirty || isSaving}>
+        <Button
+          type="submit"
+          form="user-edit-form"
+          disabled={!canWrite || !isDirty || isSaving}
+        >
           {isSaving ? "Saving..." : "Save changes"}
         </Button>
       </SheetFooter>

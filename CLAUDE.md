@@ -39,24 +39,31 @@ Next rewrites `tsconfig.json` to add that directory's generated types, which is 
 
 ## Architecture
 
-One Next.js app. There is no separate API service: pages read MongoDB directly on the server and mutate it through server actions.
+One Next.js app. There is no separate API service: pages read MongoDB directly on the server and mutate it through server actions. Routes are split into two groups - `(auth)` renders signed out, `(dashboard)` is everything behind a session.
 
 ```
 src/
-  app/                 one route per entity: /, /users, /payments, /sessions, /emails, /audit-logs
-    <route>/page.tsx       async server component: parses searchParams, runs the query
-    <route>/*-view.tsx     client component: filters + table + sheet
-    <route>/loading.tsx    route-shaped skeleton
-    error.tsx              one boundary for every page (see "Errors" below)
+  proxy.ts             optimistic auth redirect, ahead of every route (Next 16's middleware)
+  app/
+    (auth)/              signed-out: /sign-in, /sign-up, no sidebar
+    (dashboard)/         everything behind requireAccount(): /, /users, /payments, /sessions,
+                         /emails, /audit-logs, /access
+      layout.tsx           the real session check, plus SessionProvider and the chrome
+      <route>/page.tsx     async server component: parses searchParams, runs the query
+      <route>/*-view.tsx   client component: filters + table + sheet
+      <route>/loading.tsx  route-shaped skeleton
+    error.tsx            one boundary for every page, both groups (see "Errors" below)
   server/              server-only, never imported by a client component
     db.ts                  pooled MongoClient, collection names, ObjectId helpers
     repository.ts          paged find, grouped counts, update/delete, document validation
     errors.ts              AppError plus duplicate-key mapping
+    auth/                  accounts, sessions, the denyWrite/denyRead guards, sign-in throttle
     queries/               one module per entity, plus analytics, user-labels, and list-stats
     actions/               "use server" mutations
     email/                 SMTP transport and the background campaign runner
   lib/
     schemas/             zod schemas: the single source of truth for the app's types
+    auth-routes.ts       the cookie name and public paths, shared with proxy.ts (no db import)
     search-params.ts     per-route URL state schemas and query-string building
     list-tabs.ts         the quick-filter tabs each list offers, as params patches
     action-result.ts     the { ok } | { ok: false, error } shape every action returns
@@ -72,7 +79,35 @@ Route-specific components are colocated with their route; only genuinely shared 
 
 `../backend` has an `admin` role and an unused `get_admin_user` dependency, but zero list/edit/delete endpoints for anything - every backend endpoint operates on "the current user" only. Rather than build ~15 new endpoints in a second repo and keep both in sync, this app connects straight to the same MongoDB database (`MONGO_URL`/`MONGO_DB` in `.env.local`). This means `src/lib/schemas/*.ts` are a second copy of backend's document shapes - if backend changes a field, update it here too. There's no migration tool enforcing that; it's a manual sync, which is exactly why every document is validated on read.
 
-**No authentication.** This is a local-only tool (confirmed decision - see git history). Don't add a login flow without checking with the user first; it was explicitly scoped out. Note that server actions are reachable by direct POST, not only through the UI - if this app ever stops being local-only, every action in `src/server/actions/` needs an authorization check before anything else.
+### Authentication: two roles, and where each is enforced
+
+The dashboard is behind an email/password sign-in with two roles. `admin` does everything; `guest` reads everything and writes nothing.
+
+**An admin account is not a product user.** `admin_accounts` and `admin_sessions` live in their own database (`ADMIN_MONGO_DB`, default `pia_admin`), not beside backend's collections, and `accountRoleSchema` is a separate enum from `userRoleSchema`. The two never join: a `users` row with `role: "admin"` is a customer of the product and grants nothing here, and an `admin_accounts` row grants nothing in the product. Keeping them apart is what stops a backend role change from silently becoming a permission in this app - and it is why `getCollection` is the only thing that knows which database a collection name belongs to.
+
+**The first account to sign up becomes the admin; every one after it is a guest.** Someone has to be able to administer a dashboard that starts empty, and the alternatives are worse - a bootstrap password in the environment is a credential in a file, and a setup script is a step that gets skipped. The window closes on its own once one account exists. Two people racing the very first sign-up could both become admins; on a first-run bootstrap that is not worth serialising a collection over.
+
+Authorization is checked in three places, and only one of them is a control:
+
+1. **`src/proxy.ts` is optimistic and knows only whether a cookie is present.** It runs ahead of every request including prefetches, so a database lookup there would put one on the path of every hovered link. What it buys is that a signed-out visitor lands on the form instead of watching a dashboard render and vanish.
+2. **`requireAccount()` in `(dashboard)/layout.tsx` is the real route check.** It resolves the cookie against the database, so a forged or revoked cookie gets past the proxy and dies here. It lives in the layout so no route underneath can forget it.
+3. **Every server action starts with `denyWrite()` or `denyRead()`**, before it validates its input or touches the database. Actions are reachable by direct POST, not only through the UI, so a hidden button is a courtesy and never a control. `denyWrite` is admins only; `denyRead` requires any signed-in account and is what the CSV exports, the recipient search, and the campaign pollers use - a guest may run those, because they return what that guest can already see on the page calling them.
+
+`useCanWrite()` and `ReadOnlyNotice` gate the UI, and gate nothing: a guest who edits the role in memory gets the buttons back and every one of them fails in the action. They exist so the interface tells the truth about what will work.
+
+**The role is read from the account document on every request, never carried in the cookie.** That is the whole reason a demotion or a deletion takes effect on the victim's next navigation rather than whenever they happen to sign out. Verified end to end: a promoted account starts writing with the same cookie it already held, and a deleted account's unexpired cookie stops authenticating immediately.
+
+**Sessions are opaque tokens, stored hashed.** The cookie carries 32 random bytes; `admin_sessions` stores only their SHA-256. A token is a bearer credential, so anyone reading that collection - a backup, a screen-shared Mongo client - could otherwise sign in as anybody with no password. No work factor: the token is high-entropy already, so this is a lookup key, not a password.
+
+**The cookie's `Secure` flag comes from the request scheme, not `NODE_ENV`.** `NODE_ENV` is the obvious-looking test and it is wrong here: `pnpm start` is a production build served over plain HTTP on :13000, and a browser silently discards a `Secure` cookie that arrives over HTTP - so signing in appears to succeed and then bounces straight back to the form, with nothing in any log to say why. `secureCookieFlag()` reads `x-forwarded-proto`; `SECURE_COOKIES` forces it for a proxy that does not set the header.
+
+**No sliding renewal.** The cookie and the row share one absolute 30-day deadline. Extending a live session means writing a `Set-Cookie`, and the only thing that reads the session on an ordinary page view is a server component, where Next does not allow one.
+
+**Expired session rows are swept on sign-in, not by a TTL index.** Mongo's TTL indexes need a BSON date and every timestamp in this stack is a unix-ms integer. Sign-in is the natural moment: rare, already writing to that collection, and nothing reads an expired row meanwhile because `getCurrentAccount` filters on the deadline.
+
+**The self-exclusion in `actions/accounts.ts` is the lockout guard, and it is blunt on purpose.** An admin cannot demote, delete, or sign out their own account, so the account performing an action is always still an admin when it finishes, so the last admin can never be removed - no counting, no transaction, and no window where a concurrent second demotion slips between a count and a write. The cost is that stepping down needs another admin, which is also how it should read. Changing your *own* password is the one exception, and it keeps the tab you changed it in - the one session that just proved it belongs to you.
+
+**Sign-in does not say which half was wrong.** One message for a bad password and for an unknown address, and `verifyPassword` compares against a real throwaway hash when the account does not exist so the response time does not give it away either. `src/server/auth/throttle.ts` locks an email after 8 failures in 15 minutes; it is an in-memory map, which is correct for a single `next start` process and stops being a limit the moment this runs behind more than one - past that it belongs in Mongo beside the sessions.
 
 ### Secrets are absent from schemas, not masked
 
@@ -181,7 +216,7 @@ Only columns with a plain-string `header` are offered in the Columns menu - an a
 
 Because the exports re-run the list query from `params`, the tab filters (`bucket`, `group`) come along for free: exporting from the "Credits owed" tab exports the payments that are actually owed.
 
-These actions are reachable by direct POST like every other action here (see "No authentication" above). If this app ever stops being local-only they need an authorization check first - they are the ones that hand over the whole user table in a single call.
+These actions are reachable by direct POST like every other action here, so each one opens with `denyRead()` (see "Authentication" above). They are readable by a guest on purpose: an export returns the rows of the list the guest is already looking at, and refusing would make read-only mean something narrower than it says.
 
 ### Session activity is decided on the server
 
@@ -329,6 +364,8 @@ Switching the URI to the standard non-SRV form (shard hosts plus `replicaSet=`) 
 ### Environment
 
 `.env.local`, gitignored. `MONGO_URL`/`MONGO_DB` are required; `DNS_SERVERS` is an escape hatch for the `+srv` problem above.
+
+`ADMIN_MONGO_DB` (default `pia_admin`) is the database holding this dashboard's own accounts and sessions - the same cluster as `MONGO_DB`, a different database. `SECURE_COOKIES` forces the session cookie's `Secure` flag on or off; leave it unset and the scheme decides.
 
 The `SMTP_*` block is required only by `/emails`, and its absence is a first-class state rather than a crash: `readEmailConfig()` names the missing variables, the page renders read-only with that reason shown, and composing and previewing still work. Only `describeEmailSetup()` crosses to the client - it deliberately omits the password, because the API key must never reach a browser. `EMAIL_FROM_ADDRESS`/`EMAIL_FROM_NAME`/`APP_NAME` default to what backend and the Python sender already send as, so leaving them unset keeps every kind of mail arriving from one identity.
 

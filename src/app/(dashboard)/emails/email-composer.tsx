@@ -15,6 +15,8 @@ import {
 import { type Control, Controller, useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 
+import { ReadOnlyNotice } from "@/components/read-only-notice";
+import { useCanWrite } from "@/components/session-context";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -87,6 +89,15 @@ export function EmailComposer({
   year,
 }: EmailComposerProps) {
   const router = useRouter();
+  const canWrite = useCanWrite();
+
+  /**
+   * Two independent reasons sending can be off - no SMTP configuration, or a read-only account -
+   * and both disable the same three controls. Composing and previewing stay live either way: an
+   * admin without SMTP still wants to write the campaign, and a guest reading the page should see
+   * what is queued rather than a blank panel.
+   */
+  const canSend = setup.configured && canWrite;
 
   const [audience, setAudience] = useState<EmailAudience>("one");
   const [selected, setSelected] = useState<RecipientOption[]>([]);
@@ -220,6 +231,11 @@ export function EmailComposer({
 
   return (
     <>
+      <ReadOnlyNotice
+        className="mb-4"
+        message="Your account has read-only access, so you can compose and preview but not send."
+      />
+
       {!setup.configured && setup.error && (
         <Card className="mb-4 border border-destructive/40 bg-destructive/5">
           <CardContent className="flex items-start gap-3">
@@ -430,12 +446,12 @@ export function EmailComposer({
                       autoComplete="off"
                       value={testAddress}
                       onChange={(event) => setTestAddress(event.target.value)}
-                      disabled={!setup.configured}
+                      disabled={!canSend}
                     />
                     <Button
                       variant="outline"
                       className="shrink-0"
-                      disabled={!setup.configured || !testAddress || isTesting}
+                      disabled={!canSend || !testAddress || isTesting}
                       onClick={onSendTest}
                     >
                       {isTesting ? "Sending..." : "Send test"}
@@ -451,7 +467,7 @@ export function EmailComposer({
                           } - ${EMAIL_AUDIENCE_LABELS[audience].toLowerCase()}`}
                     </p>
                     <Button
-                      disabled={!setup.configured || recipientCount === 0 || isStarting}
+                      disabled={!canSend || recipientCount === 0 || isStarting}
                       onClick={onRequestSend}
                     >
                       <Send data-icon="inline-start" />

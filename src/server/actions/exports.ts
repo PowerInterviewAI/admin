@@ -8,6 +8,7 @@ import {
   sessionsSearchParamsSchema,
   usersSearchParamsSchema,
 } from "@/lib/search-params";
+import { denyRead } from "@/server/auth/guard";
 import { AppError } from "@/server/errors";
 import { listAuditLogs } from "@/server/queries/audit-logs";
 import { listPayments } from "@/server/queries/payments";
@@ -60,6 +61,9 @@ function build(prefix: string, headers: string[], rows: CsvValue[][]): CsvExport
 }
 
 export async function exportUsersCsv(input: unknown): Promise<ActionData<CsvExport>> {
+  const denied = await denyRead();
+  if (denied) return denied;
+
   const params = usersSearchParamsSchema.safeParse(input);
   if (!params.success) return failed("Those filters are not valid");
 
@@ -102,6 +106,9 @@ export async function exportUsersCsv(input: unknown): Promise<ActionData<CsvExpo
 }
 
 export async function exportPaymentsCsv(input: unknown): Promise<ActionData<CsvExport>> {
+  const denied = await denyRead();
+  if (denied) return denied;
+
   const params = paymentsSearchParamsSchema.safeParse(input);
   if (!params.success) return failed("Those filters are not valid");
 
@@ -150,6 +157,9 @@ export async function exportPaymentsCsv(input: unknown): Promise<ActionData<CsvE
 }
 
 export async function exportSessionsCsv(input: unknown): Promise<ActionData<CsvExport>> {
+  const denied = await denyRead();
+  if (denied) return denied;
+
   const params = sessionsSearchParamsSchema.safeParse(input);
   if (!params.success) return failed("Those filters are not valid");
 
@@ -177,6 +187,9 @@ export async function exportSessionsCsv(input: unknown): Promise<ActionData<CsvE
 }
 
 export async function exportAuditLogsCsv(input: unknown): Promise<ActionData<CsvExport>> {
+  const denied = await denyRead();
+  if (denied) return denied;
+
   const params = auditLogsSearchParamsSchema.safeParse(input);
   if (!params.success) return failed("Those filters are not valid");
 

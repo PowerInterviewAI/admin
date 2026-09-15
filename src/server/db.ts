@@ -15,9 +15,27 @@ export const COLLECTIONS = {
   sessions: "sessions",
   auditLogs: "audit_logs",
   emailCampaigns: "email_campaigns",
+  adminAccounts: "admin_accounts",
+  adminSessions: "admin_sessions",
 } as const;
 
 export type CollectionName = (typeof COLLECTIONS)[keyof typeof COLLECTIONS];
+
+/**
+ * Who may sign in to this dashboard, and which of those sign-ins are still live. Both live in a
+ * separate database (`ADMIN_MONGO_DB`, default `pia_admin`) rather than beside backend's
+ * collections, because they describe operators of the tool rather than customers of the product:
+ * an `admin_accounts` row is not a `users` row with a flag, the two never join, and backend must
+ * never find this app's credentials in a database it owns and is free to migrate.
+ *
+ * Keeping them in `COLLECTIONS` rather than in a parallel registry is what lets `findPage`,
+ * `findOne`, `updateById` and the rest work here unchanged - `getCollection` is the only thing
+ * that has to know which database a name belongs to.
+ */
+const ADMIN_DB_COLLECTIONS: ReadonlySet<string> = new Set([
+  COLLECTIONS.adminAccounts,
+  COLLECTIONS.adminSessions,
+]);
 
 /** A raw Mongo document. Every read is validated by a zod schema before it leaves this layer. */
 export type Document = Record<string, unknown>;
@@ -53,8 +71,14 @@ export function getDb(): Db {
   return getClient().db(process.env.MONGO_DB || "power_interview_ai");
 }
 
+/** This dashboard's own database - accounts and sign-in sessions, nothing backend reads. */
+export function getAdminDb(): Db {
+  return getClient().db(process.env.ADMIN_MONGO_DB || "pia_admin");
+}
+
 export function getCollection(name: CollectionName): Collection<Document> {
-  return getDb().collection<Document>(name);
+  const db = ADMIN_DB_COLLECTIONS.has(name) ? getAdminDb() : getDb();
+  return db.collection<Document>(name);
 }
 
 export function toObjectId(id: string): ObjectId {

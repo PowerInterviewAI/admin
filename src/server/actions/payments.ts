@@ -4,6 +4,7 @@ import { refresh } from "next/cache";
 
 import { type ActionResult, failed, ok } from "@/lib/action-result";
 import { paymentPatchSchema } from "@/lib/schemas/payment";
+import { denyWrite } from "@/server/auth/guard";
 import { COLLECTIONS } from "@/server/db";
 import { AppError } from "@/server/errors";
 import { updateById } from "@/server/repository";
@@ -14,6 +15,9 @@ import { updateById } from "@/server/repository";
  * records whether that already happened.
  */
 export async function updatePayment(paymentId: string, input: unknown): Promise<ActionResult> {
+  const denied = await denyWrite();
+  if (denied) return denied;
+
   const parsed = paymentPatchSchema.safeParse(input);
   if (!parsed.success) {
     return failed(parsed.error.issues[0]?.message ?? "The submitted values are not valid");

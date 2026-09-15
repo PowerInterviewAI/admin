@@ -5,7 +5,9 @@ import { useTransition } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
 
+import { ReadOnlyNotice } from "@/components/read-only-notice";
 import { RelatedLink } from "@/components/related-link";
+import { useCanWrite } from "@/components/session-context";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -61,6 +63,7 @@ export function PaymentEditSheet({ payment, onClose }: PaymentEditSheetProps) {
 }
 
 function PaymentEditForm({ payment, onClose }: { payment: PaymentRow; onClose: () => void }) {
+  const canWrite = useCanWrite();
   const [isSaving, startSaving] = useTransition();
 
   const { control, handleSubmit, formState } = useForm<PaymentPatch>({
@@ -83,7 +86,15 @@ function PaymentEditForm({ payment, onClose }: { payment: PaymentRow; onClose: (
   return (
     <>
       <div className="flex-1 overflow-y-auto px-4">
+        <ReadOnlyNotice
+          className="mt-4"
+          message="Your account has read-only access, so this payment can be viewed but not changed."
+        />
+
         <form id="payment-edit-form" onSubmit={onSubmit}>
+          {/* Same fieldset trick as the user sheet: the browser takes every control inside out of
+              the tab order and refuses to submit them. */}
+          <fieldset disabled={!canWrite}>
           <FieldGroup>
             <div className="grid grid-cols-2 gap-3 text-sm">
               <div className="col-span-2">
@@ -153,11 +164,16 @@ function PaymentEditForm({ payment, onClose }: { payment: PaymentRow; onClose: (
               happened.
             </FieldDescription>
           </FieldGroup>
+          </fieldset>
         </form>
       </div>
 
       <SheetFooter className="border-t">
-        <Button type="submit" form="payment-edit-form" disabled={!formState.isDirty || isSaving}>
+        <Button
+          type="submit"
+          form="payment-edit-form"
+          disabled={!canWrite || !formState.isDirty || isSaving}
+        >
           {isSaving ? "Saving..." : "Save changes"}
         </Button>
       </SheetFooter>

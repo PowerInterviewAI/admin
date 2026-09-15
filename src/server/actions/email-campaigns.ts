@@ -19,6 +19,7 @@ import {
   getCollection,
   toObjectId,
 } from "@/server/db";
+import { denyRead, denyWrite } from "@/server/auth/guard";
 import { startCampaign } from "@/server/email/campaign-runner";
 import {
   type EmailConfig,
@@ -40,6 +41,9 @@ import {
 
 /** Backs the recipient picker's search box. Reads only, so it needs no confirmation or refresh. */
 export async function findRecipients(query: string): Promise<ActionData<RecipientOption[]>> {
+  const denied = await denyRead();
+  if (denied) return denied;
+
   try {
     return succeeded(await searchMailableUsers(query));
   } catch (error) {
@@ -54,6 +58,9 @@ export async function findRecipients(query: string): Promise<ActionData<Recipien
  * campaign, and recording every draft iteration would bury the real sends in the history table.
  */
 export async function sendTestEmail(input: unknown): Promise<ActionResult> {
+  const denied = await denyWrite();
+  if (denied) return denied;
+
   const parsed = emailTestSchema.safeParse(input);
   if (!parsed.success) {
     return failed(parsed.error.issues[0]?.message ?? "The submitted values are not valid");
@@ -116,6 +123,9 @@ function describeEmptyAudience(audience: "one" | "selected" | "all"): string {
 export async function startEmailCampaign(
   input: unknown,
 ): Promise<ActionData<EmailCampaignProgress>> {
+  const denied = await denyWrite();
+  if (denied) return denied;
+
   const parsed = emailCampaignInputSchema.safeParse(input);
   if (!parsed.success) {
     return failed(parsed.error.issues[0]?.message ?? "The submitted values are not valid");
@@ -251,6 +261,9 @@ function toProgress(doc: Document, timeoutMs: number): EmailCampaignProgress {
 export async function getCampaignProgress(
   campaignId: string,
 ): Promise<ActionData<EmailCampaignProgress>> {
+  const denied = await denyRead();
+  if (denied) return denied;
+
   try {
     const doc = await getCollection(COLLECTIONS.emailCampaigns).findOne(
       { _id: toObjectId(campaignId) },
@@ -276,6 +289,9 @@ export async function getCampaignProgress(
 export async function getCampaignsProgress(
   campaignIds: string[],
 ): Promise<ActionData<EmailCampaignProgress[]>> {
+  const denied = await denyRead();
+  if (denied) return denied;
+
   if (campaignIds.length === 0) return succeeded([]);
 
   try {
@@ -297,6 +313,9 @@ export async function getCampaignsProgress(
 export async function loadEmailCampaign(
   campaignId: string,
 ): Promise<ActionData<EmailCampaign>> {
+  const denied = await denyRead();
+  if (denied) return denied;
+
   try {
     const campaign = await getEmailCampaign(campaignId);
     if (!campaign) throw notFound("campaign");

@@ -2,7 +2,13 @@ import "server-only";
 
 import { MongoServerError } from "mongodb";
 
-export type AppErrorCode = "not_found" | "conflict" | "invalid" | "unavailable";
+export type AppErrorCode =
+  | "not_found"
+  | "conflict"
+  | "invalid"
+  | "unavailable"
+  | "unauthenticated"
+  | "forbidden";
 
 export class AppError extends Error {
   readonly code: AppErrorCode;

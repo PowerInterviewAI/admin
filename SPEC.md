@@ -1,10 +1,10 @@
 # SPEC.md
 
-Project specification for the Power Interview AI admin dashboard - a local-only, production-quality admin panel for analytics, user/payment/session management, audit log review, and bulk email marketing.
+Project specification for the Power Interview AI admin dashboard - a production-quality admin panel for analytics, user/payment/session management, audit log review, and bulk email marketing, behind an email/password sign-in with two roles.
 
 ## Overview
 
-`admin` is a single Next.js application that reads and writes the same MongoDB database `../backend` uses for the Power Interview AI product. It does not call backend's API - it talks to MongoDB directly, since backend exposes no admin-facing endpoints today. It is meant to run on a single local machine, opened in a browser; it is never deployed or exposed publicly, and has no authentication.
+`admin` is a single Next.js application that reads and writes the same MongoDB database `../backend` uses for the Power Interview AI product. It does not call backend's API - it talks to MongoDB directly, since backend exposes no admin-facing endpoints today. It is meant to run on a single machine, opened in a browser. Access is gated by its own email/password sign-in with two roles - `admin` writes, `guest` reads - kept in a separate database from the product's own users.
 
 It also sends mail. `/emails` replaces `../../power-interview-email`, a one-shot Python CLI whose campaign lived in a gitignored `content.py` and whose only record of a send was a log file.
 
@@ -38,6 +38,13 @@ Five MongoDB collections owned by `../backend`, read/written here without any sc
 | `audit_logs`  | `event_type` (23-value enum, plus an `unknown` fallback this app adds for a value it does not yet recognize), `user_id`, `email`, `status`, `metadata` (free-form dict) | Read-only in the UI. The two entries this app writes are `password_change` (for its own password overwrites) and `credits_adjusted` (for its own credit edits) |
 | `global_state`| `active_sessions`                                                                                      | **Not used anywhere in this app** - it's a simulated `random.gauss(260, 10)` value in backend, not real data |
 | `email_campaigns` | `subject`, `template`, `body`, `audience`, `status`, `total`, `sent_count`, `failed_count`, `recipients[]` | **Owned by this app**, not backend. Written by the email marketing page; nothing else reads it. `recipients[]` is the per-address delivery log |
+
+Two more collections are owned by this app and live in a **separate database** (`ADMIN_MONGO_DB`, default `pia_admin`), because they describe operators of the dashboard rather than customers of the product:
+
+| Collection        | Key fields                                                        | Notes |
+| ----------------- | ----------------------------------------------------------------- | ----- |
+| `admin_accounts`  | `email` (unique), `name`, `role` (`admin`/`guest`), `last_login_at` | Who can sign in to the dashboard. Unrelated to `users` - the two never join, and a product user with `role: "admin"` grants nothing here. `password_hash` has no field in the schema, same rule as `users` |
+| `admin_sessions`  | `account_id`, `token_hash` (unique), `expires_at`                  | One row per live sign-in. Stores the SHA-256 of the cookie's token, never the token itself |
 
 ## Features
 
@@ -95,6 +102,18 @@ Tabs grouping twenty-three event types into three families - accounts, payments,
 
 The three groups are exhaustive by construction: payments and ASR are named explicitly and "accounts" is everything else, so an event type backend adds later shows up under a tab rather than disappearing from all of them.
 
+### Dashboard access (`/access`)
+
+The admin user management panel. A summary strip (accounts, admins, guests, live sessions, last sign-in) over a table of every account that can sign in, showing its role, how many live sessions it holds, and when it last signed in. A row opens a sheet to change the role, set a password, sign that account out of every device, or delete it.
+
+Admins can also create an account outright, with its role and password set on the spot, for someone who is not at the keyboard.
+
+Readable by guests like every other page, with the controls disabled rather than hidden. An admin cannot demote, sign out, or delete **their own** account, which is what makes it impossible to remove the last admin; changing your own password is the one exception, and it keeps the session you changed it in.
+
+### Sign in and sign up (`/sign-in`, `/sign-up`)
+
+Email and password. The first account created becomes the admin; every account after it is a guest until an admin promotes it. Sign-up signs you in. Sign-in reports one message for a wrong password and for an unknown address, and locks an email after 8 failures in 15 minutes.
+
 ### Cross-cutting UI behaviour
 
 - Filters, sort, and page live in the URL: every view is linkable, and the back button steps through it. A **Reset** control clears the filters while keeping sort order and page size, and carries a count of how many are currently narrowing the list
@@ -107,11 +126,13 @@ The three groups are exhaustive by construction: payments and ASR are named expl
 - Every table distinguishes "no rows matched" from "the database could not be reached", the latter with a retry that re-runs the server render
 - Destructive actions (delete user, revoke session) and every campaign send go through a confirmation dialog
 - Every mutation reports success or failure as a toast, driven by the action's return value rather than a thrown error
+- A guest sees every page an admin sees, with the write controls disabled and a note saying why. Every server action re-checks the role before doing anything, so the disabled controls are an explanation rather than the enforcement
 
 ## Out of Scope
 
-- No authentication or authorization - local-only tool, confirmed decision
-- No user creation from the admin panel (only editing existing users)
+- No sign-in for the *product's* users here - `users` is data this tool edits, not a way into it. Dashboard accounts are separate records in a separate database
+- No password reset by email, no SSO, no multi-factor - an admin sets a password from the access panel and passes it on out of band
+- No user creation from the admin panel (only editing existing users). Creating a *dashboard* account is supported, from `/access`
 - No payment creation - payments only originate from the real NOWPayments flow in backend
 - `global_state.active_sessions` is excluded everywhere as simulated, non-real data
 - No changes to `../backend` - this app is fully independent of it at the code level, coupled only by reading/writing the same database

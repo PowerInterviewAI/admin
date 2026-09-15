@@ -4,6 +4,7 @@ import { LogOut } from "lucide-react";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
+import { useCanWrite } from "@/components/session-context";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -24,6 +25,7 @@ import { revokeSession } from "@/server/actions/sessions";
  * module-level constant instead of being rebuilt on every render to close over a handler.
  */
 export function RevokeSessionButton({ session }: { session: SessionRow }) {
+  const canWrite = useCanWrite();
   const [open, setOpen] = useState(false);
   const [isRevoking, startRevoking] = useTransition();
 
@@ -38,6 +40,17 @@ export function RevokeSessionButton({ session }: { session: SessionRow }) {
       setOpen(false);
     });
   };
+
+  // Disabled rather than hidden: an empty cell in an action column reads as a rendering fault,
+  // and the title says which account setting explains it.
+  if (!canWrite) {
+    return (
+      <Button variant="outline" size="sm" disabled title="Your account has read-only access">
+        <LogOut data-icon="inline-start" />
+        Revoke
+      </Button>
+    );
+  }
 
   return (
     <AlertDialog open={open} onOpenChange={setOpen}>

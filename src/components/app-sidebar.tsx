@@ -9,6 +9,7 @@ import {
   Mail,
   Monitor,
   ScrollText,
+  ShieldCheck,
 } from "lucide-react";
 
 import {
@@ -32,6 +33,12 @@ const NAV_ITEMS = [
   { href: "/audit-logs", label: "Audit Logs", icon: ScrollText },
 ];
 
+/**
+ * Separated from the entity routes because it is about this dashboard rather than about the
+ * product: every item above reads backend's data, and this one reads who is allowed to.
+ */
+const ADMIN_NAV_ITEMS = [{ href: "/access", label: "Access", icon: ShieldCheck }];
+
 export function AppSidebar() {
   const pathname = usePathname();
 
@@ -53,25 +60,44 @@ export function AppSidebar() {
           <SidebarGroupLabel>Overview</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {NAV_ITEMS.map((item) => {
-                const isActive = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
-                return (
-                  <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton
-                      render={<Link href={item.href} />}
-                      isActive={isActive}
-                      tooltip={item.label}
-                    >
-                      <item.icon />
-                      <span>{item.label}</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                );
-              })}
+              {NAV_ITEMS.map((item) => (
+                <NavItem key={item.href} item={item} pathname={pathname} />
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupLabel>This dashboard</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {ADMIN_NAV_ITEMS.map((item) => (
+                <NavItem key={item.href} item={item} pathname={pathname} />
+              ))}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
     </Sidebar>
+  );
+}
+
+function NavItem({
+  item,
+  pathname,
+}: {
+  item: { href: string; label: string; icon: React.ComponentType };
+  pathname: string;
+}) {
+  // "/" would otherwise prefix-match every route and stay lit on all of them.
+  const isActive = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
+
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton render={<Link href={item.href} />} isActive={isActive} tooltip={item.label}>
+        <item.icon />
+        <span>{item.label}</span>
+      </SidebarMenuButton>
+    </SidebarMenuItem>
   );
 }
