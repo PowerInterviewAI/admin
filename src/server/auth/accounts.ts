@@ -4,10 +4,12 @@ import {
   type Account,
   type AccountRole,
   type AccountRow,
+  type AccountStatus,
   accountRowSchema,
   accountSchema,
   normalizeEmail,
 } from "@/lib/schemas/account";
+import { bootstrapAdminAccount } from "@/server/auth/bootstrap";
 import { COLLECTIONS, currentTimestampMs, getCollection, toObjectId } from "@/server/db";
 import { AppError, describeWriteError } from "@/server/errors";
 import { hashPassword } from "@/server/password";
@@ -27,25 +29,34 @@ import { findMany } from "@/server/repository";
  * modules on every edit in development, and a module-level flag would re-run this on each reload.
  */
 declare global {
-  var __adminAuthIndexes: Promise<void> | undefined;
+  var __adminAuthReady: Promise<void> | undefined;
 }
 
-async function createAuthIndexes(): Promise<void> {
+async function prepareAuth(): Promise<void> {
   await Promise.all([
     getCollection(COLLECTIONS.adminAccounts).createIndex({ email: 1 }, { unique: true }),
     getCollection(COLLECTIONS.adminSessions).createIndex({ token_hash: 1 }, { unique: true }),
     getCollection(COLLECTIONS.adminSessions).createIndex({ account_id: 1 }),
   ]);
+
+  // After the indexes, never beside them: the bootstrap account is an insert on `email`, and it
+  // depends on the unique index to be the thing that settles a race rather than a read-then-write.
+  await bootstrapAdminAccount();
 }
 
-export function ensureAuthIndexes(): Promise<void> {
-  globalThis.__adminAuthIndexes ??= createAuthIndexes().catch((error) => {
+/**
+ * Indexes, the status backfill, and the built-in admin - everything that has to be true before
+ * anybody signs in. Awaited at the top of every entry point that reads or writes an account, so
+ * there is no ordering to get wrong and no setup script to forget.
+ */
+export function ensureAuthReady(): Promise<void> {
+  globalThis.__adminAuthReady ??= prepareAuth().catch((error) => {
     // Let the next call try again rather than caching a failure for the life of the process: the
     // usual cause is a database that was not up yet, which fixes itself.
-    globalThis.__adminAuthIndexes = undefined;
+    globalThis.__adminAuthReady = undefined;
     throw describeWriteError(error, "account");
   });
-  return globalThis.__adminAuthIndexes;
+  return globalThis.__adminAuthReady;
 }
 
 /**
@@ -54,9 +65,12 @@ export function ensureAuthIndexes(): Promise<void> {
  * what makes the schema safe everywhere else. Nothing here returns the hash to a caller outside
  * `src/server/auth`.
  */
-export async function findAccountCredentials(
-  email: string,
-): Promise<{ id: string; role: AccountRole; passwordHash: string | null } | null> {
+export async function findAccountCredentials(email: string): Promise<{
+  id: string;
+  role: AccountRole;
+  status: AccountStatus;
+  passwordHash: string | null;
+} | null> {
   const doc = await getCollection(COLLECTIONS.adminAccounts).findOne({
     email: normalizeEmail(email),
   });
@@ -65,8 +79,20 @@ export async function findAccountCredentials(
   return {
     id: String(doc._id),
     role: doc.role === "admin" ? "admin" : "guest",
+    // Anything that is not one of the three known words is treated as pending, which is the
+    // reading that denies access rather than granting it.
+    status: doc.status === "approved" || doc.status === "rejected" ? doc.status : "pending",
     passwordHash: typeof doc.password_hash === "string" ? doc.password_hash : null,
   };
+}
+
+/** Reads a single account's password hash, for a change that has to verify the current one. */
+export async function readPasswordHash(accountId: string): Promise<string | null> {
+  const doc = await getCollection(COLLECTIONS.adminAccounts).findOne(
+    { _id: toObjectId(accountId) },
+    { projection: { password_hash: 1 } },
+  );
+  return typeof doc?.password_hash === "string" ? doc.password_hash : null;
 }
 
 export async function getAccountById(accountId: string): Promise<Account | null> {
@@ -87,7 +113,22 @@ export async function countAccounts(): Promise<number> {
 }
 
 export async function countAdmins(): Promise<number> {
-  return getCollection(COLLECTIONS.adminAccounts).countDocuments({ role: "admin" });
+  return getCollection(COLLECTIONS.adminAccounts).countDocuments({
+    role: "admin",
+    status: "approved",
+  });
+}
+
+/** How many sign-ups are waiting on a decision, for the nav badge and the summary strip. */
+export async function countPendingAccounts(): Promise<number> {
+  try {
+    await ensureAuthReady();
+    return await getCollection(COLLECTIONS.adminAccounts).countDocuments({ status: "pending" });
+  } catch {
+    // Rendered in the chrome on every page. A badge is not worth an error boundary over the
+    // dashboard behind it.
+    return 0;
+  }
 }
 
 interface CreateAccountInput {
@@ -95,6 +136,8 @@ interface CreateAccountInput {
   name: string;
   password: string;
   role: AccountRole;
+  /** Signing up yourself gets `pending`; an admin creating the account has already approved it. */
+  status: AccountStatus;
 }
 
 /** Returns the new account's id. The unique index on `email` is what rejects a duplicate. */
@@ -103,8 +146,9 @@ export async function createAccount({
   name,
   password,
   role,
+  status,
 }: CreateAccountInput): Promise<string> {
-  await ensureAuthIndexes();
+  await ensureAuthReady();
 
   // Hashing costs a few hundred milliseconds of CPU, so it happens once, here, rather than being
   // repeated by every caller.
@@ -115,6 +159,8 @@ export async function createAccount({
       email: normalizeEmail(email),
       name: name.trim(),
       role,
+      status,
+      is_bootstrap: false,
       password_hash,
       last_login_at: null,
       created_at: currentTimestampMs(),
@@ -133,6 +179,21 @@ export async function setAccountPasswordHash(accountId: string, password: string
     const result = await getCollection(COLLECTIONS.adminAccounts).updateOne(
       { _id: toObjectId(accountId) },
       { $set: { password_hash, updated_at: currentTimestampMs() } },
+    );
+    if (result.matchedCount === 0) {
+      throw new AppError("not_found", "That account no longer exists");
+    }
+  } catch (error) {
+    throw describeWriteError(error, "account");
+  }
+}
+
+/** Renames an account. Only ever called on the caller's own, from the account page. */
+export async function setAccountName(accountId: string, name: string): Promise<void> {
+  try {
+    const result = await getCollection(COLLECTIONS.adminAccounts).updateOne(
+      { _id: toObjectId(accountId) },
+      { $set: { name: name.trim(), updated_at: currentTimestampMs() } },
     );
     if (result.matchedCount === 0) {
       throw new AppError("not_found", "That account no longer exists");
@@ -171,15 +232,32 @@ export async function listAccounts(): Promise<AccountRow[]> {
     findMany({
       collection: COLLECTIONS.adminAccounts,
       schema: accountSchema,
+      // Oldest first, then re-sorted below. Mongo cannot order by "pending before everything
+      // else" without an `$expr` stage, and at this row count sorting in memory is cheaper than
+      // the aggregation that would avoid it.
       sort: { created_at: 1 },
       limit: 500,
     }),
     countLiveSessionsByAccount(),
   ]);
 
-  return accounts.map((account) =>
-    accountRowSchema.parse({ ...account, session_count: sessionCounts[account._id] ?? 0 }),
-  );
+  const rank: Record<string, number> = { pending: 0, approved: 1, rejected: 2 };
+
+  return accounts
+    .map((account) =>
+      accountRowSchema.parse({ ...account, session_count: sessionCounts[account._id] ?? 0 }),
+    )
+    // Accounts waiting on a decision come first: the panel exists to get them decided, and a
+    // pending row buried under thirty approved ones is one nobody notices.
+    .sort((a, b) => (rank[a.status] ?? 0) - (rank[b.status] ?? 0));
+}
+
+/** Live sessions on one account, for the account page's "sign out other devices" row. */
+export async function countAccountSessions(accountId: string): Promise<number> {
+  return getCollection(COLLECTIONS.adminSessions).countDocuments({
+    account_id: toObjectId(accountId),
+    expires_at: { $gt: currentTimestampMs() },
+  });
 }
 
 async function countLiveSessionsByAccount(): Promise<Record<string, number>> {

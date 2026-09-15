@@ -4,7 +4,7 @@ Project specification for the Power Interview AI admin dashboard - a production-
 
 ## Overview
 
-`admin` is a single Next.js application that reads and writes the same MongoDB database `../backend` uses for the Power Interview AI product. It does not call backend's API - it talks to MongoDB directly, since backend exposes no admin-facing endpoints today. It is meant to run on a single machine, opened in a browser. Access is gated by its own email/password sign-in with two roles - `admin` writes, `guest` reads - kept in a separate database from the product's own users.
+`admin` is a single Next.js application that reads and writes the same MongoDB database `../backend` uses for the Power Interview AI product. It does not call backend's API - it talks to MongoDB directly, since backend exposes no admin-facing endpoints today. It is meant to run on a single machine, opened in a browser. Access is gated by its own email/password sign-in, kept in a separate database from the product's own users: a built-in admin comes from the environment, everyone else signs up and waits for an admin to approve them, and an approved account is either an `admin` (writes) or a `guest` (reads).
 
 It also sends mail. `/emails` replaces `../../power-interview-email`, a one-shot Python CLI whose campaign lived in a gitignored `content.py` and whose only record of a send was a log file.
 
@@ -43,7 +43,7 @@ Two more collections are owned by this app and live in a **separate database** (
 
 | Collection        | Key fields                                                        | Notes |
 | ----------------- | ----------------------------------------------------------------- | ----- |
-| `admin_accounts`  | `email` (unique), `name`, `role` (`admin`/`guest`), `last_login_at` | Who can sign in to the dashboard. Unrelated to `users` - the two never join, and a product user with `role: "admin"` grants nothing here. `password_hash` has no field in the schema, same rule as `users` |
+| `admin_accounts`  | `email` (unique), `name`, `role` (`admin`/`guest`), `status` (`pending`/`approved`/`rejected`), `is_bootstrap`, `last_login_at` | Who can sign in to the dashboard. Unrelated to `users` - the two never join, and a product user with `role: "admin"` grants nothing here. `status` gates signing in at all; `role` gates writing once in. `is_bootstrap` marks the account named by `ADMIN_EMAIL`. `password_hash` has no field in the schema, same rule as `users` |
 | `admin_sessions`  | `account_id`, `token_hash` (unique), `expires_at`                  | One row per live sign-in. Stores the SHA-256 of the cookie's token, never the token itself |
 
 ## Features
@@ -104,15 +104,23 @@ The three groups are exhaustive by construction: payments and ASR are named expl
 
 ### Dashboard access (`/access`)
 
-The admin user management panel. A summary strip (accounts, admins, guests, live sessions, last sign-in) over a table of every account that can sign in, showing its role, how many live sessions it holds, and when it last signed in. A row opens a sheet to change the role, set a password, sign that account out of every device, or delete it.
+The admin user management panel. A summary strip (waiting for approval, approved, admins, live sessions, last sign-in) over a table of every account, sorted so the ones waiting on a decision come first. Pending rows carry **Approve** and **Reject** buttons inline; the sidebar shows a badge with the pending count, since a sign-up is the one thing here that blocks a person on a human.
 
-Admins can also create an account outright, with its role and password set on the spot, for someone who is not at the keyboard.
+A row opens a sheet to approve or revoke access, change the role, set a password, sign that account out of every device, or delete it. Admins can also create an account outright, with its role and password set on the spot - approved immediately, because an admin typing someone's password in is the approval.
 
-Readable by guests like every other page, with the controls disabled rather than hidden. An admin cannot demote, sign out, or delete **their own** account, which is what makes it impossible to remove the last admin; changing your own password is the one exception, and it keeps the session you changed it in.
+Readable by guests like every other page, with the controls disabled rather than hidden. An admin cannot demote, revoke, sign out, or delete **their own** account, which is what makes it impossible to lock the last admin out. The built-in admin named by `ADMIN_EMAIL` is protected the same way, because a restart would grant its access back anyway.
+
+### Your account (`/account`)
+
+Your own sign-in, reachable by every signed-in account whatever its role. Shows who you are signed in as - email, role, access status, when the account was created, when you last signed in - and lets you change the two things that are yours to change: your display name and your password.
+
+Changing your password requires the current one, and ends every other session while keeping the tab you changed it in. A separate control signs out your other devices without changing the password.
 
 ### Sign in and sign up (`/sign-in`, `/sign-up`)
 
-Email and password. The first account created becomes the admin; every account after it is a guest until an admin promotes it. Sign-up signs you in. Sign-in reports one message for a wrong password and for an unknown address, and locks an email after 8 failures in 15 minutes.
+Email and password. Signing up creates a **pending** account and no session: nothing is readable until an admin approves it, and the form says so rather than pretending to sign you in. Signing in reports one message for a wrong password and for an unknown address, and its own message for an account that is pending or has been rejected - both only reachable by someone who already produced the right password. An email is locked after 8 failures in 15 minutes.
+
+There is always one way in: `ADMIN_EMAIL`/`ADMIN_PASSWORD` name a built-in admin that is created on first boot and re-asserted as an approved admin on every restart. With those unset, the sign-in page says so instead of presenting a form that cannot succeed.
 
 ### Cross-cutting UI behaviour
 
@@ -131,7 +139,8 @@ Email and password. The first account created becomes the admin; every account a
 ## Out of Scope
 
 - No sign-in for the *product's* users here - `users` is data this tool edits, not a way into it. Dashboard accounts are separate records in a separate database
-- No password reset by email, no SSO, no multi-factor - an admin sets a password from the access panel and passes it on out of band
+- No password reset by email, no SSO, no multi-factor - an admin sets a password from the access panel and passes it on out of band, and a forgotten built-in admin password is recovered with `ADMIN_PASSWORD_FORCE_RESET`
+- No email notification when somebody requests access - the pending count in the sidebar is how an admin finds out
 - No user creation from the admin panel (only editing existing users). Creating a *dashboard* account is supported, from `/access`
 - No payment creation - payments only originate from the real NOWPayments flow in backend
 - `global_state.active_sessions` is excluded everywhere as simulated, non-real data

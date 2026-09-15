@@ -44,10 +44,11 @@ import { createAdminAccount } from "@/server/actions/accounts";
 /**
  * Creates an account for somebody else, with its password set here and its role chosen up front.
  *
- * Sign-up is open, so this is not the only way in - but it is the only way to hand someone admin
- * access in one step, and the only way to make an account for a person who is not sitting at the
- * keyboard. The password is typed by the admin and told to the recipient out of band; there is no
- * mail in this flow, which is the honest shape for a tool with a handful of operators.
+ * Sign-up is open, so this is not the only way in - but it is the only one that skips the wait:
+ * an account made here is approved on the spot, because an admin typing someone's password in has
+ * already made the decision that approval exists to record. It is also the only way to hand
+ * somebody admin access in a single step. The password is passed on out of band; there is no mail
+ * in this flow, which is the honest shape for a tool with a handful of operators.
  */
 export function NewAccountDialog() {
   const [open, setOpen] = useState(false);
@@ -63,8 +64,8 @@ export function NewAccountDialog() {
         <DialogHeader>
           <DialogTitle>Create a dashboard account</DialogTitle>
           <DialogDescription>
-            Gives someone a sign-in to this admin tool. It is not a Power Interview account and
-            grants nothing in the product.
+            Gives someone a sign-in to this admin tool, approved immediately - no waiting on a
+            second click. It is not a Power Interview account and grants nothing in the product.
           </DialogDescription>
         </DialogHeader>
 

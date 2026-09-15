@@ -10,6 +10,7 @@ import {
   Monitor,
   ScrollText,
   ShieldCheck,
+  UserRound,
 } from "lucide-react";
 
 import {
@@ -20,11 +21,18 @@ import {
   SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
+  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 
-const NAV_ITEMS = [
+interface NavEntry {
+  href: string;
+  label: string;
+  icon: React.ComponentType;
+}
+
+const NAV_ITEMS: NavEntry[] = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/users", label: "Users", icon: Users },
   { href: "/payments", label: "Payments", icon: CreditCard },
@@ -34,12 +42,15 @@ const NAV_ITEMS = [
 ];
 
 /**
- * Separated from the entity routes because it is about this dashboard rather than about the
- * product: every item above reads backend's data, and this one reads who is allowed to.
+ * Separated from the entity routes because these are about this dashboard rather than about the
+ * product: every item above reads backend's data, and these two read who is allowed to.
  */
-const ADMIN_NAV_ITEMS = [{ href: "/access", label: "Access", icon: ShieldCheck }];
+const ADMIN_NAV_ITEMS: NavEntry[] = [
+  { href: "/access", label: "Access", icon: ShieldCheck },
+  { href: "/account", label: "Your account", icon: UserRound },
+];
 
-export function AppSidebar() {
+export function AppSidebar({ pendingCount = 0 }: { pendingCount?: number }) {
   const pathname = usePathname();
 
   return (
@@ -72,7 +83,15 @@ export function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               {ADMIN_NAV_ITEMS.map((item) => (
-                <NavItem key={item.href} item={item} pathname={pathname} />
+                <NavItem
+                  key={item.href}
+                  item={item}
+                  pathname={pathname}
+                  // Sign-ups wait on a human, and nothing else in the app would ever mention them.
+                  // The badge is the only thing that turns "somebody requested access" into
+                  // something an admin finds without going looking for it.
+                  badge={item.href === "/access" && pendingCount > 0 ? pendingCount : undefined}
+                />
               ))}
             </SidebarMenu>
           </SidebarGroupContent>
@@ -85,9 +104,11 @@ export function AppSidebar() {
 function NavItem({
   item,
   pathname,
+  badge,
 }: {
-  item: { href: string; label: string; icon: React.ComponentType };
+  item: NavEntry;
   pathname: string;
+  badge?: number;
 }) {
   // "/" would otherwise prefix-match every route and stay lit on all of them.
   const isActive = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
@@ -98,6 +119,7 @@ function NavItem({
         <item.icon />
         <span>{item.label}</span>
       </SidebarMenuButton>
+      {badge !== undefined && <SidebarMenuBadge>{badge}</SidebarMenuBadge>}
     </SidebarMenuItem>
   );
 }

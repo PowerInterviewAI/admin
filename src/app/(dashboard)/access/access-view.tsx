@@ -1,15 +1,20 @@
 "use client";
 
 import type { ColumnDef } from "@tanstack/react-table";
-import { useMemo, useState } from "react";
+import { Check, ShieldCheck, X } from "lucide-react";
+import { useMemo, useState, useTransition } from "react";
+import { toast } from "sonner";
 
 import { DataTable } from "@/components/data-table";
 import { ReadOnlyNotice } from "@/components/read-only-notice";
 import { RoleBadge } from "@/components/role-badge";
 import { useCanWrite } from "@/components/session-context";
+import { StatusBadge } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { formatDate, formatNumber } from "@/lib/format";
 import type { AccountRow } from "@/lib/schemas/account";
+import { setAccountStatus } from "@/server/actions/accounts";
 
 import { AccountEditSheet } from "./account-edit-sheet";
 import { NewAccountDialog } from "./new-account-dialog";
@@ -49,10 +54,24 @@ export function AccessView({
                   You
                 </Badge>
               )}
+              {row.original.is_bootstrap && (
+                <span
+                  className="flex items-center gap-1 text-xs font-normal text-muted-foreground"
+                  title="Named by ADMIN_EMAIL. Re-asserted as an approved admin on every restart."
+                >
+                  <ShieldCheck className="size-3" />
+                  Built-in
+                </span>
+              )}
             </span>
             <span className="text-xs text-muted-foreground">{row.original.email}</span>
           </div>
         ),
+      },
+      {
+        accessorKey: "status",
+        header: "Access",
+        cell: ({ row }) => <StatusBadge status={row.original.status} />,
       },
       {
         accessorKey: "role",
@@ -84,8 +103,18 @@ export function AccessView({
         header: "Added",
         cell: ({ row }) => formatDate(row.original.created_at),
       },
+      {
+        // Approving is the one thing on this page that happens often enough to deserve a control
+        // in the row rather than two clicks through the sheet. Everything else stays in the sheet.
+        id: "decide",
+        header: undefined,
+        cell: ({ row }) =>
+          row.original.status === "pending" ? (
+            <PendingDecision account={row.original} disabled={!canWrite} />
+          ) : null,
+      },
     ],
-    [currentAccountId],
+    [canWrite, currentAccountId],
   );
 
   return (
@@ -102,7 +131,7 @@ export function AccessView({
         onRowClick={(row) => setSelectedId(row._id)}
         emptyTitle="No accounts"
         emptyMessage="Nobody can sign in to this dashboard yet."
-        // Five columns, all of them worth seeing: nothing here is wide or rare enough to hide.
+        // Every column here is worth seeing, and the action column has no name to list anyway.
         enableColumnToggle={false}
         toolbar={canWrite ? <NewAccountDialog /> : null}
       />
@@ -113,5 +142,52 @@ export function AccessView({
         onClose={() => setSelectedId(null)}
       />
     </>
+  );
+}
+
+/**
+ * Approve or reject, straight from the row.
+ *
+ * `stopPropagation` on the wrapper, not on each button: the row is clickable and opens the sheet,
+ * and a decision made here should not also leave a sheet open over the table it just changed.
+ */
+function PendingDecision({ account, disabled }: { account: AccountRow; disabled: boolean }) {
+  const [isDeciding, startDeciding] = useTransition();
+
+  const decide = (status: "approved" | "rejected") => {
+    startDeciding(async () => {
+      const result = await setAccountStatus(account._id, { status });
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success(
+        status === "approved"
+          ? `${account.email} can now sign in`
+          : `${account.email} was rejected`,
+      );
+    });
+  };
+
+  return (
+    <div
+      className="flex justify-end gap-2"
+      onClick={(event) => event.stopPropagation()}
+      onKeyDown={(event) => event.stopPropagation()}
+    >
+      <Button size="sm" disabled={disabled || isDeciding} onClick={() => decide("approved")}>
+        <Check data-icon="inline-start" />
+        Approve
+      </Button>
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={disabled || isDeciding}
+        onClick={() => decide("rejected")}
+      >
+        <X data-icon="inline-start" />
+        Reject
+      </Button>
+    </div>
   );
 }

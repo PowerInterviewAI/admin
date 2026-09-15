@@ -1,10 +1,10 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useRouter } from "next/navigation";
+import { MailCheck } from "lucide-react";
+import Link from "next/link";
 import { useState, useTransition } from "react";
 import { useForm } from "react-hook-form";
-import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -15,14 +15,19 @@ import {
   FieldLabel,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { AFTER_SIGN_IN_PATH } from "@/lib/auth-routes";
 import { type SignUpInput, signUpSchema } from "@/lib/schemas/account";
 import { signUp } from "@/server/actions/auth";
 
-export function SignUpForm({ isFirstAccount }: { isFirstAccount: boolean }) {
-  const router = useRouter();
+export function SignUpForm() {
   const [isSubmitting, startSubmitting] = useTransition();
   const [rejection, setRejection] = useState<string | null>(null);
+
+  /**
+   * The address that was just registered, which doubles as "we are done here". Sign-up creates no
+   * session - a pending account cannot read a single page - so there is nowhere to navigate to and
+   * the form is replaced in place by what happens next.
+   */
+  const [registered, setRegistered] = useState<string | null>(null);
 
   const {
     register,
@@ -41,17 +46,27 @@ export function SignUpForm({ isFirstAccount }: { isFirstAccount: boolean }) {
         setRejection(result.error);
         return;
       }
-
-      // Signing up signs you in, so this goes to the dashboard rather than back to a login form.
-      toast.success(
-        result.data.role === "admin"
-          ? "Account created. You are this dashboard's admin."
-          : "Account created with read-only access.",
-      );
-      router.replace(AFTER_SIGN_IN_PATH);
-      router.refresh();
+      setRegistered(result.data.email);
     });
   });
+
+  if (registered) {
+    return (
+      <div className="flex flex-col items-center gap-3 text-center">
+        <div className="flex size-11 items-center justify-center rounded-full bg-primary/10 text-primary">
+          <MailCheck className="size-5" />
+        </div>
+        <p className="font-medium">Account created</p>
+        <p className="text-sm text-muted-foreground">
+          <span className="font-medium text-foreground">{registered}</span> is waiting for an admin
+          to approve it. Once they do, you can sign in with the password you just chose.
+        </p>
+        <Button variant="outline" className="mt-2 w-full" nativeButton={false} render={<Link href="/sign-in" />}>
+          Back to sign in
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <form onSubmit={onSubmit} noValidate>
@@ -115,11 +130,7 @@ export function SignUpForm({ isFirstAccount }: { isFirstAccount: boolean }) {
         )}
 
         <Button type="submit" className="w-full" disabled={isSubmitting}>
-          {isSubmitting
-            ? "Creating account..."
-            : isFirstAccount
-              ? "Create admin account"
-              : "Create account"}
+          {isSubmitting ? "Creating account..." : "Request access"}
         </Button>
       </FieldGroup>
     </form>

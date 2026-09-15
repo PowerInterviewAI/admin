@@ -22,10 +22,13 @@ export default async function AccessPage() {
   // "you cannot act on your own account" rule is visible in the UI, not only in the action.
   const [account, accounts] = await Promise.all([requireAccount(), listAccounts()]);
 
-  const admins = accounts.filter((row) => row.role === "admin").length;
+  const pending = accounts.filter((row) => row.status === "pending").length;
+  const approved = accounts.filter((row) => row.status === "approved");
+  const admins = approved.filter((row) => row.role === "admin").length;
   const signedIn = accounts.reduce((total, row) => total + row.session_count, 0);
   const lastLogin = accounts.reduce<number | null>(
-    (latest, row) => (row.last_login_at && (!latest || row.last_login_at > latest) ? row.last_login_at : latest),
+    (latest, row) =>
+      row.last_login_at && (!latest || row.last_login_at > latest) ? row.last_login_at : latest,
     null,
   );
 
@@ -39,19 +42,21 @@ export default async function AccessPage() {
       <ListSummary
         stats={[
           {
-            label: "Accounts",
-            value: formatNumber(accounts.length),
-            hint: "With a sign-in to this dashboard",
+            label: "Waiting for approval",
+            value: formatNumber(pending),
+            hint: pending === 0 ? "Nothing to decide" : "Cannot sign in until approved",
+            // The one number on this page that means somebody is blocked on a person.
+            alert: pending > 0,
+          },
+          {
+            label: "Approved",
+            value: formatNumber(approved.length),
+            hint: `of ${formatNumber(accounts.length)} accounts`,
           },
           {
             label: "Admins",
             value: formatNumber(admins),
             hint: "Can edit, delete, and send email",
-          },
-          {
-            label: "Guests",
-            value: formatNumber(accounts.length - admins),
-            hint: "Read-only",
           },
           {
             label: "Live sessions",

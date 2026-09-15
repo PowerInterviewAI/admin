@@ -14,7 +14,7 @@ import {
   toObjectId,
 } from "@/server/db";
 import { describeWriteError } from "@/server/errors";
-import { ensureAuthIndexes, getAccountById } from "@/server/auth/accounts";
+import { ensureAuthReady, getAccountById } from "@/server/auth/accounts";
 
 /**
  * How long a sign-in lasts. The cookie and the database row are given the same absolute deadline
@@ -72,7 +72,7 @@ function cookieOptions(expiresAt: number, secure: boolean) {
  * that is the only place Next lets a cookie be written.
  */
 export async function createSession(accountId: string): Promise<void> {
-  await ensureAuthIndexes();
+  await ensureAuthReady();
 
   const token = randomBytes(32).toString("base64url");
   const expiresAt = currentTimestampMs() + SESSION_TTL_MS;
@@ -162,9 +162,14 @@ export async function revokeAccountSessions(
  * and in three components costs one pair of queries rather than five. The memo is per request, so
  * a role changed in another tab takes effect on the next navigation.
  *
- * The role is read from the account document every time rather than being carried in the cookie.
- * That is the whole reason a demotion or a deletion takes effect immediately instead of whenever
- * the victim happens to sign out: there is no copy of the permission anywhere the server trusts.
+ * The role and the status are read from the account document every time rather than being carried
+ * in the cookie. That is the whole reason a demotion, a revocation, or a deletion takes effect
+ * immediately instead of whenever the victim happens to sign out: there is no copy of the
+ * permission anywhere the server trusts.
+ *
+ * An account that is not `approved` resolves to null, exactly like one that was deleted. Revoking
+ * access also deletes that account's sessions, so this is the belt rather than the braces - but it
+ * is the half that cannot be raced, since it re-reads the document on every request.
  */
 export const getCurrentAccount = cache(async (): Promise<Account | null> => {
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
@@ -176,5 +181,6 @@ export const getCurrentAccount = cache(async (): Promise<Account | null> => {
   });
   if (!session) return null;
 
-  return getAccountById(String(session.account_id));
+  const account = await getAccountById(String(session.account_id));
+  return account?.status === "approved" ? account : null;
 });

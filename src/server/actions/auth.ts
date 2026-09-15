@@ -9,32 +9,31 @@ import {
   toAccountSummary,
 } from "@/lib/schemas/account";
 import {
-  countAccounts,
   createAccount,
-  ensureAuthIndexes,
+  ensureAuthReady,
   findAccountCredentials,
   getAccountById,
   touchLastLogin,
 } from "@/server/auth/accounts";
+import { readBootstrapConfig } from "@/server/auth/bootstrap";
 import { createSession, destroyCurrentSession, getCurrentAccount } from "@/server/auth/session";
 import { clearAttempts, recordFailedAttempt, retryAfterMinutes } from "@/server/auth/throttle";
 import { AppError } from "@/server/errors";
 import { verifyPassword } from "@/server/password";
 
 /**
- * Creating the first account makes you the admin; every account after it is a guest.
+ * Signing up gets you an account and nothing else.
  *
- * Someone has to be able to administer a dashboard that starts with nobody in it, and the
- * alternatives are worse: a bootstrap password in the environment is a credential sitting in a
- * file, and a setup script is a step that gets skipped. The window this opens closes on its own -
- * once one account exists, signing up gets you read-only access and an admin has to promote you
- * from the access panel.
+ * No session is created, because there is nothing yet to hold a session over: a `pending` account
+ * cannot read a single page. Signing someone in and then showing them a wall would be a worse lie
+ * than telling them plainly that an admin has to let them in, and it would mean carrying a whole
+ * second signed-in-but-not-allowed layout for a state that lasts until somebody clicks approve.
  *
- * It is a race in principle: two people submitting the very first sign-up at once could both read
- * a count of zero and both become admins. Two admins on a local tool at first-run is not a
- * privilege escalation worth serialising a collection over, and both of them wanted in.
+ * The first-account-becomes-admin rule this replaced is gone. The admin now comes from
+ * `ADMIN_EMAIL`/`ADMIN_PASSWORD` (see `bootstrap.ts`), so there is no longer a window in which
+ * signing up quickly gets you more than read access.
  */
-export async function signUp(input: unknown): Promise<ActionData<AccountSummary>> {
+export async function signUp(input: unknown): Promise<ActionData<{ email: string }>> {
   const parsed = signUpSchema.safeParse(input);
   if (!parsed.success) {
     return failed(parsed.error.issues[0]?.message ?? "The submitted values are not valid");
@@ -43,24 +42,14 @@ export async function signUp(input: unknown): Promise<ActionData<AccountSummary>
   const { name, email, password } = parsed.data;
 
   try {
-    await ensureAuthIndexes();
+    await ensureAuthReady();
+    await createAccount({ email, name, password, role: "guest", status: "pending" });
 
-    const role = (await countAccounts()) === 0 ? "admin" : "guest";
-    const accountId = await createAccount({ email, name, password, role });
-
-    // Signing up signs you in. The alternative - bouncing to the sign-in form to type the same
-    // password again - is a step that exists only because the code was easier to write that way.
-    await createSession(accountId);
-    await touchLastLogin(accountId);
-
-    const account = await getAccountById(accountId);
-    if (!account) throw new AppError("unavailable", "The account was created but could not be read");
-
-    return succeeded(toAccountSummary(account));
+    return succeeded({ email: normalizeEmail(email) });
   } catch (error) {
     if (error instanceof AppError) {
-      // The unique index on `email` is what catches a duplicate, including one that raced past the
-      // check above; `describeWriteError` has already turned it into a conflict by here.
+      // The unique index on `email` is what catches a duplicate, including one that raced past any
+      // check; `describeWriteError` has already turned it into a conflict by here.
       return failed(
         error.code === "conflict" ? "An account already uses that email address" : error.message,
       );
@@ -75,6 +64,15 @@ export async function signUp(input: unknown): Promise<ActionData<AccountSummary>
  * the same bcrypt work in both cases so the response time does not give it away either.
  */
 const SIGN_IN_REJECTION = "That email and password do not match an account";
+
+/**
+ * These two are only ever reached by someone who has already proved the password, so they are not
+ * an enumeration oracle - and telling a real owner "you are waiting on an admin" rather than "your
+ * password is wrong" is the difference between waiting and retyping a correct password all day.
+ */
+const PENDING_REJECTION =
+  "Your account is waiting for an admin to approve it. You will be able to sign in once they do.";
+const REJECTED_REJECTION = "Your access to this dashboard has been revoked. Ask an admin about it.";
 
 export async function signIn(input: unknown): Promise<ActionData<AccountSummary>> {
   const parsed = signInSchema.safeParse(input);
@@ -92,7 +90,7 @@ export async function signIn(input: unknown): Promise<ActionData<AccountSummary>
   }
 
   try {
-    await ensureAuthIndexes();
+    await ensureAuthReady();
 
     const credentials = await findAccountCredentials(email);
     const valid = await verifyPassword(parsed.data.password, credentials?.passwordHash);
@@ -102,7 +100,13 @@ export async function signIn(input: unknown): Promise<ActionData<AccountSummary>
       return failed(SIGN_IN_REJECTION);
     }
 
+    // The password was right, so this is not a guess to count against the throttle - the account
+    // just is not allowed in. Counting it would lock a waiting user out of the form that is
+    // telling them to wait.
     clearAttempts(email);
+
+    if (credentials.status === "pending") return failed(PENDING_REJECTION);
+    if (credentials.status === "rejected") return failed(REJECTED_REJECTION);
 
     await createSession(credentials.id);
     await touchLastLogin(credentials.id);
@@ -125,14 +129,14 @@ export async function signOut(): Promise<ActionResult> {
   return ok;
 }
 
-/** Whether signing up will produce the admin. Read by the sign-up page to say so before you type. */
-export async function isFirstAccount(): Promise<boolean> {
-  try {
-    return (await countAccounts()) === 0;
-  } catch {
-    // The page renders either way; being wrong about the copy is not worth an error boundary.
-    return false;
-  }
+/**
+ * Whether a built-in admin is configured at all. Read by the sign-in page, which says so plainly:
+ * without one nobody can sign in and nobody can approve anybody, and a form that cannot succeed
+ * should explain itself rather than just rejecting whatever is typed into it.
+ */
+export async function readBootstrapState(): Promise<{ configured: boolean; error: string | null }> {
+  const result = readBootstrapConfig();
+  return result.ok ? { configured: true, error: null } : { configured: false, error: result.error };
 }
 
 /** Refreshes the signed-in identity the client holds, after changing your own name or password. */

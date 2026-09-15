@@ -1,11 +1,12 @@
 "use client";
 
-import { KeyRound, LogOut, Trash2 } from "lucide-react";
+import { KeyRound, LogOut, ShieldCheck, Trash2 } from "lucide-react";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { AccountPasswordDialog } from "@/components/account-password-dialog";
 import { useCanWrite } from "@/components/session-context";
+import { StatusBadge } from "@/components/status-badge";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -47,12 +48,17 @@ import {
   ACCOUNT_ROLES,
   ACCOUNT_ROLE_DESCRIPTIONS,
   ACCOUNT_ROLE_LABELS,
+  ACCOUNT_STATUSES,
+  ACCOUNT_STATUS_DESCRIPTIONS,
+  ACCOUNT_STATUS_LABELS,
   type AccountRole,
   type AccountRow,
+  type AccountStatus,
 } from "@/lib/schemas/account";
 import {
   deleteAdminAccount,
   setAccountRole,
+  setAccountStatus,
   signOutAccountEverywhere,
 } from "@/server/actions/accounts";
 
@@ -95,9 +101,11 @@ function AccountEditForm({
 }) {
   const canWrite = useCanWrite();
   const [role, setRole] = useState<AccountRole>(account.role);
+  const [status, setStatus] = useState<AccountStatus>(account.status);
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [isSaving, startSaving] = useTransition();
+  const [isSavingStatus, startSavingStatus] = useTransition();
   const [isRevoking, startRevoking] = useTransition();
   const [isDeleting, startDeleting] = useTransition();
 
@@ -108,6 +116,29 @@ function AccountEditForm({
    * why the password row is not covered by this.
    */
   const canActOnAccount = canWrite && !isSelf;
+
+  /**
+   * The built-in admin cannot be demoted, revoked, or deleted here. `ADMIN_EMAIL` re-asserts it as
+   * an approved admin on every restart, so allowing the change would only produce one that
+   * silently reverts on the next boot - worse than refusing it with a reason on screen.
+   */
+  const canChangeAccess = canActOnAccount && !account.is_bootstrap;
+
+  const onSaveStatus = () => {
+    startSavingStatus(async () => {
+      const result = await setAccountStatus(account._id, { status });
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success(
+        status === "approved"
+          ? `${account.email} can now sign in`
+          : `${account.email} can no longer sign in`,
+      );
+      onClose();
+    });
+  };
 
   const onSaveRole = () => {
     startSaving(async () => {
@@ -150,7 +181,16 @@ function AccountEditForm({
       <div className="flex-1 overflow-y-auto px-4">
         <FieldGroup>
           <div className="flex flex-col gap-1 rounded-md border px-3 py-2">
-            <span className="font-medium">{account.name || "Unnamed"}</span>
+            <span className="flex items-center gap-2 font-medium">
+              {account.name || "Unnamed"}
+              <StatusBadge status={account.status} />
+              {account.is_bootstrap && (
+                <span className="flex items-center gap-1 text-xs font-normal text-muted-foreground">
+                  <ShieldCheck className="size-3" />
+                  Built-in
+                </span>
+              )}
+            </span>
             <span className="text-sm text-muted-foreground">{account.email}</span>
             <span className="pt-1 text-xs text-muted-foreground">
               Added {formatDate(account.created_at)} - last signed in{" "}
@@ -159,11 +199,47 @@ function AccountEditForm({
           </div>
 
           <Field>
+            <FieldLabel htmlFor="account-status">Access</FieldLabel>
+            <Select
+              value={status}
+              onValueChange={(value) => value && setStatus(value as AccountStatus)}
+              disabled={!canChangeAccess}
+            >
+              <SelectTrigger id="account-status" className="w-full">
+                <SelectValue>
+                  {(value: string) => ACCOUNT_STATUS_LABELS[value as AccountStatus] ?? ""}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {ACCOUNT_STATUSES.map((option) => (
+                  <SelectItem key={option} value={option}>
+                    {ACCOUNT_STATUS_LABELS[option]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <FieldDescription>
+              {account.is_bootstrap
+                ? "This is the built-in admin named by ADMIN_EMAIL. Its access cannot be revoked from here - a restart would grant it back."
+                : isSelf
+                  ? "You cannot revoke your own access. Another admin has to do it."
+                  : ACCOUNT_STATUS_DESCRIPTIONS[status]}
+            </FieldDescription>
+            {status !== account.status && (
+              <div className="flex justify-end pt-1">
+                <Button size="sm" disabled={!canChangeAccess || isSavingStatus} onClick={onSaveStatus}>
+                  {isSavingStatus ? "Saving..." : `Set to ${ACCOUNT_STATUS_LABELS[status]}`}
+                </Button>
+              </div>
+            )}
+          </Field>
+
+          <Field>
             <FieldLabel htmlFor="account-role">Role</FieldLabel>
             <Select
               value={role}
               onValueChange={(value) => value && setRole(value as AccountRole)}
-              disabled={!canActOnAccount}
+              disabled={!canActOnAccount || account.is_bootstrap}
             >
               <SelectTrigger id="account-role" className="w-full">
                 <SelectValue>
@@ -179,9 +255,11 @@ function AccountEditForm({
               </SelectContent>
             </Select>
             <FieldDescription>
-              {isSelf
-                ? "You cannot change your own role. Another admin has to do it."
-                : ACCOUNT_ROLE_DESCRIPTIONS[role]}
+              {account.is_bootstrap
+                ? "The built-in admin is always an admin. Point ADMIN_EMAIL somewhere else and restart to move it."
+                : isSelf
+                  ? "You cannot change your own role. Another admin has to do it."
+                  : ACCOUNT_ROLE_DESCRIPTIONS[role]}
             </FieldDescription>
           </Field>
 
@@ -234,7 +312,7 @@ function AccountEditForm({
       <SheetFooter className="flex-row justify-between border-t">
         <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
           <AlertDialogTrigger
-            render={<Button variant="destructive" size="sm" disabled={!canActOnAccount} />}
+            render={<Button variant="destructive" size="sm" disabled={!canChangeAccess} />}
           >
             <Trash2 data-icon="inline-start" />
             Delete
@@ -257,7 +335,7 @@ function AccountEditForm({
         </AlertDialog>
 
         <Button
-          disabled={!canActOnAccount || role === account.role || isSaving}
+          disabled={!canActOnAccount || account.is_bootstrap || role === account.role || isSaving}
           onClick={onSaveRole}
         >
           {isSaving ? "Saving..." : "Save role"}

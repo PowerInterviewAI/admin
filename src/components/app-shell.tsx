@@ -11,10 +11,16 @@ import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/s
  * inside it can ask who is signed in - the header says so, and the mutation controls scattered
  * through the pages ask whether that account may write.
  */
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({
+  children,
+  pendingCount,
+}: {
+  children: React.ReactNode;
+  pendingCount: number;
+}) {
   return (
     <SidebarProvider>
-      <AppSidebar />
+      <AppSidebar pendingCount={pendingCount} />
       <SidebarInset>
         <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
           <SidebarTrigger />

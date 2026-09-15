@@ -1,42 +1,31 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { connection } from "next/server";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { isFirstAccount } from "@/server/actions/auth";
 
 import { SignUpForm } from "./sign-up-form";
 
-export const metadata: Metadata = { title: "Create an account" };
+export const metadata: Metadata = { title: "Request access" };
 
-export default async function SignUpPage() {
-  // This route reads no search params, so without an explicit request dependency Next prerenders
-  // it at build time - against a database that is not running then, and baking the answer below
-  // into the page for good. The dashboard routes are dynamic for their own reasons; this one and
-  // `/emails` are the two that have to say so. See "Prerendering against a database that is not
-  // running" in CLAUDE.md.
-  await connection();
-
-  // Whether this sign-up is the one that bootstraps the admin. Said before anyone types, because
-  // "you will get read-only access" is the kind of thing people would rather know in advance than
-  // discover after being handed a dashboard with every button disabled.
-  const first = await isFirstAccount();
-
+/**
+ * No `connection()` here, unlike the version that read the database to decide whether this would
+ * be the first account. Nothing on this page depends on a request or on any stored state now that
+ * every sign-up produces the same pending account, so letting Next prerender it is correct.
+ */
+export default function SignUpPage() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Create an account</CardTitle>
+        <CardTitle>Request access</CardTitle>
         <CardDescription>
-          {first
-            ? "This is the first account on this dashboard, so it will be the admin."
-            : "New accounts get read-only access. An admin can grant you more from the access panel."}
+          Creates a dashboard account. An admin has to approve it before you can sign in.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-6">
-        <SignUpForm isFirstAccount={first} />
+        <SignUpForm />
 
         <p className="text-center text-sm text-muted-foreground">
-          Already have one?{" "}
+          Already approved?{" "}
           <Link href="/sign-in" className="font-medium text-foreground underline underline-offset-4">
             Sign in
           </Link>

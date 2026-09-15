@@ -47,7 +47,7 @@ src/
   app/
     (auth)/              signed-out: /sign-in, /sign-up, no sidebar
     (dashboard)/         everything behind requireAccount(): /, /users, /payments, /sessions,
-                         /emails, /audit-logs, /access
+                         /emails, /audit-logs, /access, /account
       layout.tsx           the real session check, plus SessionProvider and the chrome
       <route>/page.tsx     async server component: parses searchParams, runs the query
       <route>/*-view.tsx   client component: filters + table + sheet
@@ -57,7 +57,8 @@ src/
     db.ts                  pooled MongoClient, collection names, ObjectId helpers
     repository.ts          paged find, grouped counts, update/delete, document validation
     errors.ts              AppError plus duplicate-key mapping
-    auth/                  accounts, sessions, the denyWrite/denyRead guards, sign-in throttle
+    auth/                  accounts, sessions, the built-in admin bootstrap, the
+                           denyWrite/denyRead guards, sign-in throttle
     queries/               one module per entity, plus analytics, user-labels, and list-stats
     actions/               "use server" mutations
     email/                 SMTP transport and the background campaign runner
@@ -85,7 +86,17 @@ The dashboard is behind an email/password sign-in with two roles. `admin` does e
 
 **An admin account is not a product user.** `admin_accounts` and `admin_sessions` live in their own database (`ADMIN_MONGO_DB`, default `pia_admin`), not beside backend's collections, and `accountRoleSchema` is a separate enum from `userRoleSchema`. The two never join: a `users` row with `role: "admin"` is a customer of the product and grants nothing here, and an `admin_accounts` row grants nothing in the product. Keeping them apart is what stops a backend role change from silently becoming a permission in this app - and it is why `getCollection` is the only thing that knows which database a collection name belongs to.
 
-**The first account to sign up becomes the admin; every one after it is a guest.** Someone has to be able to administer a dashboard that starts empty, and the alternatives are worse - a bootstrap password in the environment is a credential in a file, and a setup script is a step that gets skipped. The window closes on its own once one account exists. Two people racing the very first sign-up could both become admins; on a first-run bootstrap that is not worth serialising a collection over.
+**The admin comes from the environment, and everyone else has to be let in.**
+
+`ADMIN_EMAIL`/`ADMIN_PASSWORD` name a built-in admin that `bootstrapAdminAccount()` creates if absent and re-asserts as an approved admin on every boot. That re-assertion is the recovery guarantee: whatever state the row gets into, a restart makes the built-in admin an approved admin again, which is why the access panel refuses to demote, revoke, or delete it rather than allowing a change that would silently revert on the next boot.
+
+**`ADMIN_PASSWORD` only ever seeds a new account.** Re-applying it on every boot would undo a password changed on the account page the next time the process restarted, so an existing row keeps its hash. `ADMIN_PASSWORD_FORCE_RESET=true` is the documented way back in when that password has been forgotten. Verified: a password set through `/account` survives a restart, and the environment's value does not come back.
+
+**Signing up gets you a `pending` account and no session.** A pending account cannot read a single page, so there is nothing for a session to hold - signing someone in and then showing them a wall would be a worse lie than telling them an admin has to let them in, and it would mean carrying a second signed-in-but-not-allowed layout for a state that lasts until somebody clicks approve. An admin approves from `/access`, or creates the account outright, which is approved on the spot because an admin typing someone's password in *is* the approval.
+
+**Status and role are separate axes on purpose.** "May this person in" and "may they write" are decided by different people at different times - an admin approving a colleague is not also choosing whether they can delete users - so `rejected` is not a fourth role and `guest` is not a kind of pending. `rejected` doubles as suspension: there is no separate word for "was approved, now is not", because the effect is identical and a second word would only invite the two drifting apart.
+
+Both enums `.catch()` to their *least* privileged value, so a row carrying a word this build has never heard of degrades to a pending guest rather than throwing. Rows written before the gate existed have no `status` at all, and `accountSchema` would read that as pending - which would have locked out everybody who already had a working account the moment this shipped. `backfillMissingStatus` approves exactly those rows (`$exists: false`, so it can never touch one an admin deliberately set to pending).
 
 Authorization is checked in three places, and only one of them is a control:
 
@@ -95,7 +106,11 @@ Authorization is checked in three places, and only one of them is a control:
 
 `useCanWrite()` and `ReadOnlyNotice` gate the UI, and gate nothing: a guest who edits the role in memory gets the buttons back and every one of them fails in the action. They exist so the interface tells the truth about what will work.
 
-**The role is read from the account document on every request, never carried in the cookie.** That is the whole reason a demotion or a deletion takes effect on the victim's next navigation rather than whenever they happen to sign out. Verified end to end: a promoted account starts writing with the same cookie it already held, and a deleted account's unexpired cookie stops authenticating immediately.
+**The account page's four actions are guarded by `denyRead`, not `denyWrite`**, and that is deliberate rather than an oversight: they act only on the caller. Changing your own password, renaming yourself, and signing out your own devices are not writes a guest should have to ask permission for - they are the things every signed-in account must be able to do regardless of role. `changeOwnPassword` additionally demands the current password, which `setAccountPassword` (an admin resetting someone else's) cannot: you always have your own, and requiring it is what stops a borrowed session from locking the real owner out in one step.
+
+**The role and the status are read from the account document on every request, never carried in the cookie.** That is the whole reason a demotion, a revocation, or a deletion takes effect on the victim's next navigation rather than whenever they happen to sign out. Revoking access also deletes that account's sessions, so `getCurrentAccount`'s status check is the belt rather than the braces - but it is the half that cannot be raced. Verified end to end: a promoted account starts writing with the same cookie it already held, and a revoked or deleted account's unexpired cookie stops authenticating immediately.
+
+**Sign-in tells an approved user nothing it would not tell a stranger, and a blocked user exactly why.** A wrong password and an unknown address give one message; `pending` and `rejected` give their own. That is not an enumeration leak, because both are only reachable by someone who has already produced the right password - and telling a waiting user "your password is wrong" would have them retyping a correct password all day. A correct password that is refused for status also clears the throttle rather than counting against it, so waiting for approval cannot lock you out of the form that is telling you to wait.
 
 **Sessions are opaque tokens, stored hashed.** The cookie carries 32 random bytes; `admin_sessions` stores only their SHA-256. A token is a bearer credential, so anyone reading that collection - a backup, a screen-shared Mongo client - could otherwise sign in as anybody with no password. No work factor: the token is high-entropy already, so this is a lookup key, not a password.
 
@@ -366,6 +381,8 @@ Switching the URI to the standard non-SRV form (shard hosts plus `replicaSet=`) 
 `.env.local`, gitignored. `MONGO_URL`/`MONGO_DB` are required; `DNS_SERVERS` is an escape hatch for the `+srv` problem above.
 
 `ADMIN_MONGO_DB` (default `pia_admin`) is the database holding this dashboard's own accounts and sessions - the same cluster as `MONGO_DB`, a different database. `SECURE_COOKIES` forces the session cookie's `Secure` flag on or off; leave it unset and the scheme decides.
+
+`ADMIN_EMAIL`/`ADMIN_PASSWORD` are required: without them nobody can sign in and nobody can approve anybody. That is reported the way a missing `SMTP_*` block is - `readBootstrapConfig()` names what is missing and the sign-in page shows it, rather than presenting a form that cannot succeed. `ADMIN_NAME` sets the display name of the seeded account, and `ADMIN_PASSWORD_FORCE_RESET=true` re-applies `ADMIN_PASSWORD` on one boot.
 
 The `SMTP_*` block is required only by `/emails`, and its absence is a first-class state rather than a crash: `readEmailConfig()` names the missing variables, the page renders read-only with that reason shown, and composing and previewing still work. Only `describeEmailSetup()` crosses to the client - it deliberately omits the password, because the API key must never reach a browser. `EMAIL_FROM_ADDRESS`/`EMAIL_FROM_NAME`/`APP_NAME` default to what backend and the Python sender already send as, so leaving them unset keeps every kind of mail arriving from one identity.
 
