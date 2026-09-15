@@ -57,7 +57,7 @@ All computed server-side from real documents (`src/server/queries/analytics.ts`)
 - Sign-in outcomes per day, stacked success against failure - the only place `status: "failure"` is visible in aggregate
 - Usage by hour of day, which the daily series structurally cannot answer
 - Distributions: users by role, users by status, payments by status, revenue by plan
-- Recent activity feed: latest 20 audit log entries
+- Recent activity feed: latest 20 audit log entries, admins only - those rows name accounts, and `/audit-logs` is gated for that reason. The charts stay for a guest: a daily count says something about the product, not about a person
 
 Day buckets are dense: a day with no events is a zero rather than an absent row, so a quiet week renders as a flat line on the floor instead of a gentle slope between the days on either side.
 

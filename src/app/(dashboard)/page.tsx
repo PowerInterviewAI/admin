@@ -13,6 +13,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { formatNumber, formatUsd } from "@/lib/format";
 import { dashboardSearchParamsSchema, parseSearchParams } from "@/lib/search-params";
+import { isAdminRequest } from "@/server/auth/guard";
 import { getAnalyticsOverview } from "@/server/queries/analytics";
 
 import { RangeSelect } from "./range-select";
@@ -35,7 +36,7 @@ function formatPercent(ratio: number): string {
 
 export default async function DashboardPage({ searchParams }: PageProps<"/">) {
   const { days } = parseSearchParams(dashboardSearchParamsSchema, await searchParams);
-  const data = await getAnalyticsOverview(days);
+  const [data, isAdmin] = await Promise.all([getAnalyticsOverview(days), isAdminRequest()]);
 
   const asrSessions = data.activity.asr_sessions_per_day.reduce((sum, day) => sum + day.count, 0);
   const window = `last ${days} days`;
@@ -214,17 +215,25 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
         </ChartCard>
       </div>
 
-      <Card className="mt-4">
-        <CardHeader>
-          <CardTitle>Recent activity</CardTitle>
-          <CardDescription>
-            Latest {data.recent_activity.length || 20} audit log events
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <RecentActivityTable entries={data.recent_activity} />
-        </CardContent>
-      </Card>
+      {/* Audit rows, named addresses and all, which is the thing `/audit-logs` is gated to withhold.
+          Gating the page and leaving the newest twenty of it on the landing page would have been a
+          hole in the gate rather than a smaller version of it. The charts above stay: they are
+          counts per day, and a guest reading "eleven logins on Tuesday" learns about the product,
+          not about a person. Not passed to the client component at all for a guest, so the rows are
+          never serialised into the response. */}
+      {isAdmin && (
+        <Card className="mt-4">
+          <CardHeader>
+            <CardTitle>Recent activity</CardTitle>
+            <CardDescription>
+              Latest {data.recent_activity.length || 20} audit log events
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <RecentActivityTable entries={data.recent_activity} />
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

@@ -13,7 +13,6 @@ import {
   UserRound,
 } from "lucide-react";
 
-import { isAdminOnlyPath } from "@/lib/auth-routes";
 import { useSession } from "@/components/session-context";
 import {
   Sidebar,
@@ -27,6 +26,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
+import { isAdminOnlyPath } from "@/lib/auth-routes";
 
 interface NavEntry {
   href: string;
