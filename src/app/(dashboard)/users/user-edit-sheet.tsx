@@ -236,8 +236,8 @@ function UserEditForm({ user, onClose }: { user: UserRow; onClose: () => void })
                 {...register("credits", { valueAsNumber: true })}
               />
               <FieldDescription>
-                Also gates mock interviews: the desktop client refuses to start one it cannot see
-                through to its report on this balance, on top of selecting the LLM tier.
+                Live and mock interviews both spend 10 credits a minute. A session needs a minute
+                of credit to start and stops at zero; this balance also selects the LLM tier.
               </FieldDescription>
               <FieldError errors={[errors.credits]} />
             </Field>

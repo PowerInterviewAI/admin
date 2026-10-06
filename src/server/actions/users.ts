@@ -62,11 +62,12 @@ export async function updateUser(userId: string, input: unknown): Promise<Action
 }
 
 /**
- * Backend keeps a two-sided credit ledger - `credits_applied` for purchases, `credits_consumed`
- * for spend - so an admin balance edit is a third mutation source, and one that wrote no trail at
- * all until this existed. Mirrors `recordPasswordChange` below: `source` marks which side wrote
- * it, and a failure here must never fail the action, since the balance is already changed by the
- * time this runs.
+ * Backend keeps a two-sided credit ledger - `credits_applied` for purchases, and the spend on each
+ * `asr_stop` row (`credits_amount`, with `live_minutes` or `mock_minutes`; older rows are
+ * `credits_consumed`) - so an admin balance edit is a third mutation source, and one that wrote no
+ * trail at all until this existed. Mirrors `recordPasswordChange` below: `source` marks which side
+ * wrote it, and a failure here must never fail the action, since the balance is already changed by
+ * the time this runs.
  */
 async function recordCreditsAdjusted(
   userId: string,
