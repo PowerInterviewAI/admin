@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { LinkPending } from "@/components/navigation-progress";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 import { SignUpForm } from "./sign-up-form";
@@ -28,6 +29,7 @@ export default function SignUpPage() {
           Already approved?{" "}
           <Link href="/sign-in" className="font-medium text-foreground underline underline-offset-4">
             Sign in
+            <LinkPending />
           </Link>
         </p>
       </CardContent>

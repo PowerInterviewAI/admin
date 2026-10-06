@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { TriangleAlert } from "lucide-react";
 
+import { LinkPending } from "@/components/navigation-progress";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { safeNextPath } from "@/lib/auth-routes";
 import { readBootstrapConfig } from "@/server/auth/bootstrap";
@@ -43,6 +44,7 @@ export default async function SignInPage({ searchParams }: PageProps<"/sign-in">
           No account yet?{" "}
           <Link href="/sign-up" className="font-medium text-foreground underline underline-offset-4">
             Request access
+            <LinkPending />
           </Link>
         </p>
       </CardContent>

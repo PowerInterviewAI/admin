@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useState, useTransition } from "react";
 import { useForm } from "react-hook-form";
 
+import { LinkPending } from "@/components/navigation-progress";
 import { Button } from "@/components/ui/button";
 import {
   Field,
@@ -63,6 +64,7 @@ export function SignUpForm() {
         </p>
         <Button variant="outline" className="mt-2 w-full" nativeButton={false} render={<Link href="/sign-in" />}>
           Back to sign in
+          <LinkPending />
         </Button>
       </div>
     );
