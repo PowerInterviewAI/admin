@@ -92,7 +92,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
           label="Apps Online"
           value={formatNumber(data.now.apps_online)}
           icon={Monitor}
-          hint={`${formatNumber(data.now.users_online)} signed-in users, right now`}
+          hint={`${formatNumber(data.now.users_online)} signed-in user${data.now.users_online === 1 ? "" : "s"}, right now`}
         />
         <StatCard
           label="Interviews Running"
