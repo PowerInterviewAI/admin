@@ -329,6 +329,18 @@ Four things about it are load-bearing:
 
 Token colours are GitHub's palette in `globals.css` (`--code-*`, one set per theme) rather than anything derived from the app's ramp: the brand accents are all near the same orange, so a theme-derived palette would have separated tag, attribute, and value by lightness alone. Nothing in the `.tok-*` rules may change a metric - no italics, no weight, no spacing - or the colours slide off the characters. Bodies over `HIGHLIGHT_LIMIT` (40k) drop to plain readable text instead of paying the paint cost.
 
+### Auto-refresh lives in `PageHeader`
+
+`LiveRefresh` (`src/components/live-refresh.tsx`) calls `router.refresh()` every 10 seconds (`AUTO_REFRESH_INTERVAL_MS`) and shows when the page was last read. It is mounted by `PageHeader` rather than the dashboard layout, because a layout is not re-rendered on a navigation between its pages - a timestamp taken there would describe the previous page. `at` is the server's clock during the render, so it also moves when an action's own `refresh()` lands.
+
+Two things pause it: a hidden tab (which catches up on becoming visible again), and an open dialog or sheet. The edit sheets find their record by id in the page's rows, so a refresh that moved the row off the page would close the sheet under a half-typed form. The time is rendered only after hydration, because the server would format it in its own zone and locale.
+
+`/emails` and `/account` pass `autoRefresh={false}`: they keep the time and the manual button and drop the interval. Both are forms outside any dialog, and a refresh that fails renders the error boundary in place of the page - taking an unsent campaign body with it.
+
+`src/app/error.tsx` retries on the same interval, because the boundary replaces the header that was doing the refreshing; without that, one failed read would strand an unattended tab on the error panel. It uses the boundary's `retry` prop (re-fetch and re-render), not `reset`, which only re-renders.
+
+`PageHeader` imports `server-only` so that `Date.now()` there stays a once-per-request read.
+
 ### Server/client boundary
 
 `src/server/**` imports `server-only`, so leaking it into a client component is a build error rather than a runtime surprise.

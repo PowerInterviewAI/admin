@@ -25,6 +25,7 @@ export default async function AccountPage() {
       <PageHeader
         title="Your account"
         description="Your sign-in to this dashboard. Separate from any Power Interview account you may have."
+        autoRefresh={false}
       />
 
       <AccountView account={account} sessionCount={sessionCount} />

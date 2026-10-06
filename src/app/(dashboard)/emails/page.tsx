@@ -33,6 +33,9 @@ export default async function EmailsPage() {
       <PageHeader
         title="Email marketing"
         description="Compose an announcement, preview it exactly as it will arrive, and send it to one user, a chosen few, or the whole active user base."
+        // The composer holds an unsent campaign in client state, and the campaign counters below
+        // it already poll for themselves.
+        autoRefresh={false}
         actions={
           // `nativeButton={false}` because the render prop is an anchor: Base UI otherwise warns
           // that it is stripping native button semantics. Same as `PaginationLink`.
