@@ -3,6 +3,7 @@ import Link from "next/link";
 import { connection } from "next/server";
 import { History } from "lucide-react";
 
+import { LinkPending } from "@/components/navigation-progress";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { describeEmailSetup } from "@/server/email/transport";
@@ -42,6 +43,7 @@ export default async function EmailsPage() {
           <Button variant="outline" nativeButton={false} render={<Link href="/emails/history" />}>
             <History data-icon="inline-start" />
             History
+            <LinkPending />
           </Button>
         }
       />

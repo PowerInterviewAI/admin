@@ -3,6 +3,7 @@ import Link from "next/link";
 import { PenLine } from "lucide-react";
 
 import { ListSummary, shareOf } from "@/components/list-summary";
+import { LinkPending } from "@/components/navigation-progress";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { formatDate, formatNumber } from "@/lib/format";
@@ -46,6 +47,7 @@ export default async function EmailHistoryPage({ searchParams }: PageProps<"/ema
           <Button variant="outline" nativeButton={false} render={<Link href="/emails" />}>
             <PenLine data-icon="inline-start" />
             Compose
+            <LinkPending />
           </Button>
         }
       />

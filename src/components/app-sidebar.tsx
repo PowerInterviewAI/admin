@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
@@ -13,6 +13,7 @@ import {
   UserRound,
 } from "lucide-react";
 
+import { usePendingNavigation } from "@/components/navigation-progress";
 import { useSession } from "@/components/session-context";
 import {
   Sidebar,
@@ -26,6 +27,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
+import { Spinner } from "@/components/ui/spinner";
 import { isAdminOnlyPath } from "@/lib/auth-routes";
 
 interface NavEntry {
@@ -109,6 +111,18 @@ export function AppSidebar({ pendingCount = 0 }: { pendingCount?: number }) {
   );
 }
 
+/**
+ * The clicked entry's icon turns into a spinner until the route answers. It has to be its own
+ * component: `useLinkStatus` reports for the `<Link>` it is rendered inside, and `NavItem` is
+ * outside it. The spinner takes the icon's place and size, so nothing in the row moves.
+ */
+function NavIcon({ icon: Icon }: { icon: React.ComponentType }) {
+  const { pending } = useLinkStatus();
+  usePendingNavigation(pending);
+
+  return pending ? <Spinner /> : <Icon />;
+}
+
 function NavItem({
   item,
   pathname,
@@ -124,7 +138,7 @@ function NavItem({
   return (
     <SidebarMenuItem>
       <SidebarMenuButton render={<Link href={item.href} />} isActive={isActive} tooltip={item.label}>
-        <item.icon />
+        <NavIcon icon={item.icon} />
         <span>{item.label}</span>
       </SidebarMenuButton>
       {badge !== undefined && <SidebarMenuBadge>{badge}</SidebarMenuBadge>}
