@@ -341,6 +341,17 @@ Two things pause it: a hidden tab (which catches up on becoming visible again), 
 
 `PageHeader` imports `server-only` so that `Date.now()` there stays a once-per-request read.
 
+### Navigation feedback
+
+`src/components/navigation-progress.tsx` holds a count of in-flight navigations outside React. Whatever already knows it is pending reports to it with `usePendingNavigation(pending)`, and two things read it: `NavigationProgress` (the bar at the top of the viewport, mounted in `AppProviders`) and `AppShell`, which dims `<main>`.
+
+The `loading.tsx` skeletons do not cover this on their own. A skeleton shows instantly only when it was prefetched - `next dev` never prefetches, and a click can beat the prefetch in production - and a same-route change (filters, tabs, sort, paging, the dashboard window) runs in a transition precisely so the skeleton does *not* replace the page.
+
+- **Reporters:** `useListParams`, `RangeSelect`, the account menu's two `router.push` items, and every `<Link>` through `useLinkStatus` - the sidebar's `NavIcon` (which also swaps the icon for a spinner) and `LinkPending` everywhere else. A new `<Link>` to a dynamic route wants a `<LinkPending />` inside it; a new `router.push` wants a transition and `usePendingNavigation`.
+- **`LiveRefresh` deliberately does not report.** A bar and a dim every ten seconds would be noise, and it spins its own icon.
+- **The page dims, not the table.** The summary strip, tab counts and dashboard charts are server-rendered and cannot see a client `isPending`, so the dim lives on `<main>`. `DataTable`'s `isPending` now only blocks clicks; giving it back an opacity would stack.
+- **Both indicators are delayed 150ms** (CSS `animation-delay` on the bar, `delay-150` on the dim), so a fast navigation shows neither.
+
 ### Server/client boundary
 
 `src/server/**` imports `server-only`, so leaking it into a client component is a build error rather than a runtime surprise.
