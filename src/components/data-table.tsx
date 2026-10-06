@@ -222,9 +222,12 @@ export function DataTable<T>({
       )}
 
       <div
-        // No opacity of its own: `AppShell` dims the whole page while a navigation is pending, and
-        // a second dim here would stack on top of it.
-        className={cn("overflow-x-auto rounded-lg border", isPending && "pointer-events-none")}
+        // The dim comes from `.stale-dim`, which follows every pending navigation and not only
+        // this table's own `isPending` - a sidebar click fades these rows too.
+        className={cn(
+          "stale-dim overflow-x-auto rounded-lg border",
+          isPending && "pointer-events-none",
+        )}
         aria-busy={isPending}
       >
         <Table>

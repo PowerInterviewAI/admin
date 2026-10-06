@@ -87,7 +87,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
         actions={<RangeSelect value={days} />}
       />
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="stale-dim grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="Apps Online"
           value={formatNumber(data.now.apps_online)}
@@ -138,7 +138,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
         />
       </div>
 
-      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="stale-dim mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatCard
           label="Revenue (finished)"
           value={formatUsd(data.revenue.total_usd)}
@@ -159,7 +159,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
         />
       </div>
 
-      <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div className="stale-dim mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <ChartCard
           title="Signups"
           description={`New users per day, ${window}`}

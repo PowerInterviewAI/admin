@@ -15,8 +15,8 @@ interface SetParamsOptions {
 /**
  * Filters, sort, and page live in the URL, so the server component re-renders with fresh rows and
  * a view stays linkable. Writing through `startTransition` keeps the current rows on screen while
- * the next page streams in. The pending state is reported to the navigation bar, which is what
- * dims the page, and returned as `isPending` so the table can stop taking clicks meanwhile.
+ * the next page streams in. The pending state is reported to the navigation store, which drives
+ * the progress bar and the dim, and returned as `isPending` so the table can stop taking clicks.
  */
 export function useListParams<Schema extends z.ZodObject>(
   schema: Schema,

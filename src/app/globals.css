@@ -211,6 +211,17 @@
   .nav-progress-bar {
     animation: nav-progress-slide 1.1s ease-in-out infinite;
   }
+  /* Regions that show data, as opposed to the controls that choose it. They fade while `AppShell`
+     marks `<main>` busy. Dimming `<main>` itself was simpler and wrong: opacity cannot be undone by
+     a descendant, so the search box faded under the cursor of whoever was typing in it. The delay
+     is on the way in only, so a fast navigation never dims and a slow one clears at once. */
+  .stale-dim {
+    transition: opacity 150ms ease;
+  }
+  main[aria-busy="true"] .stale-dim {
+    opacity: 0.6;
+    transition-delay: 150ms;
+  }
   @media (prefers-reduced-motion: reduce) {
     .nav-progress-bar {
       width: 100%;
