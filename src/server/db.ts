@@ -15,6 +15,7 @@ export const COLLECTIONS = {
   sessions: "sessions",
   auditLogs: "audit_logs",
   emailCampaigns: "email_campaigns",
+  globalState: "global_state",
   adminAccounts: "admin_accounts",
   adminSessions: "admin_sessions",
 } as const;
