@@ -10,10 +10,11 @@ import type {
   HourlyCount,
 } from "@/lib/schemas/analytics";
 import { auditLogSchema } from "@/lib/schemas/audit-log";
+import { globalStateSchema } from "@/lib/schemas/global-state";
 import type { AnalyticsRange } from "@/lib/search-params";
 import { COLLECTIONS, type CollectionName, type Document, getCollection } from "@/server/db";
 import { reportingTimeZone } from "@/server/queries/time";
-import { countBy, findMany } from "@/server/repository";
+import { countBy, findMany, findOne } from "@/server/repository";
 
 const RECENT_ACTIVITY_LIMIT = 20;
 
@@ -184,14 +185,19 @@ async function dailyInterviews(days: number): Promise<Record<InterviewKind, Dail
           "metadata.client_session_id": { $type: "string" },
         },
       },
-      { $sort: { created_at: 1 } },
       {
+        // `$top` picks the earliest row per interview without sorting the whole window first.
         $group: {
           _id: "$metadata.client_session_id",
-          created_at: { $first: "$created_at" },
-          kind: { $first: "$metadata.kind" },
+          first: {
+            $top: {
+              sortBy: { created_at: 1 },
+              output: { created_at: "$created_at", kind: "$metadata.kind" },
+            },
+          },
         },
       },
+      { $replaceWith: "$first" },
       { $match: { kind: { $in: ["live", "mock"] } } },
       {
         $group: {
@@ -230,19 +236,30 @@ const RUNNING_LOOKBACK_MS = 24 * 3_600_000;
  * A socket is open while it has an `asr_start` and no `asr_stop`. Backend writes the stop even for
  * a killed app or a dead network, within about 40s, so the two rows pair up on every path but a
  * backend restart (excluded by `booted_at`) or a failed write. Requiring the user to have an app
- * online is what bounds that last case: an orphan start cannot outlive the app that opened it.
+ * online narrows that last case without closing it: the check is per account, not per app, so an
+ * orphan start reads as running for up to `RUNNING_LOOKBACK_MS` while that account has any app
+ * online. It takes a lost write to get there, which is rare enough to accept.
  */
 async function liveNow(): Promise<AnalyticsOverview["now"]> {
   const now = Date.now();
-  const online = { updated_at: { $gte: now - APP_ONLINE_WINDOW_MS } };
 
-  const [appsOnline, onlineUserIds, state] = await Promise.all([
-    getCollection(COLLECTIONS.sessions).countDocuments(online),
-    getCollection(COLLECTIONS.sessions).distinct("user_id", online),
-    getCollection(COLLECTIONS.globalState).findOne({}, { projection: { booted_at: 1 } }),
+  const [online, state] = await Promise.all([
+    getCollection(COLLECTIONS.sessions)
+      .aggregate<{ apps: number; users: unknown[] }>([
+        { $match: { updated_at: { $gte: now - APP_ONLINE_WINDOW_MS } } },
+        { $group: { _id: null, apps: { $sum: 1 }, users: { $addToSet: "$user_id" } } },
+      ])
+      .toArray(),
+    findOne({
+      collection: COLLECTIONS.globalState,
+      schema: globalStateSchema,
+      filter: { singleton_key: "global" },
+    }),
   ]);
 
-  const bootedAt = typeof state?.booted_at === "number" ? state.booted_at : 0;
+  const appsOnline = online[0]?.apps ?? 0;
+  const onlineUserIds = online[0]?.users ?? [];
+  const bootedAt = state?.booted_at ?? 0;
   const isStart = { $eq: ["$event_type", "asr_start"] };
 
   const running = onlineUserIds.length
