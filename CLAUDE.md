@@ -157,7 +157,7 @@ BSON does not survive React's serialization boundary, so `toPlainJson` converts 
 
 ### Analytics: what's real vs simulated
 
-`src/server/queries/analytics.ts` computes everything from real documents - `created_at`/`updated_at` are unix-ms ints (not BSON dates), so pipelines bucket by day via `{"$toDate": "$field"}` inside `$dateToString`, not `$dateTrunc`. **`global_state.active_sessions` is deliberately never surfaced anywhere in the dashboard** - it's `random.gauss(260, 10)` in `backend/app/services/ping_client_service.py`, not a real metric. If you're asked to add a "live active users" widget, don't wire it to that field; it isn't real data.
+`src/server/queries/analytics.ts` computes everything from real documents - `created_at`/`updated_at` are unix-ms ints (not BSON dates), so pipelines bucket by day via `{"$toDate": "$field"}` inside `$dateToString`, not `$dateTrunc`. **`global_state.active_sessions` is deliberately never surfaced anywhere in the dashboard** - it's `random.gauss(260, 10)` in `backend/app/services/ping_client_service.py`, not a real metric. If you're asked to add a "live active users" widget, don't wire it to that field; it isn't real data. The real ones already exist: `liveNow()` counts apps online from `sessions.updated_at` and running interviews from unpaired ASR start/stop rows, reading only `global_state.booted_at`.
 
 The overview's aggregations all run in one `Promise.all`, so the dashboard costs the slowest query rather than their sum. Keep additions inside that array.
 
