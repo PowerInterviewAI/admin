@@ -1,4 +1,16 @@
-import { Activity, CheckCircle2, Coins, CreditCard, TrendingUp, UserCheck, Users, Wallet } from "lucide-react";
+import {
+  CheckCircle2,
+  Coins,
+  CreditCard,
+  GraduationCap,
+  Mic,
+  Monitor,
+  Radio,
+  TrendingUp,
+  UserCheck,
+  Users,
+  Wallet,
+} from "lucide-react";
 
 import {
   DistributionChart,
@@ -25,6 +37,11 @@ const ACTIVITY_SERIES = [
   { key: "asr", label: "ASR sessions", color: "var(--chart-3)" },
 ];
 
+const INTERVIEW_SERIES = [
+  { key: "live", label: "Live", color: "var(--chart-1)" },
+  { key: "mock", label: "Mock", color: "var(--chart-4)" },
+];
+
 const OUTCOME_SERIES = [
   { key: "failure", label: "Failed", color: "var(--chart-5)" },
   { key: "success", label: "Succeeded", color: "var(--chart-2)" },
@@ -38,7 +55,6 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
   const { days } = parseSearchParams(dashboardSearchParamsSchema, await searchParams);
   const [data, isAdmin] = await Promise.all([getAnalyticsOverview(days), isAdminRequest()]);
 
-  const asrSessions = data.activity.asr_sessions_per_day.reduce((sum, day) => sum + day.count, 0);
   const window = `last ${days} days`;
 
   // Joined on the date rather than by index. The three series are each densified over the same
@@ -53,6 +69,14 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
     asr: asrByDate.get(day.date) ?? 0,
   }));
 
+  const mockByDate = new Map(data.interviews.mock_per_day.map((day) => [day.date, day.count]));
+  const interviewSeries = data.interviews.live_per_day.map((day) => ({
+    date: day.date,
+    live: day.count,
+    mock: mockByDate.get(day.date) ?? 0,
+  }));
+  const running = data.now.live_interviews + data.now.mock_interviews;
+
   const conversion = data.users.total > 0 ? data.revenue.paying_users / data.users.total : 0;
 
   return (
@@ -65,28 +89,34 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
+          label="Apps Online"
+          value={formatNumber(data.now.apps_online)}
+          icon={Monitor}
+          hint={`${formatNumber(data.now.users_online)} signed-in user${data.now.users_online === 1 ? "" : "s"}, right now`}
+        />
+        <StatCard
+          label="Interviews Running"
+          value={formatNumber(running)}
+          icon={Radio}
+          hint={`${formatNumber(data.now.live_interviews)} live / ${formatNumber(data.now.mock_interviews)} mock, right now`}
+        />
+        <StatCard
+          label="Live Interviews"
+          value={formatNumber(data.interviews.live_in_window)}
+          icon={Mic}
+          hint={`Started in the ${window}`}
+        />
+        <StatCard
+          label="Mock Interviews"
+          value={formatNumber(data.interviews.mock_in_window)}
+          icon={GraduationCap}
+          hint={`Started in the ${window}`}
+        />
+        <StatCard
           label="Total Users"
           value={formatNumber(data.users.total)}
           icon={Users}
           hint={`${formatNumber(data.users.new_in_window)} new in the ${window}`}
-        />
-        <StatCard
-          label="Revenue (finished)"
-          value={formatUsd(data.revenue.total_usd)}
-          icon={Wallet}
-          hint={`${formatUsd(data.revenue.window_usd)} in the ${window}`}
-        />
-        <StatCard
-          label="Credits Outstanding"
-          value={formatNumber(data.credits_outstanding)}
-          icon={Coins}
-          hint="Sum across all users"
-        />
-        <StatCard
-          label="ASR Sessions"
-          value={formatNumber(asrSessions)}
-          icon={Activity}
-          hint={`asr_start events, ${window}`}
         />
         <StatCard
           label="Active Users"
@@ -101,16 +131,31 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
           hint={`${formatPercent(conversion)} of all accounts`}
         />
         <StatCard
+          label="Payment Success"
+          value={formatPercent(data.revenue.success_rate)}
+          icon={CheckCircle2}
+          hint="Finished, as a share of every payment"
+        />
+      </div>
+
+      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <StatCard
+          label="Revenue (finished)"
+          value={formatUsd(data.revenue.total_usd)}
+          icon={Wallet}
+          hint={`${formatUsd(data.revenue.window_usd)} in the ${window}`}
+        />
+        <StatCard
           label="Revenue per Payer"
           value={formatUsd(data.revenue.avg_per_paying_user)}
           icon={TrendingUp}
           hint="Lifetime, across paying accounts"
         />
         <StatCard
-          label="Payment Success"
-          value={formatPercent(data.revenue.success_rate)}
-          icon={CheckCircle2}
-          hint="Finished, as a share of every payment"
+          label="Credits Outstanding"
+          value={formatNumber(data.credits_outstanding)}
+          icon={Coins}
+          hint="Sum across all users"
         />
       </div>
 
@@ -153,6 +198,14 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
             color="var(--chart-2)"
             format="usd"
           />
+        </ChartCard>
+
+        <ChartCard
+          title="Interviews"
+          description={`Live and mock interviews started per day, ${window}`}
+          isEmpty={data.interviews.live_in_window + data.interviews.mock_in_window === 0}
+        >
+          <MultiTrendChart data={interviewSeries} series={INTERVIEW_SERIES} />
         </ChartCard>
 
         <ChartCard

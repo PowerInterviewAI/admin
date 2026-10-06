@@ -10,10 +10,11 @@ import type {
   HourlyCount,
 } from "@/lib/schemas/analytics";
 import { auditLogSchema } from "@/lib/schemas/audit-log";
+import { globalStateSchema } from "@/lib/schemas/global-state";
 import type { AnalyticsRange } from "@/lib/search-params";
 import { COLLECTIONS, type CollectionName, type Document, getCollection } from "@/server/db";
 import { reportingTimeZone } from "@/server/queries/time";
-import { countBy, findMany } from "@/server/repository";
+import { countBy, findMany, findOne } from "@/server/repository";
 
 const RECENT_ACTIVITY_LIMIT = 20;
 
@@ -166,6 +167,142 @@ async function dailyOutcomes(days: number): Promise<DailyOutcome[]> {
   return densify([...byDate.values()], days, (date) => ({ date, success: 0, failure: 0 }));
 }
 
+type InterviewKind = "live" | "mock";
+
+/**
+ * Interviews per day, by kind, counted by `client_session_id` rather than by socket: a live
+ * interview opens two, plus one per reconnect or language switch. Each is bucketed on the day of
+ * its first start inside the window and takes its kind from that row, so a reconnect after
+ * midnight does not count it twice.
+ */
+async function dailyInterviews(days: number): Promise<Record<InterviewKind, DailyCount[]>> {
+  const docs = await getCollection(COLLECTIONS.auditLogs)
+    .aggregate<{ _id: { date: string; kind: InterviewKind }; value: number }>([
+      {
+        $match: {
+          event_type: "asr_start",
+          created_at: { $gte: windowCutoff(days) },
+          "metadata.client_session_id": { $type: "string" },
+        },
+      },
+      {
+        // Documents compare field by field, so `$min` of `{ created_at, kind }` is the earliest
+        // start and its kind - without sorting the window first, and without `$top`, which needs
+        // MongoDB 5.2. Keyed by user as well, so a client that reused an id cannot merge accounts.
+        $group: {
+          _id: { user: "$user_id", session: "$metadata.client_session_id" },
+          first: { $min: { created_at: "$created_at", kind: "$metadata.kind" } },
+        },
+      },
+      { $replaceWith: "$first" },
+      { $match: { kind: { $in: ["live", "mock"] } } },
+      {
+        $group: {
+          _id: { date: dayBucket("created_at"), kind: "$kind" },
+          value: { $sum: 1 },
+        },
+      },
+    ])
+    .toArray();
+
+  const series = (kind: InterviewKind) =>
+    densify(
+      docs
+        .filter((doc) => doc._id.kind === kind)
+        .map((doc) => ({ date: doc._id.date, count: doc.value })),
+      days,
+      (date) => ({ date, count: 0 }),
+    );
+
+  return { live: series("live"), mock: series("mock") };
+}
+
+/** A signed-in client pings every 5s, and on a slow link a ping can take up to 10s more. */
+const APP_ONLINE_WINDOW_MS = 30_000;
+
+/**
+ * Bounds the open-socket scan. Backend's `booted_at` is the real bound - a restart drops every
+ * socket without writing its `asr_stop` - and this one only caps the scan on a backend that has
+ * been up for weeks. No interview runs for a day.
+ */
+const RUNNING_LOOKBACK_MS = 24 * 3_600_000;
+
+/**
+ * Apps online, and the interviews running in them.
+ *
+ * A socket is open while it has an `asr_start` and no `asr_stop`. Backend writes the stop even for
+ * a killed app or a dead network, within about 40s, so the two rows pair up on every path but a
+ * backend restart (excluded by `booted_at`) or a failed write. Requiring the user to have an app
+ * online narrows that last case without closing it: the check is per account, not per app, so an
+ * orphan start reads as running for up to `RUNNING_LOOKBACK_MS` while that account has any app
+ * online. It takes a lost write to get there, which is rare enough to accept.
+ */
+async function liveNow(): Promise<AnalyticsOverview["now"]> {
+  const now = Date.now();
+
+  const [online, state] = await Promise.all([
+    getCollection(COLLECTIONS.sessions)
+      .aggregate<{ apps: number; users: unknown[] }>([
+        { $match: { updated_at: { $gte: now - APP_ONLINE_WINDOW_MS } } },
+        { $group: { _id: null, apps: { $sum: 1 }, users: { $addToSet: "$user_id" } } },
+      ])
+      .toArray(),
+    findOne({
+      collection: COLLECTIONS.globalState,
+      schema: globalStateSchema,
+      filter: { singleton_key: "global" },
+    }),
+  ]);
+
+  const appsOnline = online[0]?.apps ?? 0;
+  const onlineUserIds = online[0]?.users ?? [];
+  const bootedAt = state?.booted_at ?? 0;
+  const isStart = { $eq: ["$event_type", "asr_start"] };
+
+  const running = onlineUserIds.length
+    ? await getCollection(COLLECTIONS.auditLogs)
+        .aggregate<{ _id: unknown; count: number }>([
+          {
+            $match: {
+              event_type: { $in: ["asr_start", "asr_stop"] },
+              created_at: { $gte: Math.max(bootedAt, now - RUNNING_LOOKBACK_MS) },
+              user_id: { $in: onlineUserIds },
+              "metadata.client_session_id": { $type: "string" },
+            },
+          },
+          {
+            $group: {
+              _id: "$metadata.asr_session_id",
+              starts: { $sum: { $cond: [isStart, 1, 0] } },
+              stops: { $sum: { $cond: [isStart, 0, 1] } },
+              user: { $first: "$user_id" },
+              session: { $first: "$metadata.client_session_id" },
+              opened: { $min: { created_at: "$created_at", kind: "$metadata.kind" } },
+            },
+          },
+          { $match: { $expr: { $gt: ["$starts", "$stops"] } } },
+          // One interview, one kind: its earliest open socket decides, as its first start does in
+          // `dailyInterviews`, so sockets that disagree cannot count it under both.
+          {
+            $group: {
+              _id: { user: "$user", session: "$session" },
+              first: { $min: "$opened" },
+            },
+          },
+          { $group: { _id: "$first.kind", count: { $sum: 1 } } },
+        ])
+        .toArray()
+    : [];
+
+  const byKind = new Map(running.map((doc) => [doc._id, doc.count]));
+  return {
+    apps_online: appsOnline,
+    users_online: onlineUserIds.length,
+    live_interviews: byKind.get("live") ?? 0,
+    mock_interviews: byKind.get("mock") ?? 0,
+  };
+}
+
 /** When the product is actually used, in the reporting zone. All 24 buckets always present. */
 async function hourlyCounts(days: number): Promise<HourlyCount[]> {
   const docs = await getCollection(COLLECTIONS.auditLogs)
@@ -292,6 +429,8 @@ export async function getAnalyticsOverview(days: AnalyticsRange): Promise<Analyt
     loginsByOutcome,
     byHour,
     recentActivity,
+    interviewsPerDay,
+    now,
   ] = await Promise.all([
     getCollection(COLLECTIONS.users).countDocuments({}),
     getCollection(COLLECTIONS.users).countDocuments({ created_at: { $lt: cutoff } }),
@@ -317,10 +456,13 @@ export async function getAnalyticsOverview(days: AnalyticsRange): Promise<Analyt
       sort: { created_at: -1 },
       limit: RECENT_ACTIVITY_LIMIT,
     }),
+    dailyInterviews(days),
+    liveNow(),
   ]);
 
   const newUsers = signupsPerDay.reduce((sum, day) => sum + day.count, 0);
   const windowRevenue = revenuePerDay.reduce((sum, day) => sum + day.amount, 0);
+  const total = (series: DailyCount[]) => series.reduce((sum, day) => sum + day.count, 0);
 
   // Seeded with everyone who already existed, so the curve continues the real total rather than
   // restarting at zero on the left edge.
@@ -350,6 +492,13 @@ export async function getAnalyticsOverview(days: AnalyticsRange): Promise<Analyt
       avg_per_paying_user: payingUsers > 0 ? revenueTotal / payingUsers : 0,
       success_rate: totalPayments > 0 ? (paymentsByStatus.finished ?? 0) / totalPayments : 0,
     },
+    interviews: {
+      live_per_day: interviewsPerDay.live,
+      mock_per_day: interviewsPerDay.mock,
+      live_in_window: total(interviewsPerDay.live),
+      mock_in_window: total(interviewsPerDay.mock),
+    },
+    now,
     credits_outstanding: Math.round(creditsOutstanding),
     activity: {
       logins_per_day: loginsPerDay,

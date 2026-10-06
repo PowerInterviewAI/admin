@@ -66,10 +66,34 @@ export interface ActivityAnalytics {
   by_hour: HourlyCount[];
 }
 
+/**
+ * One interview is one `client_session_id` on backend's ASR audit rows, however many sockets it
+ * opened: two for a live one, plus one per reconnect or language switch. Its kind is read off its
+ * first `asr_start`. Rows written before backend recorded `kind` there are not counted.
+ */
+export interface InterviewsAnalytics {
+  live_per_day: DailyCount[];
+  mock_per_day: DailyCount[];
+  live_in_window: number;
+  mock_in_window: number;
+}
+
+/** What is happening at the moment the page rendered. */
+export interface LiveNowAnalytics {
+  /** Signed-in client apps: login sessions touched by an authenticated request in the last 30s. */
+  apps_online: number;
+  /** Distinct accounts behind `apps_online`; one person can have several apps open. */
+  users_online: number;
+  live_interviews: number;
+  mock_interviews: number;
+}
+
 export interface AnalyticsOverview {
   window_days: number;
   users: UsersAnalytics;
   revenue: RevenueAnalytics;
+  interviews: InterviewsAnalytics;
+  now: LiveNowAnalytics;
   /**
    * The sum of every non-trial, non-admin user's `credits` balance - not a count, and not the
    * same thing `PaymentsSummary.credits_owed` below measures despite the similar name. Rendered

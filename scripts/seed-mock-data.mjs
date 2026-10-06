@@ -867,7 +867,11 @@ async function main() {
           const sockets = mock ? 1 : 2;
           for (let socket = 0; socket < sockets; socket++) {
             const charged = socket === 0 ? Math.ceil(spend / sockets) : Math.floor(spend / sockets);
-            const ids = { asr_session_id: uuid7(at + socket + 1), client_session_id: clientSessionId };
+            const ids = {
+              asr_session_id: uuid7(at + socket + 1),
+              client_session_id: clientSessionId,
+              kind: mock ? "mock" : "live",
+            };
             // ASR events come off a websocket, not a request, so they carry no user agent.
             pushAudit(person, "asr_start", at + socket, "success", ids, "server");
             pushAudit(
