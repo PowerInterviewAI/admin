@@ -364,7 +364,7 @@ function pickDevice(person) {
 const PLANS = {
   starter: { credits: 600, price: 5 },
   pro: { credits: 3000, price: 20 },
-  enterprise: { credits: 30000, price: 150 },
+  enterprise: { credits: 30000, price: 175 },
 };
 
 const CURRENCIES = {
