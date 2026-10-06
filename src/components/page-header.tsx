@@ -1,9 +1,13 @@
+import "server-only";
+
 import { LiveRefresh } from "@/components/live-refresh";
 
 interface PageHeaderProps {
   title: string;
   description?: string;
   actions?: React.ReactNode;
+  /** Off for a page that is itself a form - see `LiveRefresh`. */
+  autoRefresh?: boolean;
 }
 
 /**
@@ -11,9 +15,11 @@ interface PageHeaderProps {
  * layout: a layout is not re-rendered on a navigation between its pages, so a timestamp taken
  * there would describe the page before this one.
  */
-export function PageHeader({ title, description, actions }: PageHeaderProps) {
+export function PageHeader({ title, description, actions, autoRefresh }: PageHeaderProps) {
   // A server component renders once per request and never re-renders, so the instability the
   // purity rule guards against cannot happen here - and the clock at render is the value wanted.
+  // `server-only` above is what keeps that true: rendered by a client component, this would run
+  // again in the browser and hydrate against a different time.
   // eslint-disable-next-line react-hooks/purity
   const renderedAt = Date.now();
 
@@ -24,7 +30,7 @@ export function PageHeader({ title, description, actions }: PageHeaderProps) {
         {description && <p className="text-sm text-muted-foreground">{description}</p>}
       </div>
       <div className="flex items-center gap-2">
-        <LiveRefresh at={renderedAt} />
+        <LiveRefresh at={renderedAt} auto={autoRefresh} />
         {actions}
       </div>
     </div>

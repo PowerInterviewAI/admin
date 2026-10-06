@@ -33,8 +33,12 @@ function isDialogOpen(): boolean {
  * `at` is taken by the server during the render that produced the page, so it is the age of the
  * rows themselves rather than of the last time the browser asked - and it is what moves when a
  * server action's own `refresh()` lands, with nothing here having to hear about it.
+ *
+ * `auto={false}` keeps the time and the button and drops the interval, for a page that is a form:
+ * a refresh that fails renders the error boundary in place of the page, and whatever was typed
+ * into it goes with it.
  */
-export function LiveRefresh({ at }: { at: number }) {
+export function LiveRefresh({ at, auto = true }: { at: number; auto?: boolean }) {
   const router = useRouter();
   const [isRefreshing, startRefresh] = useTransition();
 
@@ -54,11 +58,13 @@ export function LiveRefresh({ at }: { at: number }) {
     refresh();
   }, [refresh]);
 
-  usePoll(true, AUTO_REFRESH_INTERVAL_MS, tick);
+  usePoll(auto, AUTO_REFRESH_INTERVAL_MS, tick);
 
   // A hidden tab skips its ticks, so coming back to one catches up at once instead of showing
   // old rows for up to another interval.
   useEffect(() => {
+    if (!auto) return;
+
     const onVisibilityChange = () => {
       if (document.hidden || isDialogOpen()) return;
       if (Date.now() - at >= AUTO_REFRESH_INTERVAL_MS) refresh();
@@ -66,7 +72,7 @@ export function LiveRefresh({ at }: { at: number }) {
 
     document.addEventListener("visibilitychange", onVisibilityChange);
     return () => document.removeEventListener("visibilitychange", onVisibilityChange);
-  }, [at, refresh]);
+  }, [at, auto, refresh]);
 
   return (
     <Button
@@ -74,8 +80,14 @@ export function LiveRefresh({ at }: { at: number }) {
       size="sm"
       className="text-muted-foreground tabular-nums"
       onClick={refresh}
-      disabled={isRefreshing}
-      title={`Refreshes every ${AUTO_REFRESH_INTERVAL_MS / 1000} seconds. Click to refresh now.`}
+      // Not `disabled` while refreshing: that would dim the button and drop keyboard focus from
+      // it every interval, for a click that is harmless to repeat.
+      aria-busy={isRefreshing}
+      title={
+        auto
+          ? `Refreshes every ${AUTO_REFRESH_INTERVAL_MS / 1000} seconds. Click to refresh now.`
+          : "Click to refresh."
+      }
     >
       <RefreshCw data-icon="inline-start" className={cn(isRefreshing && "animate-spin")} />
       <span>
