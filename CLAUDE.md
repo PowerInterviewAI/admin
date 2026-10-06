@@ -331,7 +331,7 @@ Token colours are GitHub's palette in `globals.css` (`--code-*`, one set per the
 
 ### Auto-refresh lives in `PageHeader`
 
-`LiveRefresh` (`src/components/live-refresh.tsx`) calls `router.refresh()` every 30 seconds and shows when the page was last read. It is mounted by `PageHeader` rather than the dashboard layout, because a layout is not re-rendered on a navigation between its pages - a timestamp taken there would describe the previous page. `at` is the server's clock during the render, so it also moves when an action's own `refresh()` lands.
+`LiveRefresh` (`src/components/live-refresh.tsx`) calls `router.refresh()` every 10 seconds (`AUTO_REFRESH_INTERVAL_MS`) and shows when the page was last read. It is mounted by `PageHeader` rather than the dashboard layout, because a layout is not re-rendered on a navigation between its pages - a timestamp taken there would describe the previous page. `at` is the server's clock during the render, so it also moves when an action's own `refresh()` lands.
 
 Two things pause it: a hidden tab (which catches up on becoming visible again), and an open dialog or sheet. The edit sheets find their record by id in the page's rows, so a refresh that moved the row off the page would close the sheet under a half-typed form. The time is rendered only after hydration, because the server would format it in its own zone and locale.
 

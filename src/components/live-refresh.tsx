@@ -9,11 +9,11 @@ import { usePoll } from "@/hooks/use-poll";
 import { cn } from "@/lib/utils";
 
 /**
- * Every page here is a fresh read of the database, so a refresh costs that page's queries again.
- * Thirty seconds keeps the "right now" figures honest without an idle tab re-running the
- * dashboard's aggregations more often than anybody looks at them.
+ * Every page here is a fresh read of the database, so a refresh costs that page's queries again -
+ * on the dashboard, every aggregation, once per visible tab. Ten seconds is what keeps the "right
+ * now" figures reading as live; raise it if that load ever shows up on the database.
  */
-export const AUTO_REFRESH_INTERVAL_MS = 30_000;
+export const AUTO_REFRESH_INTERVAL_MS = 10_000;
 
 const timeFormatter = new Intl.DateTimeFormat(undefined, { timeStyle: "medium" });
 
