@@ -209,6 +209,9 @@
     animation: nav-progress-in 150ms ease 150ms forwards;
   }
   .nav-progress-bar {
+    /* Width lives here, not in a utility: utilities outrank this layer, and the reduced-motion
+       rule below has to be able to widen it. */
+    width: 33.333%;
     animation: nav-progress-slide 1.1s ease-in-out infinite;
   }
   /* Regions that show data, as opposed to the controls that choose it. They fade while `AppShell`
