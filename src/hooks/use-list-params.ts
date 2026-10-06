@@ -4,6 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useMemo, useTransition } from "react";
 import type { z } from "zod";
 
+import { usePendingNavigation } from "@/components/navigation-progress";
 import { buildQueryString, countActiveFilters, withoutFilters } from "@/lib/search-params";
 
 interface SetParamsOptions {
@@ -14,7 +15,8 @@ interface SetParamsOptions {
 /**
  * Filters, sort, and page live in the URL, so the server component re-renders with fresh rows and
  * a view stays linkable. Writing through `startTransition` keeps the current rows on screen while
- * the next page streams in, and surfaces `isPending` so the table can dim instead of flashing.
+ * the next page streams in. The pending state is reported to the navigation store, which drives
+ * the progress bar and the dim, and returned as `isPending` so the table can stop taking clicks.
  */
 export function useListParams<Schema extends z.ZodObject>(
   schema: Schema,
@@ -23,6 +25,7 @@ export function useListParams<Schema extends z.ZodObject>(
   const router = useRouter();
   const pathname = usePathname();
   const [isPending, startTransition] = useTransition();
+  usePendingNavigation(isPending);
 
   const navigate = useCallback(
     (next: Partial<z.infer<Schema>>, options: SetParamsOptions) => {

@@ -24,7 +24,7 @@ export interface SummaryStat {
  */
 export function ListSummary({ stats }: { stats: SummaryStat[] }) {
   return (
-    <div className="mb-4 flex flex-wrap gap-px overflow-hidden rounded-lg border bg-border">
+    <div className="stale-dim mb-4 flex flex-wrap gap-px overflow-hidden rounded-lg border bg-border">
       {stats.map((stat) => (
         <div key={stat.label} className="flex min-w-40 flex-1 flex-col gap-0.5 bg-card px-4 py-3">
           <span className="text-xs font-medium text-muted-foreground">{stat.label}</span>

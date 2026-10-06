@@ -1,6 +1,7 @@
 import { ExternalLink } from "lucide-react";
 import Link from "next/link";
 
+import { LinkPending } from "@/components/navigation-progress";
 import { Button } from "@/components/ui/button";
 
 /**
@@ -16,6 +17,7 @@ export function RelatedLink({ href, label }: { href: string; label: string }) {
     <Button variant="outline" size="sm" nativeButton={false} render={<Link href={href} />}>
       {label}
       <ExternalLink data-icon="inline-end" />
+      <LinkPending />
     </Button>
   );
 }

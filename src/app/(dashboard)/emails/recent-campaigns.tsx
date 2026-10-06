@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 
+import { LinkPending } from "@/components/navigation-progress";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useLiveCampaigns } from "@/hooks/use-live-campaigns";
@@ -30,6 +31,7 @@ export function RecentCampaigns({ campaigns }: { campaigns: EmailCampaignRow[] }
         <CardAction>
           <Button variant="ghost" size="sm" nativeButton={false} render={<Link href="/emails/history" />}>
             View all
+            <LinkPending />
           </Button>
         </CardAction>
       </CardHeader>
