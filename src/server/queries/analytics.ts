@@ -186,15 +186,12 @@ async function dailyInterviews(days: number): Promise<Record<InterviewKind, Dail
         },
       },
       {
-        // `$top` picks the earliest row per interview without sorting the whole window first.
+        // Documents compare field by field, so `$min` of `{ created_at, kind }` is the earliest
+        // start and its kind - without sorting the window first, and without `$top`, which needs
+        // MongoDB 5.2. Keyed by user as well, so a client that reused an id cannot merge accounts.
         $group: {
-          _id: "$metadata.client_session_id",
-          first: {
-            $top: {
-              sortBy: { created_at: 1 },
-              output: { created_at: "$created_at", kind: "$metadata.kind" },
-            },
-          },
+          _id: { user: "$user_id", session: "$metadata.client_session_id" },
+          first: { $min: { created_at: "$created_at", kind: "$metadata.kind" } },
         },
       },
       { $replaceWith: "$first" },
@@ -278,13 +275,21 @@ async function liveNow(): Promise<AnalyticsOverview["now"]> {
               _id: "$metadata.asr_session_id",
               starts: { $sum: { $cond: [isStart, 1, 0] } },
               stops: { $sum: { $cond: [isStart, 0, 1] } },
+              user: { $first: "$user_id" },
               session: { $first: "$metadata.client_session_id" },
-              kind: { $max: "$metadata.kind" },
+              opened: { $min: { created_at: "$created_at", kind: "$metadata.kind" } },
             },
           },
           { $match: { $expr: { $gt: ["$starts", "$stops"] } } },
-          { $group: { _id: { session: "$session", kind: "$kind" } } },
-          { $group: { _id: "$_id.kind", count: { $sum: 1 } } },
+          // One interview, one kind: its earliest open socket decides, as its first start does in
+          // `dailyInterviews`, so sockets that disagree cannot count it under both.
+          {
+            $group: {
+              _id: { user: "$user", session: "$session" },
+              first: { $min: "$opened" },
+            },
+          },
+          { $group: { _id: "$first.kind", count: { $sum: 1 } } },
         ])
         .toArray()
     : [];
