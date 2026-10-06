@@ -2,9 +2,11 @@
 
 import { AccountMenu } from "@/components/account-menu";
 import { AppSidebar } from "@/components/app-sidebar";
+import { useIsNavigating } from "@/components/navigation-progress";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Separator } from "@/components/ui/separator";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import { cn } from "@/lib/utils";
 
 /**
  * The authenticated chrome. Mounted by the dashboard layout, below `SessionProvider`, so everything
@@ -18,6 +20,8 @@ export function AppShell({
   children: React.ReactNode;
   pendingCount: number;
 }) {
+  const isNavigating = useIsNavigating();
+
   return (
     <SidebarProvider>
       <AppSidebar pendingCount={pendingCount} />
@@ -33,7 +37,17 @@ export function AppShell({
             <AccountMenu />
           </div>
         </header>
-        <main className="flex-1 overflow-auto p-6">{children}</main>
+        {/* Dimmed, not blocked: what is on screen is about to be replaced, and a second click
+            while waiting should still be able to go somewhere else. */}
+        <main
+          className={cn(
+            "flex-1 overflow-auto p-6 transition-opacity",
+            isNavigating && "opacity-60 delay-150",
+          )}
+          aria-busy={isNavigating}
+        >
+          {children}
+        </main>
       </SidebarInset>
     </SidebarProvider>
   );

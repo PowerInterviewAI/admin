@@ -68,7 +68,7 @@ interface DataTableProps<T> {
   onRowClick?: (row: T) => void;
   emptyTitle?: string;
   emptyMessage?: string;
-  /** True while the next page is being fetched: rows stay on screen, dimmed. */
+  /** True while the next page is being fetched: rows stay on screen and stop taking clicks. */
   isPending?: boolean;
   /** Server-driven paging. Omit to render the rows as a complete list. */
   pagination?: TablePagination;
@@ -222,10 +222,9 @@ export function DataTable<T>({
       )}
 
       <div
-        className={cn(
-          "overflow-x-auto rounded-lg border transition-opacity",
-          isPending && "pointer-events-none opacity-60",
-        )}
+        // No opacity of its own: `AppShell` dims the whole page while a navigation is pending, and
+        // a second dim here would stack on top of it.
+        className={cn("overflow-x-auto rounded-lg border", isPending && "pointer-events-none")}
         aria-busy={isPending}
       >
         <Table>
