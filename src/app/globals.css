@@ -200,3 +200,40 @@
     color: var(--code-punct);
   }
 }
+
+/* The bar `NavigationProgress` mounts while a navigation is in flight. It starts invisible and the
+   delay holds it there, so a navigation that lands inside 150ms never shows one at all. */
+@layer components {
+  .nav-progress {
+    opacity: 0;
+    animation: nav-progress-in 150ms ease 150ms forwards;
+  }
+  .nav-progress-bar {
+    animation: nav-progress-slide 1.1s ease-in-out infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .nav-progress-bar {
+      width: 100%;
+      animation: nav-progress-pulse 1.6s ease-in-out infinite;
+    }
+  }
+}
+
+@keyframes nav-progress-in {
+  to {
+    opacity: 1;
+  }
+}
+@keyframes nav-progress-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+@keyframes nav-progress-pulse {
+  50% {
+    opacity: 0.4;
+  }
+}
