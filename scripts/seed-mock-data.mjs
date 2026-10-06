@@ -5,7 +5,8 @@
  * integers, ObjectId `user_id` references, the audit metadata keys from
  * `app/models/audit_log.py`, and the credit plans from `app/cfg/payment.py`. Credit balances are
  * walked forward per user through their own timeline (trial grant, ASR consumption, purchases),
- * so a user's `credits` agrees with their own audit trail rather than being an unrelated number.
+ * so a user's `credits` agrees with their own audit trail rather than being an unrelated number:
+ * every credit spent is on an `asr_stop` row's `credits_amount`.
  *
  * Run with: node scripts/seed-mock-data.mjs
  *
@@ -464,10 +465,6 @@ const LOGIN_FAILURE_REASONS = [
   "Account is inactive",
 ];
 
-const ASR_STOP_REASONS = [
-  "client_disconnect", "user_stopped", "credits_exhausted", "idle_timeout", "session_error",
-];
-
 const PAYMENT_FAILURE_REASONS = [
   "Payment expired before confirmation",
   "Underpaid and not topped up",
@@ -856,22 +853,38 @@ async function main() {
 
         case "asr": {
           if (balance <= 0) break;
-          const minutes = int(8, 62);
+          // Live and mock are both billed by the minute on the ASR socket. A live session holds
+          // two sockets (loopback and microphone), each billing half; a mock holds one. Each socket
+          // writes its own start/stop pair, grouped by the client's id for the whole interview, and
+          // the stop carries what that socket charged - the same rows backend's ASRService writes.
+          const mock = chance(0.35);
+          const minutes = mock ? int(6, 32) : int(8, 62);
           const spend = Math.min(balance, minutes * CREDITS_PER_MINUTE);
           const stoppedAt = at + Math.round((spend / CREDITS_PER_MINUTE) * MINUTE) + int(2, 40) * 1000;
           if (stoppedAt > NOW) break;
 
-          // ASR events come off a websocket, not a request, so they carry no user agent.
-          const sessionId = uuid7(at);
-          pushAudit(person, "asr_start", at, "success", { asr_session_id: sessionId }, "server");
-          pushAudit(
-            person,
-            "asr_stop",
-            stoppedAt,
-            "success",
-            { asr_session_id: sessionId, reason: pick(ASR_STOP_REASONS) },
-            "server",
-          );
+          const clientSessionId = uuid7(at);
+          const sockets = mock ? 1 : 2;
+          for (let socket = 0; socket < sockets; socket++) {
+            const charged = socket === 0 ? Math.ceil(spend / sockets) : Math.floor(spend / sockets);
+            const ids = { asr_session_id: uuid7(at + socket + 1), client_session_id: clientSessionId };
+            // ASR events come off a websocket, not a request, so they carry no user agent.
+            pushAudit(person, "asr_start", at + socket, "success", ids, "server");
+            pushAudit(
+              person,
+              "asr_stop",
+              stoppedAt + socket,
+              "success",
+              charged > 0
+                ? {
+                    ...ids,
+                    reason_code: mock ? "mock_minutes" : "live_minutes",
+                    credits_amount: charged,
+                  }
+                : ids,
+              "server",
+            );
+          }
           balance -= spend;
           break;
         }
