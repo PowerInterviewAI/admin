@@ -119,18 +119,6 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
           hint={`${formatNumber(data.users.new_in_window)} new in the ${window}`}
         />
         <StatCard
-          label="Revenue (finished)"
-          value={formatUsd(data.revenue.total_usd)}
-          icon={Wallet}
-          hint={`${formatUsd(data.revenue.window_usd)} in the ${window}`}
-        />
-        <StatCard
-          label="Credits Outstanding"
-          value={formatNumber(data.credits_outstanding)}
-          icon={Coins}
-          hint="Sum across all users"
-        />
-        <StatCard
           label="Active Users"
           value={formatNumber(data.activity.active_users)}
           icon={UserCheck}
@@ -143,16 +131,31 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
           hint={`${formatPercent(conversion)} of all accounts`}
         />
         <StatCard
+          label="Payment Success"
+          value={formatPercent(data.revenue.success_rate)}
+          icon={CheckCircle2}
+          hint="Finished, as a share of every payment"
+        />
+      </div>
+
+      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <StatCard
+          label="Revenue (finished)"
+          value={formatUsd(data.revenue.total_usd)}
+          icon={Wallet}
+          hint={`${formatUsd(data.revenue.window_usd)} in the ${window}`}
+        />
+        <StatCard
           label="Revenue per Payer"
           value={formatUsd(data.revenue.avg_per_paying_user)}
           icon={TrendingUp}
           hint="Lifetime, across paying accounts"
         />
         <StatCard
-          label="Payment Success"
-          value={formatPercent(data.revenue.success_rate)}
-          icon={CheckCircle2}
-          hint="Finished, as a share of every payment"
+          label="Credits Outstanding"
+          value={formatNumber(data.credits_outstanding)}
+          icon={Coins}
+          hint="Sum across all users"
         />
       </div>
 
