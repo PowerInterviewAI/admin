@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import { toast } from "sonner";
 
+import { usePendingNavigation } from "@/components/navigation-progress";
 import { RoleBadge } from "@/components/role-badge";
 import { useCanAccess, useSession } from "@/components/session-context";
 import { Button } from "@/components/ui/button";
@@ -31,6 +32,12 @@ export function AccountMenu() {
   const canAccessAccess = useCanAccess("/access");
   const router = useRouter();
   const [isSigningOut, startSigningOut] = useTransition();
+  const [isNavigating, startNavigating] = useTransition();
+  usePendingNavigation(isNavigating);
+
+  // A menu item is not a `<Link>`, so nothing prefetches these and the click would otherwise sit
+  // on the old page with no sign it was taken.
+  const go = (href: string) => startNavigating(() => router.push(href));
 
   const onSignOut = () => {
     startSigningOut(async () => {
@@ -74,13 +81,13 @@ export function AccountMenu() {
           {/* The password form moved out of this menu and onto its own page when the account page
               arrived: it sits beside the name and the device list, which are the same kind of
               thing, rather than being a dialog reachable only from a dropdown. */}
-          <DropdownMenuItem onClick={() => router.push("/account")}>
+          <DropdownMenuItem onClick={() => go("/account")}>
             <UserRound />
             Your account
           </DropdownMenuItem>
 
           {canAccessAccess && (
-            <DropdownMenuItem onClick={() => router.push("/access")}>
+            <DropdownMenuItem onClick={() => go("/access")}>
               <ShieldCheck />
               Dashboard access
             </DropdownMenuItem>

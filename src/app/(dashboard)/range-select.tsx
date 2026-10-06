@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 
+import { usePendingNavigation } from "@/components/navigation-progress";
 import {
   Select,
   SelectContent,
@@ -32,6 +33,7 @@ const LABELS: Record<AnalyticsRange, string> = {
 export function RangeSelect({ value }: { value: AnalyticsRange }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  usePendingNavigation(isPending);
 
   return (
     <Select
@@ -43,7 +45,7 @@ export function RangeSelect({ value }: { value: AnalyticsRange }) {
         startTransition(() => router.push(href, { scroll: false }));
       }}
     >
-      <SelectTrigger className="w-40" aria-label="Reporting window" data-pending={isPending}>
+      <SelectTrigger className="w-40" aria-label="Reporting window">
         <SelectValue>
           {(current: string | null) =>
             current === null ? "" : (LABELS[Number(current) as AnalyticsRange] ?? `${current} days`)
