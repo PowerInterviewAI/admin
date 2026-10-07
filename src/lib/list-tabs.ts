@@ -1,6 +1,7 @@
 import type {
   AuditLogsSearchParams,
   EmailCampaignsSearchParams,
+  InterviewsSearchParams,
   PaymentsSearchParams,
   SessionsSearchParams,
   UsersSearchParams,
@@ -84,6 +85,13 @@ export const SESSIONS_TABS: readonly ListTab<SessionsSearchParams>[] = [
   { value: "active", label: "Active", patch: { activity: "active" } },
   { value: "idle", label: "Idle", patch: { activity: "idle" } },
   { value: "stale", label: "Stale", patch: { activity: "stale" } },
+];
+
+export const INTERVIEWS_TABS: readonly ListTab<InterviewsSearchParams>[] = [
+  { value: "all", label: "All", patch: {} },
+  { value: "running", label: "Running now", patch: { state: "running" } },
+  { value: "live", label: "Live", patch: { kind: "live" } },
+  { value: "mock", label: "Mock", patch: { kind: "mock" } },
 ];
 
 export const AUDIT_LOGS_TABS: readonly ListTab<AuditLogsSearchParams>[] = [

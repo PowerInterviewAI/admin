@@ -7,6 +7,7 @@ import {
 } from "@/lib/schemas/audit-log";
 import { objectIdSchema, sortDirSchema } from "@/lib/schemas/common";
 import { emailCampaignStatusSchema } from "@/lib/schemas/email";
+import { INTERVIEW_KINDS, INTERVIEW_STATES } from "@/lib/schemas/interview";
 import { paymentBucketSchema, paymentPlanSchema, paymentStatusSchema } from "@/lib/schemas/payment";
 import { userRoleSchema, userStatusSchema } from "@/lib/schemas/user";
 import { SESSION_ACTIVITIES } from "@/lib/session-activity";
@@ -130,6 +131,20 @@ export const sessionsSearchParamsSchema = z.object({
   per_page: perPageSchema(PAGE_SIZE),
 });
 
+export const interviewsSearchParamsSchema = z.object({
+  q: z.string().optional().catch(undefined),
+  user_id: userIdSchema,
+  kind: z.enum(INTERVIEW_KINDS).optional().catch(undefined),
+  state: z.enum(INTERVIEW_STATES).optional().catch(undefined),
+  /** Bounds when an interview started, the same day its dashboard count files it under. */
+  from: dateSchema,
+  to: dateSchema,
+  sort_by: z.enum(["started_at", "duration_ms"]).catch("started_at"),
+  sort_dir: sortDirSchema.catch("desc"),
+  page: pageSchema,
+  per_page: perPageSchema(PAGE_SIZE),
+});
+
 export const emailCampaignsSearchParamsSchema = z.object({
   status: emailCampaignStatusSchema.optional().catch(undefined),
   sort_by: z.enum(["created_at", "total"]).catch("created_at"),
@@ -176,6 +191,7 @@ export type EmailCampaignsSearchParams = z.infer<typeof emailCampaignsSearchPara
 export type UsersSearchParams = z.infer<typeof usersSearchParamsSchema>;
 export type PaymentsSearchParams = z.infer<typeof paymentsSearchParamsSchema>;
 export type SessionsSearchParams = z.infer<typeof sessionsSearchParamsSchema>;
+export type InterviewsSearchParams = z.infer<typeof interviewsSearchParamsSchema>;
 export type AuditLogsSearchParams = z.infer<typeof auditLogsSearchParamsSchema>;
 export type DashboardSearchParams = z.infer<typeof dashboardSearchParamsSchema>;
 

@@ -4,6 +4,7 @@ import { type ActionData, failed, succeeded } from "@/lib/action-result";
 import { type CsvValue, csvFilename, toCsv } from "@/lib/csv";
 import {
   auditLogsSearchParamsSchema,
+  interviewsSearchParamsSchema,
   paymentsSearchParamsSchema,
   sessionsSearchParamsSchema,
   usersSearchParamsSchema,
@@ -11,6 +12,7 @@ import {
 import { denyAdminArea, denyRead } from "@/server/auth/guard";
 import { AppError } from "@/server/errors";
 import { listAuditLogs } from "@/server/queries/audit-logs";
+import { listInterviews } from "@/server/queries/interviews";
 import { getLiveState } from "@/server/queries/live";
 import { listPayments } from "@/server/queries/payments";
 import { listSessions } from "@/server/queries/sessions";
@@ -159,6 +161,51 @@ export async function exportPaymentsCsv(input: unknown): Promise<ActionData<CsvE
     );
   } catch (error) {
     return describe(error, "payments");
+  }
+}
+
+export async function exportInterviewsCsv(input: unknown): Promise<ActionData<CsvExport>> {
+  // `denyRead`, like users: `/interviews` is open to guests and carries no device detail.
+  const denied = await denyRead();
+  if (denied) return denied;
+
+  const params = interviewsSearchParamsSchema.safeParse(input);
+  if (!params.success) return failed("Those filters are not valid");
+
+  try {
+    const live = await getLiveState();
+    const page = await listInterviews({ ...params.data, page: 1, per_page: EXPORT_LIMIT }, live);
+    return succeeded(
+      build(
+        "interviews",
+        [
+          "Started",
+          "Ended",
+          "Duration seconds",
+          "Kind",
+          "State",
+          "User",
+          "Email",
+          "Sockets",
+          "Client session ID",
+          "User ID",
+        ],
+        page.items.map((interview) => [
+          csvDate(interview.started_at),
+          csvDate(interview.ended_at),
+          interview.duration_ms === null ? "" : Math.round(interview.duration_ms / 1000),
+          interview.kind,
+          interview.state,
+          interview.user?.username ?? "",
+          interview.user?.email ?? "",
+          interview.sockets,
+          interview.client_session_id,
+          interview.user_id,
+        ]),
+      ),
+    );
+  } catch (error) {
+    return describe(error, "interviews");
   }
 }
 

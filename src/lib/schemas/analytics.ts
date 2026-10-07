@@ -154,6 +154,15 @@ export interface SessionsSummary {
   users: number;
 }
 
+export interface InterviewsSummary {
+  total: number;
+  running: number;
+  live: number;
+  mock: number;
+  /** Over ended interviews only, since a running one's duration is still growing. */
+  avg_duration_ms: number | null;
+}
+
 export interface AuditLogsSummary {
   total: number;
   failures: number;
