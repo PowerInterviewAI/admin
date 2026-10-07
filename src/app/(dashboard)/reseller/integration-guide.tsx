@@ -3,14 +3,13 @@ import "server-only";
 import { ExternalLink } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 const DEFAULT_API_BASE = "https://api.powerinterviewai.com/api";
 
 /**
- * Where a reseller's app sends its calls: the production API unless `RESELLER_API_BASE_URL` points
- * somewhere else (a staging backend, say). A value that is not a URL falls back to production
- * rather than printing a snippet that cannot work.
+ * The production API unless `RESELLER_API_BASE_URL` points somewhere else (a staging backend, say).
+ * A value that is not a URL falls back to production rather than linking somewhere that cannot work.
  */
 function apiBase(): string {
   const configured = process.env.RESELLER_API_BASE_URL?.trim();
@@ -26,70 +25,38 @@ function apiBase(): string {
 }
 
 /**
- * The backend's interactive API reference, opened at its Reseller section. It is served at `/docs`
- * on the API's own origin, so it follows `apiBase()` and a staging override moves both together.
+ * The backend's API reference, opened at its Reseller section. ReDoc is served at `/redoc` on the
+ * API's own origin, so the link follows `apiBase()` and a staging override moves it too.
  */
-function docsUrl(base: string): string {
-  return `${new URL(base).origin}/docs#/Reseller`;
+function referenceUrl(): string {
+  return `${new URL(apiBase()).origin}/redoc#tag/Reseller`;
 }
 
-const ENDPOINTS = [
-  { method: "GET", path: "/reseller/me", what: "Your account and lifetime totals" },
-  { method: "POST", path: "/reseller/users", what: "Create a customer, with optional opening credits" },
-  { method: "GET", path: "/reseller/users?email=...", what: "Find your customers" },
-  { method: "POST", path: "/reseller/users/{id}/credits", what: "Top up one of your customers" },
-] as const;
-
+/**
+ * Everything an integrator needs - endpoints, fields, examples, errors - is in the backend's API
+ * reference, which is generated from the code and so cannot go out of date. This card points there
+ * rather than keeping a second, shorter copy that would.
+ */
 export function IntegrationGuide() {
-  const base = apiBase();
-  const docs = docsUrl(base);
-
-  const create = [
-    `curl -X POST ${base}/reseller/users \\`,
-    `  -H "X-API-Key: $PIA_API_KEY" -H "Content-Type: application/json" \\`,
-    `  -d '{"username":"Jane","email":"jane@example.com","password":"a-strong-password",`,
-    `       "credits":600,"reference":"order-1001","price_amount":19.99,"price_currency":"USD"}'`,
-  ].join("\n");
-
   return (
     <Card>
       <CardHeader>
         <CardTitle>Connecting your app</CardTitle>
         <CardDescription>
-          600 credits is one interview hour. Send your own order id as{" "}
-          <code className="font-mono">reference</code>: a retry with the same reference returns the
-          first result instead of creating or crediting twice.
+          Create customers and add credits from your own app, authenticating with your API key. The
+          API reference lists every endpoint with request and response examples.
         </CardDescription>
         <Button
           variant="outline"
           size="sm"
           className="mt-2 justify-self-start"
           nativeButton={false}
-          render={<a href={docs} target="_blank" rel="noopener noreferrer" />}
+          render={<a href={referenceUrl()} target="_blank" rel="noopener noreferrer" />}
         >
           API reference
           <ExternalLink data-icon="inline-end" />
         </Button>
       </CardHeader>
-      <CardContent className="flex flex-col gap-3 text-sm">
-        <ul className="flex flex-col gap-1">
-          {ENDPOINTS.map((endpoint) => (
-            <li key={`${endpoint.method} ${endpoint.path}`} className="flex flex-wrap gap-x-2">
-              <code className="font-mono text-xs">
-                {endpoint.method} {endpoint.path}
-              </code>
-              <span className="text-muted-foreground">{endpoint.what}</span>
-            </li>
-          ))}
-        </ul>
-        <pre className="overflow-x-auto rounded-md border bg-muted p-3 font-mono text-xs leading-relaxed">
-          {create}
-        </pre>
-        <p className="text-xs text-muted-foreground">
-          The customer signs in to the Power Interview desktop app with that email and password.
-          Your rate is applied to every credit you grant, and settled daily.
-        </p>
-      </CardContent>
     </Card>
   );
 }

@@ -82,8 +82,8 @@ collected by hand: mark a day paid on the **Settlements** page, which also expor
 the backend could not confirm appear under **Sales history > Needs review** for an admin to decide.
 
 `RESELLER_API_BASE_URL` (optional, default `https://api.powerinterviewai.com/api`) is the backend's
-public address, shown in the examples on the reseller's page, which also links to the backend's
-interactive API reference at `<origin>/docs`. It is display only.
+public address. The reseller's page links to the API reference the backend serves at
+`<origin>/redoc`, which is where the endpoints, fields and examples live. It is display only.
 
 ## Mock data
 

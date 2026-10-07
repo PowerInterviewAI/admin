@@ -134,7 +134,7 @@ Needs `resellers:read` (admins). A reseller is an outside partner who sells acce
 
 ### Reseller portal (`/reseller`)
 
-Needs `reseller:portal` (resellers only; an admin has no key to manage). Everything on it is scoped to the signed-in account's own id, never to anything in the URL. A key card to generate, rotate or revoke the API key (shown once; only its SHA-256 is stored, on the reseller's own `admin_accounts` row), a strip of totals, curl examples for the endpoints, and three tables: their customers, their sales, and their daily totals. A reseller also reads everything a guest can; this page is what is theirs.
+Needs `reseller:portal` (resellers only; an admin has no key to manage). Everything on it is scoped to the signed-in account's own id, never to anything in the URL. A key card to generate, rotate or revoke the API key (shown once; only its SHA-256 is stored, on the reseller's own `admin_accounts` row), a strip of totals, a short "Connecting your app" card whose button opens the backend's API reference (ReDoc) at its Reseller section, and three tables: their customers, their sales, and their daily totals. A reseller also reads everything a guest can; this page is what is theirs.
 
 ### Dashboard access (`/access`)
 
