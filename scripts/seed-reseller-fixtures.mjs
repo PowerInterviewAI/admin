@@ -201,7 +201,7 @@ async function main() {
   const accountHash = await bcrypt.hash(FIXTURE_PASSWORD, 12);
   const customerHash = await bcrypt.hash(CUSTOMER_PASSWORD, 12);
 
-  // ---- A guest, to see what a read-only staff account gets ----
+  // ---- A guest, to see how little a read-only account gets: the dashboard's figures only ----
   await accounts.insertOne({
     email: `guest@${FIXTURE_DOMAIN}`,
     name: "Gina Guest",
@@ -400,7 +400,7 @@ async function main() {
   );
   console.log(`\nSign-ins (password for all: ${FIXTURE_PASSWORD})`);
   console.log(`  your admin account     everything, incl. /resellers`);
-  console.log(`  guest@${FIXTURE_DOMAIN}  read-only staff: no Resellers, no Access`);
+  console.log(`  guest@${FIXTURE_DOMAIN}  dashboard figures only`);
   for (const spec of RESELLERS) {
     console.log(`  ${`${spec.slug}@${FIXTURE_DOMAIN}`.padEnd(29)} reseller portal (${spec.status})`);
   }

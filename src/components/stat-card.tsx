@@ -10,7 +10,7 @@ interface StatCardProps {
   value: string;
   icon: LucideIcon;
   hint?: string;
-  /** The filtered list behind the number. Omit for a guest when the list is admin-only. */
+  /** The filtered list behind the number. Omit for a role that cannot open that list. */
   href?: string;
   className?: string;
 }

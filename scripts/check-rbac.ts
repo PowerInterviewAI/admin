@@ -35,11 +35,11 @@ const ROUTES = [
 
 const EXPECTED: Record<AccountRole, readonly string[]> = {
   admin: ROUTES.filter((route) => route !== "/reseller"),
-  // Exactly the guest access from before RBAC: everything but the four admin-only areas, and none
-  // of the reseller pages that did not exist yet.
-  guest: ["/", "/users", "/interviews", "/payments", "/account"],
+  // The dashboard's aggregate figures and the caller's own account. Users, interviews and payments
+  // are admin-only, like sessions, audit logs, email, access and the reseller pages.
+  guest: ["/", "/account"],
   // A guest's pages plus their own portal; never the other partners' `/resellers`.
-  reseller: ["/", "/users", "/interviews", "/payments", "/account", "/reseller"],
+  reseller: ["/", "/account", "/reseller"],
 };
 
 let failures = 0;
@@ -68,6 +68,18 @@ for (const role of ACCOUNT_ROLES) {
     for (const permission of ROLE_PERMISSIONS[role]) assert.ok(PERMISSIONS.includes(permission));
   });
 }
+
+check("users, interviews and payments belong to admins alone", () => {
+  for (const role of ACCOUNT_ROLES) {
+    if (role === "admin") continue;
+    for (const route of ["/users", "/interviews", "/payments"]) {
+      assert.equal(canAccessPath(role, route), false, `${role} opens ${route}`);
+    }
+    for (const permission of ["users:read", "interviews:read", "payments:read"] as const) {
+      assert.equal(ROLE_PERMISSIONS[role].has(permission), false, `${role} holds ${permission}`);
+    }
+  }
+});
 
 check("a reseller reaches every page a guest can", () => {
   for (const route of ROUTES) {

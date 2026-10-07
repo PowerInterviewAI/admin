@@ -25,8 +25,8 @@ const SESSION_EXPIRED = "Your session has expired. Sign in again to continue.";
 /**
  * Which permission an action needs follows the page it belongs to, not what it does to the
  * database: an export only reads, but it reads the rows of one list, so it asks for that list's
- * `:read`. A guest's users export works for the same reason the users page does; a reseller's does
- * not, for the same reason they cannot open `/users`.
+ * `:read`. Only an admin can export users, payments or interviews, for the same reason only an
+ * admin can open those pages.
  */
 export async function denyUnless(permission: Permission): Promise<Denial | null> {
   const account = await getCurrentAccount();
