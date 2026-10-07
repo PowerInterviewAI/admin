@@ -91,8 +91,8 @@ export function HtmlEditor({
         // a scrollbar gutter, and a light track on the dark theme is the one place it shows.
         "scheme-light dark:scheme-dark",
         "relative rounded-lg border border-input transition-colors",
-        "focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50",
-        "data-invalid:border-destructive data-invalid:ring-3 data-invalid:ring-destructive/20",
+        "focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/50",
+        "data-invalid:border-destructive data-invalid:ring-2 data-invalid:ring-destructive/20",
         "dark:bg-input/30 dark:data-invalid:border-destructive/50",
         className,
       )}
