@@ -90,8 +90,8 @@ export function AppSidebar({ pendingCount = 0 }: { pendingCount?: number }) {
         </div>
       </SidebarHeader>
       <SidebarContent>
-        {/* A reseller has no product-wide pages, and an empty "Overview" heading would promise
-            content that is not there. */}
+        {/* A role with no product-wide pages would otherwise get an empty "Overview" heading
+            promising content that is not there. */}
         {overview.length > 0 && (
           <SidebarGroup>
             <SidebarGroupLabel>Overview</SidebarGroupLabel>

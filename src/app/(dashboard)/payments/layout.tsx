@@ -1,6 +1,6 @@
 import { PermissionGate } from "@/components/permission-gate";
 
-/** Product data: readable by staff roles, never by a reseller, who sees only their own customers. */
+/** Product data: readable by every role holding `payments:read` (admin, guest, reseller). */
 export default function PaymentsLayout({ children }: LayoutProps<"/payments">) {
   return <PermissionGate need="payments:read">{children}</PermissionGate>;
 }

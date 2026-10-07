@@ -4,7 +4,7 @@ Project specification for the Power Interview AI admin dashboard - a production-
 
 ## Overview
 
-`admin` is a single Next.js application that reads and writes the same MongoDB database `../backend` uses for the Power Interview AI product. It does not call backend's API - it talks to MongoDB directly, since backend exposes no admin-facing endpoints today. It is meant to run on a single machine, opened in a browser. Access is gated by its own email/password sign-in, kept in a separate database from the product's own users: a built-in admin comes from the environment, everyone else signs up and waits for an admin to approve them, and an approved account is an `admin` (everything), a `guest` (reads the dashboard, users, interviews and payments - sessions, audit logs, email, resellers and the access panel are admins only), or a `reseller` (only their own reseller portal). Roles map to permissions in `src/lib/rbac.ts`, and every check asks for a permission.
+`admin` is a single Next.js application that reads and writes the same MongoDB database `../backend` uses for the Power Interview AI product. It does not call backend's API - it talks to MongoDB directly, since backend exposes no admin-facing endpoints today. It is meant to run on a single machine, opened in a browser. Access is gated by its own email/password sign-in, kept in a separate database from the product's own users: a built-in admin comes from the environment, everyone else signs up and waits for an admin to approve them, and an approved account is an `admin` (everything), a `guest` (reads the dashboard, users, interviews and payments - sessions, audit logs, email, resellers and the access panel are admins only), or a `reseller` (a guest's reads plus their own reseller portal). Roles map to permissions in `src/lib/rbac.ts`, and every check asks for a permission.
 
 It also sends mail. `/emails` replaces `../../power-interview-email`, a one-shot Python CLI whose campaign lived in a gitignored `content.py` and whose only record of a send was a log file.
 
@@ -150,7 +150,7 @@ There is always one way in: `ADMIN_EMAIL`/`ADMIN_PASSWORD` name a built-in admin
 - Destructive actions (delete user, revoke session) and every campaign send go through a confirmation dialog
 - Every mutation reports success or failure as a toast, driven by the action's return value rather than a thrown error
 - A guest sees the dashboard, users, interviews and payments, with the write controls disabled and a note saying why. `/sessions`, `/audit-logs`, `/emails`, `/resellers` and `/access` are admins only: the sidebar drops them, and the segment's layout renders a "Not available to your account" panel instead of the page, so the page's queries never run
-- A reseller sees only `/reseller` (their portal) and `/account`; opening `/` sends them to the portal
+- A reseller sees everything a guest sees, read-only, plus `/reseller` (their portal); `/resellers` and the admin-only pages are refused
 - Every server action re-checks the permission before doing anything, so the disabled controls and hidden links are an explanation rather than the enforcement
 
 ## Out of Scope

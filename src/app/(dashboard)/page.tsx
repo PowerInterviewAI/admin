@@ -55,9 +55,9 @@ function formatPercent(ratio: number): string {
 
 export default async function DashboardPage({ searchParams }: PageProps<"/">) {
   const account = await requireAccount();
-  // Signing in lands everybody on `/`. A role that cannot read the product-wide numbers (a
-  // reseller) is sent to its own home before a single aggregation runs, rather than shown a refusal
-  // on arrival.
+  // Signing in lands everybody on `/`. A role that cannot read the product-wide numbers is sent to
+  // its own home before a single aggregation runs, rather than shown a refusal on arrival. Every
+  // role today holds `dashboard:read`, so this is the guard for the next one that does not.
   if (!hasPermission(account.role, "dashboard:read")) redirect(homePathFor(account.role));
   const canReadAuditLogs = hasPermission(account.role, "audit_logs:read");
 

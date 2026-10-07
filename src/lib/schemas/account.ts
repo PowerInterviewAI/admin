@@ -28,15 +28,16 @@ export const ACCOUNT_ROLE_DESCRIPTIONS: Record<AccountRole, string> = {
     "Reads the dashboard, users, interviews, and payments. Sessions, audit logs, email, resellers, " +
     "and this page are admin-only, and every write is refused on the server as well as in the UI.",
   reseller:
-    "An outside partner. Sees only their reseller portal: their API key, the customers they " +
-    "created, and what they sold. No product data, and no other customers.",
+    "An outside partner. Reads what a guest reads (dashboard, users, interviews, payments) plus " +
+    "their own reseller portal: their API key, the customers they created, and what they sold. " +
+    "Writes nothing outside the portal, and cannot see other resellers.",
 };
 
 /** The two-word version, for the account menu where the full description does not fit. */
 export const ACCOUNT_ROLE_SUMMARIES: Record<AccountRole, string> = {
   admin: "Full access",
   guest: "Read-only, some pages hidden",
-  reseller: "Reseller portal only",
+  reseller: "Guest reads + reseller portal",
 };
 
 /**

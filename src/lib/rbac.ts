@@ -8,8 +8,8 @@ import type { AccountRole } from "@/lib/schemas/account";
  * Every guard, segment gate, nav entry and button asks for a *permission*, never for a role by
  * name. That is what makes a role a row in `ROLE_PERMISSIONS` rather than a word scattered through
  * the app: adding one is a change here, and a check that says `role === "admin"` somewhere else is
- * a bug waiting for the third role (which is exactly how `reseller` would have read every page a
- * guest can).
+ * a bug waiting for the next role (the old hand-written mapping turned every reseller into a guest
+ * by accident, which is a different thing from granting a reseller a guest's reads on purpose).
  *
  * Client-safe on purpose - no `server-only`, no database - for the same reason `auth-routes.ts` is:
  * the sidebar and the buttons ask the same question the server does, from the same table. Nothing
@@ -35,15 +35,25 @@ export const permissionSchema = z.enum([
 export type Permission = z.infer<typeof permissionSchema>;
 export const PERMISSIONS = permissionSchema.options;
 
+/**
+ * Exactly what a guest could read before roles became permissions. Sessions, audit logs and email
+ * carry transcripts, IP addresses and customers' inboxes, which is why they are not here.
+ */
+const GUEST_READS: readonly Permission[] = [
+  "dashboard:read",
+  "users:read",
+  "interviews:read",
+  "payments:read",
+];
+
 export const ROLE_PERMISSIONS: Record<AccountRole, ReadonlySet<Permission>> = {
   // Everything except the portal, which is a reseller's own key and sales. An admin has no key.
   admin: new Set(PERMISSIONS.filter((permission) => permission !== "reseller:portal")),
-  // Exactly what a guest could read before roles became permissions. Sessions, audit logs and email
-  // carry transcripts, IP addresses and customers' inboxes, which is why they are not here.
-  guest: new Set(["dashboard:read", "users:read", "interviews:read", "payments:read"]),
-  // A reseller is an outside party. Their portal is the whole of what they see: not the dashboard's
-  // product-wide numbers, and not other customers.
-  reseller: new Set(["reseller:portal"]),
+  guest: new Set(GUEST_READS),
+  // A guest's reads plus their own portal, by decision: a reseller can see the product-wide pages a
+  // guest can, which includes every customer on `/users`, not only their own. They write nothing
+  // outside the portal, and never see `/resellers` (the other partners' sales and balances).
+  reseller: new Set([...GUEST_READS, "reseller:portal"]),
 };
 
 export function hasPermission(role: AccountRole, permission: Permission): boolean {
@@ -94,7 +104,7 @@ export function canAccessPath(role: AccountRole, pathname: string): boolean {
 
 /**
  * Where a role lands when it opens `/` and cannot read the dashboard. Signing in sends everybody to
- * `/`, so this is what turns that into the reseller's portal rather than a refusal on arrival.
+ * `/`, so this is what turns that into the role's first page rather than a refusal on arrival.
  */
 export function homePathFor(role: AccountRole): string {
   const home = ROUTE_PERMISSIONS.find((rule) => hasPermission(role, rule.permission));
