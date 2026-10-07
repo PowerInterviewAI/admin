@@ -158,7 +158,10 @@ export async function setAccountRole(accountId: string, input: unknown): Promise
 
     // Backend refuses a key whose account is no longer a reseller, so this is not what stops it -
     // it is what stops a later promotion back to reseller from reviving a key issued years ago.
-    if (parsed.data.role !== "reseller") await revokeApiKey(accountId);
+    if (parsed.data.role !== "reseller") {
+      const actor = await getCurrentAccount();
+      await revokeApiKey(accountId, { email: actor?.email ?? null, via: "role_change" });
+    }
   } catch (error) {
     return failed(
       error instanceof AppError ? error.message : "Could not change this account's role",
@@ -231,6 +234,11 @@ export async function deleteAdminAccount(accountId: string): Promise<ActionResul
   if (builtIn) return builtIn;
 
   try {
+    // Before the account goes: the key's end is recorded against the reseller's email, which is
+    // gone once the row is. Backend would refuse the key from here on anyway; this is the trail.
+    const actor = await getCurrentAccount();
+    await revokeApiKey(accountId, { email: actor?.email ?? null, via: "account_deleted" });
+
     const result = await getCollection(COLLECTIONS.adminAccounts).deleteOne({
       _id: toObjectId(accountId),
     });

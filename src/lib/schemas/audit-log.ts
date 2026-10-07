@@ -34,6 +34,11 @@ const KNOWN_EVENT_TYPES = [
   "credits_adjusted",
   "asr_start",
   "asr_stop",
+  // A reseller's API key being issued (a rotation replaces one) or ended. Written by this app, which
+  // owns keys, and declared in backend's enum too. They fall under `auth` ("accounts") by the
+  // complement rule below: a key is part of an account's access, and nothing here is a payment.
+  "reseller_key_issued",
+  "reseller_key_revoked",
 ] as const;
 
 /**
@@ -64,7 +69,7 @@ export type AuditStatus = z.infer<typeof auditStatusSchema>;
 export const AUDIT_EVENT_TYPES: readonly AuditEventType[] = KNOWN_EVENT_TYPES;
 export const AUDIT_STATUSES = auditStatusSchema.options;
 
-/** Twenty-three event types is too many to scan; three groups is what an admin filters by in practice. */
+/** Twenty-five event types is too many to scan; three groups is what an admin filters by in practice. */
 export const auditEventGroupSchema = z.enum(["auth", "payments", "asr"]);
 export type AuditEventGroup = z.infer<typeof auditEventGroupSchema>;
 

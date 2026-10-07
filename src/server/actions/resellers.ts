@@ -34,7 +34,7 @@ export async function rotateOwnApiKey(): Promise<ActionData<{ key: string }>> {
   try {
     const account = await getCurrentAccount();
     if (!account) throw new AppError("unauthenticated", "Your session has expired");
-    const key = await issueApiKey(account._id);
+    const key = await issueApiKey(account._id, { email: account.email, via: "reseller_portal" });
     refresh();
     return succeeded({ key });
   } catch (error) {
@@ -49,7 +49,7 @@ export async function revokeOwnApiKey(): Promise<ActionResult> {
   try {
     const account = await getCurrentAccount();
     if (!account) throw new AppError("unauthenticated", "Your session has expired");
-    await revokeApiKey(account._id);
+    await revokeApiKey(account._id, { email: account.email, via: "reseller_portal" });
   } catch (error) {
     return describe(error, "Could not revoke your key");
   }
@@ -68,7 +68,12 @@ export async function revokeResellerApiKey(accountId: string): Promise<ActionRes
   if (denied) return denied;
 
   try {
-    await revokeApiKey(accountId);
+    const actor = await getCurrentAccount();
+    const revoked = await revokeApiKey(accountId, {
+      email: actor?.email ?? null,
+      via: "admin_dashboard",
+    });
+    if (!revoked) return failed("That reseller has no API key to revoke");
   } catch (error) {
     return describe(error, "Could not revoke this key");
   }
