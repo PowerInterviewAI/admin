@@ -13,8 +13,8 @@ export const metadata: Metadata = { title: "Dashboard access" };
 /**
  * Who can sign in to this dashboard, and as what.
  *
- * Admins only - `layout.tsx` gates the segment, so a guest gets the "Admins only" panel instead of
- * this page. Who may sign in is not something a read-only account has any use for knowing, and the
+ * Needs `access:manage` - `layout.tsx` gates the segment, so anyone else gets the gate's refusal
+ * instead of this page. Who may sign in is not something a read-only account has any use for knowing, and the
  * table lists every operator's address and live session count.
  */
 export default async function AccessPage() {

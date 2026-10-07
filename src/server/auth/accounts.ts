@@ -5,6 +5,7 @@ import {
   type AccountRole,
   type AccountRow,
   type AccountStatus,
+  accountRoleSchema,
   accountRowSchema,
   accountSchema,
   normalizeEmail,
@@ -35,6 +36,17 @@ declare global {
 async function prepareAuth(): Promise<void> {
   await Promise.all([
     getCollection(COLLECTIONS.adminAccounts).createIndex({ email: 1 }, { unique: true }),
+    // Backend authenticates a reseller's API key with one lookup on this field, and two accounts
+    // must never share a digest. Partial on a string type, not sparse: a sparse unique index still
+    // collides on explicit nulls, and every account without a key is one (see `revokeApiKey`).
+    getCollection(COLLECTIONS.adminAccounts).createIndex(
+      { api_key_hash: 1 },
+      {
+        unique: true,
+        partialFilterExpression: { api_key_hash: { $type: "string" } },
+        name: "api_key_hash_unique",
+      },
+    ),
     getCollection(COLLECTIONS.adminSessions).createIndex({ token_hash: 1 }, { unique: true }),
     getCollection(COLLECTIONS.adminSessions).createIndex({ account_id: 1 }),
   ]);
@@ -78,7 +90,9 @@ export async function findAccountCredentials(email: string): Promise<{
 
   return {
     id: String(doc._id),
-    role: doc.role === "admin" ? "admin" : "guest",
+    // Through the schema rather than a hand-written `=== "admin" ? ... : "guest"`, which quietly
+    // turned every role added after the first two into a guest. Same least-privileged fallback.
+    role: accountRoleSchema.catch("guest").parse(doc.role),
     // Anything that is not one of the three known words is treated as pending, which is the
     // reading that denies access rather than granting it.
     status: doc.status === "approved" || doc.status === "rejected" ? doc.status : "pending",

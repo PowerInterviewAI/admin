@@ -37,3 +37,8 @@ export function titleCase(value: string | null | undefined): string {
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
 }
+
+/** A reseller's rate, stored as integer cents per interview hour (600 credits). */
+export function formatRate(centsPerHour: number | null): string {
+  return centsPerHour === null ? "Not set" : `${formatUsd(centsPerHour / 100)} / hour`;
+}

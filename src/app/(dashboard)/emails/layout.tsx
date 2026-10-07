@@ -1,6 +1,6 @@
-import { AdminGate } from "@/components/admin-gate";
+import { PermissionGate } from "@/components/permission-gate";
 
 /** Covers `/emails/history` too: the gate is on the segment, not on the page. */
 export default function EmailsLayout({ children }: LayoutProps<"/emails">) {
-  return <AdminGate>{children}</AdminGate>;
+  return <PermissionGate need="emails:send">{children}</PermissionGate>;
 }

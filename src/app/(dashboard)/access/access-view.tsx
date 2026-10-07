@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { DataTable } from "@/components/data-table";
 import { ReadOnlyNotice } from "@/components/read-only-notice";
 import { RoleBadge } from "@/components/role-badge";
-import { useCanWrite } from "@/components/session-context";
+import { useCan } from "@/components/session-context";
 import { StatusBadge } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -26,7 +26,7 @@ export function AccessView({
   accounts: AccountRow[];
   currentAccountId: string;
 }) {
-  const canWrite = useCanWrite();
+  const canWrite = useCan("access:manage");
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   // Derived from the rendered rows rather than held in state, so an account edited through the
@@ -120,6 +120,7 @@ export function AccessView({
   return (
     <>
       <ReadOnlyNotice
+        permission="access:manage"
         className="mb-4"
         message="Your account has read-only access, so these accounts can be viewed but not changed."
       />

@@ -8,7 +8,7 @@ import { toast } from "sonner";
 
 import { ReadOnlyNotice } from "@/components/read-only-notice";
 import { RelatedLink } from "@/components/related-link";
-import { useCanAccess, useCanWrite } from "@/components/session-context";
+import { useCan, useCanAccess } from "@/components/session-context";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -88,7 +88,7 @@ export function UserEditSheet({ user, onClose }: UserEditSheetProps) {
 }
 
 function UserEditForm({ user, onClose }: { user: UserRow; onClose: () => void }) {
-  const canWrite = useCanWrite();
+  const canWrite = useCan("users:write");
   const canSeeSessions = useCanAccess("/sessions");
   const canSeeAuditLog = useCanAccess("/audit-logs");
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -141,6 +141,7 @@ function UserEditForm({ user, onClose }: { user: UserRow; onClose: () => void })
     <>
       <div className="flex-1 overflow-y-auto px-4">
         <ReadOnlyNotice
+          permission="users:write"
           className="mt-4"
           message="Your account has read-only access, so this user can be viewed but not changed."
         />

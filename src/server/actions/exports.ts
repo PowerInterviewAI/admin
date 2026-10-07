@@ -6,15 +6,18 @@ import {
   auditLogsSearchParamsSchema,
   interviewsSearchParamsSchema,
   paymentsSearchParamsSchema,
+  resellerSalesSearchParamsSchema,
+  resellerSettlementsSearchParamsSchema,
   sessionsSearchParamsSchema,
   usersSearchParamsSchema,
 } from "@/lib/search-params";
-import { denyAdminArea, denyRead } from "@/server/auth/guard";
+import { denyUnless } from "@/server/auth/guard";
 import { AppError } from "@/server/errors";
 import { listAuditLogs } from "@/server/queries/audit-logs";
 import { listInterviews } from "@/server/queries/interviews";
 import { getLiveState } from "@/server/queries/live";
 import { listPayments } from "@/server/queries/payments";
+import { listResellerSales, listResellerSettlements } from "@/server/queries/resellers";
 import { listSessions } from "@/server/queries/sessions";
 import { listUsers } from "@/server/queries/users";
 
@@ -64,7 +67,7 @@ function build(prefix: string, headers: string[], rows: CsvValue[][]): CsvExport
 }
 
 export async function exportUsersCsv(input: unknown): Promise<ActionData<CsvExport>> {
-  const denied = await denyRead();
+  const denied = await denyUnless("users:read");
   if (denied) return denied;
 
   const params = usersSearchParamsSchema.safeParse(input);
@@ -114,7 +117,7 @@ export async function exportUsersCsv(input: unknown): Promise<ActionData<CsvExpo
 }
 
 export async function exportPaymentsCsv(input: unknown): Promise<ActionData<CsvExport>> {
-  const denied = await denyRead();
+  const denied = await denyUnless("payments:read");
   if (denied) return denied;
 
   const params = paymentsSearchParamsSchema.safeParse(input);
@@ -165,8 +168,7 @@ export async function exportPaymentsCsv(input: unknown): Promise<ActionData<CsvE
 }
 
 export async function exportInterviewsCsv(input: unknown): Promise<ActionData<CsvExport>> {
-  // `denyRead`, like users: `/interviews` is open to guests and carries no device detail.
-  const denied = await denyRead();
+  const denied = await denyUnless("interviews:read");
   if (denied) return denied;
 
   const params = interviewsSearchParamsSchema.safeParse(input);
@@ -210,9 +212,9 @@ export async function exportInterviewsCsv(input: unknown): Promise<ActionData<Cs
 }
 
 export async function exportSessionsCsv(input: unknown): Promise<ActionData<CsvExport>> {
-  // `denyAdminArea`, not `denyRead`: `/sessions` is admin-only, so this file is exactly the rows
-  // a guest is refused on screen.
-  const denied = await denyAdminArea();
+  // The page's own permission, not a looser one: this file is exactly the rows a guest is refused
+  // on screen.
+  const denied = await denyUnless("sessions:read");
   if (denied) return denied;
 
   const params = sessionsSearchParamsSchema.safeParse(input);
@@ -244,7 +246,7 @@ export async function exportSessionsCsv(input: unknown): Promise<ActionData<CsvE
 export async function exportAuditLogsCsv(input: unknown): Promise<ActionData<CsvExport>> {
   // Admin-only for the same reason as the sessions export: `/audit-logs` is gated, so this file
   // is the rows a guest is refused on screen.
-  const denied = await denyAdminArea();
+  const denied = await denyUnless("audit_logs:read");
   if (denied) return denied;
 
   const params = auditLogsSearchParamsSchema.safeParse(input);
@@ -271,5 +273,101 @@ export async function exportAuditLogsCsv(input: unknown): Promise<ActionData<Csv
     );
   } catch (error) {
     return describe(error, "audit logs");
+  }
+}
+
+/** Every reseller sale under the current filters: what the reseller reported, and what it bills. */
+export async function exportResellerSalesCsv(input: unknown): Promise<ActionData<CsvExport>> {
+  const denied = await denyUnless("resellers:read");
+  if (denied) return denied;
+
+  const params = resellerSalesSearchParamsSchema.safeParse(input);
+  if (!params.success) return failed("Those filters are not valid");
+
+  try {
+    const page = await listResellerSales({ ...params.data, page: 1, per_page: EXPORT_LIMIT });
+    return succeeded(
+      build(
+        "reseller-sales",
+        [
+          "When",
+          "State",
+          "Reseller",
+          "Reseller email",
+          "Kind",
+          "Customer email",
+          "Credits",
+          "Rate (cents per hour)",
+          "Reference",
+          "Reported price",
+          "Currency",
+          "Note",
+          "Customer id",
+          "Sale id",
+        ],
+        page.items.map((sale) => [
+          csvDate(sale.committed_at ?? sale.created_at),
+          sale.state,
+          sale.reseller?.name ?? "",
+          sale.reseller?.email ?? "",
+          sale.kind,
+          sale.customer_email,
+          sale.credits,
+          sale.rate_cents_per_hour ?? "",
+          sale.reference ?? "",
+          sale.price_amount ?? "",
+          sale.price_currency ?? "",
+          sale.note ?? "",
+          sale.user_id ?? "",
+          sale._id,
+        ]),
+      ),
+    );
+  } catch (error) {
+    return describe(error, "reseller sales");
+  }
+}
+
+/** The daily settlement rows under the current filters, for drawing up invoices by hand. */
+export async function exportResellerSettlementsCsv(input: unknown): Promise<ActionData<CsvExport>> {
+  const denied = await denyUnless("resellers:read");
+  if (denied) return denied;
+
+  const params = resellerSettlementsSearchParamsSchema.safeParse(input);
+  if (!params.success) return failed("Those filters are not valid");
+
+  try {
+    const page = await listResellerSettlements({ ...params.data, page: 1, per_page: EXPORT_LIMIT });
+    return succeeded(
+      build(
+        "reseller-settlements",
+        [
+          "Day (UTC)",
+          "Reseller",
+          "Reseller email",
+          "Customers created",
+          "Credits",
+          "Owed (USD)",
+          "Unpriced credits",
+          "Status",
+          "Paid at",
+          "Paid by",
+        ],
+        page.items.map((row) => [
+          row.day,
+          row.reseller?.name ?? "",
+          row.reseller?.email ?? "",
+          row.users_created,
+          row.credits,
+          row.amount_owed_cents === null ? "" : (row.amount_owed_cents / 100).toFixed(2),
+          row.unpriced_credits,
+          row.status,
+          csvDate(row.paid_at),
+          row.paid_by ?? "",
+        ]),
+      ),
+    );
+  } catch (error) {
+    return describe(error, "settlements");
   }
 }

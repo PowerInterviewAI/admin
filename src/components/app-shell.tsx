@@ -4,7 +4,6 @@ import { AccountMenu } from "@/components/account-menu";
 import { AppSidebar } from "@/components/app-sidebar";
 import { useIsNavigating } from "@/components/navigation-progress";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { Separator } from "@/components/ui/separator";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 /**
  * The authenticated chrome. Mounted by the dashboard layout, below `SessionProvider`, so everything
@@ -26,10 +25,6 @@ export function AppShell({
       <SidebarInset>
         <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
           <SidebarTrigger />
-          <Separator orientation="vertical" className="mr-2 h-4" />
-          <span className="hidden text-sm text-muted-foreground sm:inline">
-            Admin dashboard - reads and writes backend&apos;s MongoDB directly
-          </span>
           <div className="ml-auto flex items-center gap-1">
             <ThemeToggle />
             <AccountMenu />

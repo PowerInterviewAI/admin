@@ -16,7 +16,7 @@ import { type Control, Controller, useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 
 import { ReadOnlyNotice } from "@/components/read-only-notice";
-import { useCanWrite } from "@/components/session-context";
+import { useCan } from "@/components/session-context";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -89,7 +89,7 @@ export function EmailComposer({
   year,
 }: EmailComposerProps) {
   const router = useRouter();
-  const canWrite = useCanWrite();
+  const canWrite = useCan("emails:send");
 
   /**
    * Two independent reasons sending can be off - no SMTP configuration, or a read-only account -
@@ -232,6 +232,7 @@ export function EmailComposer({
   return (
     <>
       <ReadOnlyNotice
+        permission="emails:send"
         className="mb-4"
         message="Your account has read-only access, so you can compose and preview but not send."
       />

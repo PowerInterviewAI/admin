@@ -19,6 +19,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   Columns3,
+  RotateCcw,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 
@@ -29,6 +30,7 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuGroup,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
@@ -139,9 +141,11 @@ export function DataTable<T>({
   // Column visibility is the one piece of table state that is *not* in the URL: it describes how
   // this admin likes to look at the table, not which rows they are looking at, and putting it in
   // the query string would make every shared link carry it.
-  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(() =>
-    Object.fromEntries((defaultHiddenColumns ?? []).map((id) => [id, false])),
+  const defaultVisibility = useMemo<VisibilityState>(
+    () => Object.fromEntries((defaultHiddenColumns ?? []).map((id) => [id, false])),
+    [defaultHiddenColumns],
   );
+  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(defaultVisibility);
 
   const sortingState = useMemo<SortingState>(
     () => (sorting ? [{ id: sorting.sortBy, desc: sorting.sortDir === "desc" }] : []),
@@ -172,6 +176,11 @@ export function DataTable<T>({
   });
 
   const visibleColumnCount = table.getVisibleLeafColumns().length;
+  // Compared per column rather than by object shape: TanStack writes `true` back for a column
+  // that was hidden and turned on again, where the default simply has no key for it.
+  const isDefaultLayout = table
+    .getAllLeafColumns()
+    .every((column) => column.getIsVisible() === (defaultVisibility[column.id] ?? true));
   const showToolbar = !!toolbar || enableColumnToggle;
 
   return (
@@ -214,6 +223,14 @@ export function DataTable<T>({
                       );
                     })}
                   </DropdownMenuGroup>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    disabled={isDefaultLayout}
+                    onClick={() => setColumnVisibility(defaultVisibility)}
+                  >
+                    <RotateCcw />
+                    Reset to default
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>

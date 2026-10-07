@@ -3,6 +3,9 @@ import type {
   EmailCampaignsSearchParams,
   InterviewsSearchParams,
   PaymentsSearchParams,
+  ResellerPortalSearchParams,
+  ResellerSalesSearchParams,
+  ResellerSettlementsSearchParams,
   SessionsSearchParams,
   UsersSearchParams,
 } from "@/lib/search-params";
@@ -109,4 +112,26 @@ export const CAMPAIGNS_TABS: readonly ListTab<EmailCampaignsSearchParams>[] = [
   { value: "sending", label: "Sending", patch: { status: "sending" } },
   { value: "completed", label: "Completed", patch: { status: "completed" } },
   { value: "failed", label: "Failed", patch: { status: "failed" } },
+];
+
+export const RESELLER_SALES_TABS: readonly ListTab<ResellerSalesSearchParams>[] = [
+  { value: "all", label: "All", patch: {} },
+  { value: "user_created", label: "New customers", patch: { kind: "user_created" } },
+  { value: "credits_granted", label: "Top-ups", patch: { kind: "credits_granted" } },
+  // Grants backend could not decide. Last, and only worth an admin's attention when it is not zero.
+  { value: "review", label: "Needs review", patch: { state: "unresolved" } },
+];
+
+export const RESELLER_SETTLEMENTS_TABS: readonly ListTab<ResellerSettlementsSearchParams>[] = [
+  // Open first: the page exists to get them collected.
+  { value: "open", label: "Open", patch: { status: "open" } },
+  { value: "paid", label: "Paid", patch: { status: "paid" } },
+  { value: "all", label: "All", patch: {} },
+];
+
+/** Not filters: each tab is a different table in a reseller's portal. See `view` in search-params. */
+export const RESELLER_PORTAL_TABS: readonly ListTab<ResellerPortalSearchParams>[] = [
+  { value: "customers", label: "Customers", patch: { view: "customers" } },
+  { value: "sales", label: "Sales", patch: { view: "sales" } },
+  { value: "settlements", label: "Daily totals", patch: { view: "settlements" } },
 ];
