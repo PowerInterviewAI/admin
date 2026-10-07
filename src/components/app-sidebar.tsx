@@ -8,6 +8,7 @@ import {
   Users,
   CreditCard,
   Mail,
+  Mic,
   Monitor,
   ScrollText,
   ShieldCheck,
@@ -40,6 +41,7 @@ interface NavEntry {
 const NAV_ITEMS: NavEntry[] = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/users", label: "Users", icon: Users },
+  { href: "/interviews", label: "Interviews", icon: Mic },
   { href: "/payments", label: "Payments", icon: CreditCard },
   { href: "/sessions", label: "Sessions", icon: Monitor },
   { href: "/emails", label: "Email", icon: Mail },

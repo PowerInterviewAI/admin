@@ -1,6 +1,7 @@
 import type {
   AuditLogsSearchParams,
   EmailCampaignsSearchParams,
+  InterviewsSearchParams,
   PaymentsSearchParams,
   SessionsSearchParams,
   UsersSearchParams,
@@ -63,6 +64,7 @@ export function activeTabValue<P extends object>(
 export const USERS_TABS: readonly ListTab<UsersSearchParams>[] = [
   { value: "all", label: "All", patch: {} },
   { value: "active", label: "Active", patch: { status: "active" } },
+  { value: "online", label: "Online now", patch: { online: "yes" } },
   { value: "trial", label: "Trial", patch: { role: "trial_user" } },
   { value: "admins", label: "Admins", patch: { role: "admin" } },
   // The product's activation gap: accounts that signed up and never set an interview up.
@@ -83,6 +85,13 @@ export const SESSIONS_TABS: readonly ListTab<SessionsSearchParams>[] = [
   { value: "active", label: "Active", patch: { activity: "active" } },
   { value: "idle", label: "Idle", patch: { activity: "idle" } },
   { value: "stale", label: "Stale", patch: { activity: "stale" } },
+];
+
+export const INTERVIEWS_TABS: readonly ListTab<InterviewsSearchParams>[] = [
+  { value: "all", label: "All", patch: {} },
+  { value: "running", label: "Running now", patch: { state: "running" } },
+  { value: "live", label: "Live", patch: { kind: "live" } },
+  { value: "mock", label: "Mock", patch: { kind: "mock" } },
 ];
 
 export const AUDIT_LOGS_TABS: readonly ListTab<AuditLogsSearchParams>[] = [

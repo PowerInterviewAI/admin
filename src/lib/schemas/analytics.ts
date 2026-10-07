@@ -120,6 +120,8 @@ export interface UsersSummary {
   active: number;
   /** Accounts with a name or a CV filled in: the product's activation signal. */
   configured: number;
+  /** Accounts with a client app signed in right now. */
+  online: number;
   credits: number;
   new_in_week: number;
 }
@@ -150,6 +152,15 @@ export interface SessionsSummary {
   stale: number;
   /** Distinct accounts, which is not the row count: one person can hold many sessions. */
   users: number;
+}
+
+export interface InterviewsSummary {
+  total: number;
+  running: number;
+  live: number;
+  mock: number;
+  /** Over ended interviews only, since a running one's duration is still growing. */
+  avg_duration_ms: number | null;
 }
 
 export interface AuditLogsSummary {

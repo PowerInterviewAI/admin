@@ -46,7 +46,7 @@ src/
   proxy.ts             optimistic auth redirect, ahead of every route (Next 16's middleware)
   app/
     (auth)/              signed-out: /sign-in, /sign-up, no sidebar
-    (dashboard)/         everything behind requireAccount(): /, /users, /payments, /sessions,
+    (dashboard)/         everything behind requireAccount(): /, /users, /interviews, /payments, /sessions,
                          /emails, /audit-logs, /access, /account
       layout.tsx           the real session check, plus SessionProvider and the chrome
       <route>/page.tsx     async server component: parses searchParams, runs the query
@@ -82,7 +82,7 @@ Route-specific components are colocated with their route; only genuinely shared 
 
 ### Authentication: two roles, and where each is enforced
 
-The dashboard is behind an email/password sign-in with two roles. `admin` does everything; `guest` reads the dashboard, users and payments, and writes nothing. Four routes are not part of "reads": `/sessions`, `/audit-logs`, `/emails` and `/access` are admins only.
+The dashboard is behind an email/password sign-in with two roles. `admin` does everything; `guest` reads the dashboard, users, interviews and payments, and writes nothing. Four routes are not part of "reads": `/sessions`, `/audit-logs`, `/emails` and `/access` are admins only.
 
 **An admin account is not a product user.** `admin_accounts` and `admin_sessions` live in their own database (`ADMIN_MONGO_DB`, default `pia_admin`), not beside backend's collections, and `accountRoleSchema` is a separate enum from `userRoleSchema`. The two never join: a `users` row with `role: "admin"` is a customer of the product and grants nothing here, and an `admin_accounts` row grants nothing in the product. Keeping them apart is what stops a backend role change from silently becoming a permission in this app - and it is why `getCollection` is the only thing that knows which database a collection name belongs to.
 
@@ -157,7 +157,7 @@ BSON does not survive React's serialization boundary, so `toPlainJson` converts 
 
 ### Analytics: what's real vs simulated
 
-`src/server/queries/analytics.ts` computes everything from real documents - `created_at`/`updated_at` are unix-ms ints (not BSON dates), so pipelines bucket by day via `{"$toDate": "$field"}` inside `$dateToString`, not `$dateTrunc`. **`global_state.active_sessions` is deliberately never surfaced anywhere in the dashboard** - it's `random.gauss(260, 10)` in `backend/app/services/ping_client_service.py`, not a real metric. If you're asked to add a "live active users" widget, don't wire it to that field; it isn't real data. The real ones already exist: `liveNow()` counts apps online from `sessions.updated_at` and running interviews from unpaired ASR start/stop rows, reading only `global_state.booted_at`.
+`src/server/queries/analytics.ts` computes everything from real documents - `created_at`/`updated_at` are unix-ms ints (not BSON dates), so pipelines bucket by day via `{"$toDate": "$field"}` inside `$dateToString`, not `$dateTrunc`. **`global_state.active_sessions` is deliberately never surfaced anywhere in the dashboard** - it's `random.gauss(260, 10)` in `backend/app/services/ping_client_service.py`, not a real metric. If you're asked to add a "live active users" widget, don't wire it to that field; it isn't real data. The real ones already exist, in `src/server/queries/live.ts`: `getLiveState()` finds apps online from `sessions.updated_at` (and reads only `global_state.booted_at`), and `getRunningInterviews()` finds running interviews from unpaired ASR start/stop rows. `liveNow()` counts them for the dashboard, `/users` reads them for its online filter and badge, and `/interviews` applies the same rule in its own pipeline. Each page reads the live state once and passes it to every query on it, so its list, summary strip, and tab counts agree on who is online. If you change a rule, change it in `live.ts` and in `interviewStages`, or the dashboard and the interviews table will disagree.
 
 The overview's aggregations all run in one `Promise.all`, so the dashboard costs the slowest query rather than their sum. Keep additions inside that array.
 

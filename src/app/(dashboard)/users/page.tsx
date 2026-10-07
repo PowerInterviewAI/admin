@@ -4,6 +4,7 @@ import { ListSummary, shareOf } from "@/components/list-summary";
 import { PageHeader } from "@/components/page-header";
 import { formatNumber } from "@/lib/format";
 import { countActiveFilters, parseSearchParams, usersSearchParamsSchema } from "@/lib/search-params";
+import { getLiveState } from "@/server/queries/live";
 import { countUsersTabs, getUsersSummary, listUsers } from "@/server/queries/users";
 
 import { UsersView } from "./users-view";
@@ -13,11 +14,14 @@ export const metadata: Metadata = { title: "Users" };
 export default async function UsersPage({ searchParams }: PageProps<"/users">) {
   const params = parseSearchParams(usersSearchParamsSchema, await searchParams);
 
+  // Read once, so the online filter, the tab count, and each row's badge agree on who is online.
+  const live = await getLiveState();
+
   // Independent reads, awaited together: the page costs the slowest rather than their sum.
   const [page, summary, tabCounts] = await Promise.all([
-    listUsers(params),
-    getUsersSummary(params),
-    countUsersTabs(params),
+    listUsers(params, live),
+    getUsersSummary(params, live),
+    countUsersTabs(params, live),
   ]);
 
   const filtered = countActiveFilters(params) > 0;
@@ -37,6 +41,11 @@ export default async function UsersPage({ searchParams }: PageProps<"/users">) {
             label: "Active",
             value: formatNumber(summary.active),
             hint: shareOf(summary.active, summary.total),
+          },
+          {
+            label: "Online now",
+            value: formatNumber(summary.online),
+            hint: "Client app signed in",
           },
           {
             label: "Interview set up",
