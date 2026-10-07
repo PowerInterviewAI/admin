@@ -48,7 +48,7 @@ src/
   app/
     (auth)/              signed-out: /sign-in, /sign-up, no sidebar
     (dashboard)/         everything behind requireAccount(): /, /users, /interviews, /payments, /sessions,
-                         /emails, /audit-logs, /access, /account
+                         /emails, /audit-logs, /resellers, /reseller, /access, /account
       layout.tsx           the real session check, plus SessionProvider and the chrome
       <route>/page.tsx     async server component: parses searchParams, runs the query
       <route>/*-view.tsx   client component: filters + table + sheet
@@ -138,6 +138,18 @@ The dashboard is the one page where the gate had to reach inside a route rather 
 **The self-exclusion in `actions/accounts.ts` is the lockout guard, and it is blunt on purpose.** An admin cannot demote, delete, or sign out their own account, so the account performing an action is always still an admin when it finishes, so the last admin can never be removed - no counting, no transaction, and no window where a concurrent second demotion slips between a count and a write. The cost is that stepping down needs another admin, which is also how it should read. Changing your *own* password is the one exception, and it keeps the tab you changed it in - the one session that just proved it belongs to you.
 
 **Sign-in does not say which half was wrong.** One message for a bad password and for an unknown address, and `verifyPassword` compares against a real throwaway hash when the account does not exist so the response time does not give it away either. `src/server/auth/throttle.ts` locks an email after 8 failures in 15 minutes; it is an in-memory map, which is correct for a single `next start` process and stops being a limit the moment this runs behind more than one - past that it belongs in Mongo beside the sessions.
+
+### Resellers
+
+A reseller is an outside partner who sells Power Interview access through their own app. Their app calls backend's `/api/reseller` (create customers, grant credits) with an API key; this dashboard is where the key is issued and where both sides see what was sold. Backend's `CLAUDE.md` ("Reseller API") documents the other half.
+
+**The reseller is an `admin_accounts` row with `role: "reseller"`, and the key lives on that row.** `src/server/auth/api-keys.ts` stores only its SHA-256 (`api_key_hash`), a display prefix, and when it was issued; the plaintext is returned once, by `rotateOwnApiKey`, and shown once in a dialog. Backend reads `admin_accounts` read-only and puts `role == "reseller"` and `status == "approved"` into the lookup itself, so rejecting, demoting or deleting the account in `/access` cuts the key off on its next call with no second copy to keep in sync. `setAccountRole` still revokes the key when the role moves away from reseller, so a later promotion cannot revive an old one. Like `password_hash`, the key fields and `credit_rate_cents_per_hour` have no place in `accountSchema`; `listResellerAccounts` reads them through an explicit projection. A revoked key is `$unset`, never nulled, because the unique index on `api_key_hash` is partial on `$type: "string"` (a sparse unique index still collides on explicit nulls).
+
+**Only committed ledger rows exist as far as this app is concerned.** Backend reserves a `reseller_ledger` row as `pending` before it creates the customer or adds the credits, and commits it afterwards; every query in `src/server/queries/resellers.ts` filters `state: "committed"`, so a request that died halfway is never shown or billed.
+
+**Money is integer cents, priced per sale, settled per UTC day.** `credit_rate_cents_per_hour` is what a reseller owes per 600 credits, set from the `/resellers` sheet. Backend snapshots it onto each sale as it commits, so a rate change never re-prices what was already sold. Backend's settlement worker writes one `reseller_settlements` row per reseller per UTC day, insert-only, with `amount_owed_cents = round_half_up(sum(credits x rate) / 600)` (`owedCents` here is the same arithmetic, for the sales history's "Billable" figure). A day containing any credits sold without a rate gets a null amount, shown as "Unpriced", rather than an understated total. Settlement days are UTC strings and their date filter compares strings, unlike every other date filter here, which works in the reporting zone. Marking a day paid (`setSettlementStatus`) is the one write this app makes into a backend-owned reseller collection; the worker never updates a row once written, so the two cannot fight.
+
+**A reseller sees only what is theirs.** The portal (`/reseller`) scopes every query to the session's own account id, never to anything in the URL. Their customers are read through `resellerCustomerSchema` with a projection, because `users` documents carry the customer's CV and job description (`interview_config`). The admin side is `/resellers` (overview, rate, revoke), `/resellers/history` (every sale), and `/resellers/settlements` (daily totals, mark paid), all behind `resellers:read` and `resellers:manage`. There is no notification channel: payment is collected by hand from the settlements page and its CSV export.
 
 ### Secrets are absent from schemas, not masked
 
@@ -418,7 +430,7 @@ Switching the URI to the standard non-SRV form (shard hosts plus `replicaSet=`) 
 
 `.env.local`, gitignored. `MONGO_URL`/`MONGO_DB` are required; `DNS_SERVERS` is an escape hatch for the `+srv` problem above.
 
-`ADMIN_MONGO_DB` (default `pia_admin`) is the database holding this dashboard's own accounts and sessions - the same cluster as `MONGO_DB`, a different database. `SECURE_COOKIES` forces the session cookie's `Secure` flag on or off; leave it unset and the scheme decides.
+`ADMIN_MONGO_DB` (default `pia_admin`) is the database holding this dashboard's own accounts and sessions - the same cluster as `MONGO_DB`, a different database. Backend reads its `admin_accounts` collection (read only) to authenticate reseller API keys. `RESELLER_API_BASE_URL` is backend's public API address, shown to resellers in their portal's snippets; display only. `SECURE_COOKIES` forces the session cookie's `Secure` flag on or off; leave it unset and the scheme decides.
 
 `ADMIN_EMAIL`/`ADMIN_PASSWORD` are required: without them nobody can sign in and nobody can approve anybody. That is reported the way a missing `SMTP_*` block is - `readBootstrapConfig()` names what is missing and the sign-in page shows it, rather than presenting a form that cannot succeed. `ADMIN_NAME` sets the display name of the seeded account, and `ADMIN_PASSWORD_FORCE_RESET=true` re-applies `ADMIN_PASSWORD` on one boot.
 

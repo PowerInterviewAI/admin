@@ -19,6 +19,7 @@ import {
   setAccountName,
   setAccountPasswordHash,
 } from "@/server/auth/accounts";
+import { revokeApiKey } from "@/server/auth/api-keys";
 import { denySelfService, denyUnless } from "@/server/auth/guard";
 import { getCurrentAccount, revokeAccountSessions } from "@/server/auth/session";
 import { COLLECTIONS, currentTimestampMs, getCollection, toObjectId } from "@/server/db";
@@ -154,6 +155,10 @@ export async function setAccountRole(accountId: string, input: unknown): Promise
       { $set: { role: parsed.data.role, updated_at: currentTimestampMs() } },
     );
     if (result.matchedCount === 0) throw notFound("account");
+
+    // Backend refuses a key whose account is no longer a reseller, so this is not what stops it -
+    // it is what stops a later promotion back to reseller from reviving a key issued years ago.
+    if (parsed.data.role !== "reseller") await revokeApiKey(accountId);
   } catch (error) {
     return failed(
       error instanceof AppError ? error.message : "Could not change this account's role",

@@ -36,6 +36,17 @@ declare global {
 async function prepareAuth(): Promise<void> {
   await Promise.all([
     getCollection(COLLECTIONS.adminAccounts).createIndex({ email: 1 }, { unique: true }),
+    // Backend authenticates a reseller's API key with one lookup on this field, and two accounts
+    // must never share a digest. Partial on a string type, not sparse: a sparse unique index still
+    // collides on explicit nulls, and every account without a key is one (see `revokeApiKey`).
+    getCollection(COLLECTIONS.adminAccounts).createIndex(
+      { api_key_hash: 1 },
+      {
+        unique: true,
+        partialFilterExpression: { api_key_hash: { $type: "string" } },
+        name: "api_key_hash_unique",
+      },
+    ),
     getCollection(COLLECTIONS.adminSessions).createIndex({ token_hash: 1 }, { unique: true }),
     getCollection(COLLECTIONS.adminSessions).createIndex({ account_id: 1 }),
   ]);

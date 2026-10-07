@@ -16,6 +16,10 @@ export const COLLECTIONS = {
   auditLogs: "audit_logs",
   emailCampaigns: "email_campaigns",
   globalState: "global_state",
+  // Written by backend's `/api/reseller` and its settlement worker; read here. Settlements are the
+  // one place this app writes back into them, and only `status` / `paid_*`.
+  resellerLedger: "reseller_ledger",
+  resellerSettlements: "reseller_settlements",
   adminAccounts: "admin_accounts",
   adminSessions: "admin_sessions",
 } as const;
