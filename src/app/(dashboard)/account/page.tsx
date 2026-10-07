@@ -14,7 +14,7 @@ export const metadata: Metadata = { title: "Your account" };
  *
  * Reachable by every signed-in account regardless of role. Changing your own password is not a
  * write a guest should have to ask permission for, which is why the actions behind this page are
- * guarded by `denyRead` rather than `denyWrite` - they act only on the caller.
+ * guarded by `denySelfService` rather than a permission - they act only on the caller.
  */
 export default async function AccountPage() {
   const account = await requireAccount();

@@ -1,10 +1,10 @@
 # SPEC.md
 
-Project specification for the Power Interview AI admin dashboard - a production-quality admin panel for analytics, user/payment/session management, audit log review, and bulk email marketing, behind an email/password sign-in with two roles.
+Project specification for the Power Interview AI admin dashboard - a production-quality admin panel for analytics, user/payment/session management, audit log review, and bulk email marketing, behind an email/password sign-in with role-based access control (admin, guest, reseller).
 
 ## Overview
 
-`admin` is a single Next.js application that reads and writes the same MongoDB database `../backend` uses for the Power Interview AI product. It does not call backend's API - it talks to MongoDB directly, since backend exposes no admin-facing endpoints today. It is meant to run on a single machine, opened in a browser. Access is gated by its own email/password sign-in, kept in a separate database from the product's own users: a built-in admin comes from the environment, everyone else signs up and waits for an admin to approve them, and an approved account is either an `admin` (everything) or a `guest` (reads the dashboard, users, interviews and payments - sessions, audit logs, email and the access panel are admins only).
+`admin` is a single Next.js application that reads and writes the same MongoDB database `../backend` uses for the Power Interview AI product. It does not call backend's API - it talks to MongoDB directly, since backend exposes no admin-facing endpoints today. It is meant to run on a single machine, opened in a browser. Access is gated by its own email/password sign-in, kept in a separate database from the product's own users: a built-in admin comes from the environment, everyone else signs up and waits for an admin to approve them, and an approved account is an `admin` (everything), a `guest` (reads the dashboard, users, interviews and payments - sessions, audit logs, email, resellers and the access panel are admins only), or a `reseller` (only their own reseller portal). Roles map to permissions in `src/lib/rbac.ts`, and every check asks for a permission.
 
 It also sends mail. `/emails` replaces `../../power-interview-email`, a one-shot Python CLI whose campaign lived in a gitignored `content.py` and whose only record of a send was a log file.
 
@@ -43,7 +43,7 @@ Two more collections are owned by this app and live in a **separate database** (
 
 | Collection        | Key fields                                                        | Notes |
 | ----------------- | ----------------------------------------------------------------- | ----- |
-| `admin_accounts`  | `email` (unique), `name`, `role` (`admin`/`guest`), `status` (`pending`/`approved`/`rejected`), `is_bootstrap`, `last_login_at` | Who can sign in to the dashboard. Unrelated to `users` - the two never join, and a product user with `role: "admin"` grants nothing here. `status` gates signing in at all; `role` gates writing once in. `is_bootstrap` marks the account named by `ADMIN_EMAIL`. `password_hash` has no field in the schema, same rule as `users` |
+| `admin_accounts`  | `email` (unique), `name`, `role` (`admin`/`guest`/`reseller`), `status` (`pending`/`approved`/`rejected`), `is_bootstrap`, `last_login_at` | Who can sign in to the dashboard. Unrelated to `users` - the two never join, and a product user with `role: "admin"` grants nothing here. `status` gates signing in at all; `role` gates writing once in. `is_bootstrap` marks the account named by `ADMIN_EMAIL`. `password_hash` has no field in the schema, same rule as `users` |
 | `admin_sessions`  | `account_id`, `token_hash` (unique), `expires_at`                  | One row per live sign-in. Stores the SHA-256 of the cookie's token, never the token itself |
 
 ## Features
@@ -123,7 +123,7 @@ The admin user management panel. A summary strip (waiting for approval, approved
 
 A row opens a sheet to approve or revoke access, change the role, set a password, sign that account out of every device, or delete it. Admins can also create an account outright, with its role and password set on the spot - approved immediately, because an admin typing someone's password in is the approval.
 
-Admins only: a guest gets an "Admins only" panel, and no sidebar or account-menu entry for it. An admin cannot demote, revoke, sign out, or delete **their own** account, which is what makes it impossible to lock the last admin out. The built-in admin named by `ADMIN_EMAIL` is protected the same way, because a restart would grant its access back anyway.
+Needs `access:manage` (admins): anyone else gets a "Not available to your account" panel, and no sidebar or account-menu entry for it. An admin cannot demote, revoke, sign out, or delete **their own** account, which is what makes it impossible to lock the last admin out. The built-in admin named by `ADMIN_EMAIL` is protected the same way, because a restart would grant its access back anyway.
 
 ### Your account (`/account`)
 
@@ -149,8 +149,9 @@ There is always one way in: `ADMIN_EMAIL`/`ADMIN_PASSWORD` name a built-in admin
 - Every table distinguishes "no rows matched" from "the database could not be reached", the latter with a retry that re-runs the server render
 - Destructive actions (delete user, revoke session) and every campaign send go through a confirmation dialog
 - Every mutation reports success or failure as a toast, driven by the action's return value rather than a thrown error
-- A guest sees the dashboard, users and payments, with the write controls disabled and a note saying why. `/sessions`, `/audit-logs`, `/emails` and `/access` are admins only: the sidebar drops them, and the segment's layout renders an "Admins only" panel instead of the page, so the page's queries never run
-- Every server action re-checks the role before doing anything, so the disabled controls and hidden links are an explanation rather than the enforcement
+- A guest sees the dashboard, users, interviews and payments, with the write controls disabled and a note saying why. `/sessions`, `/audit-logs`, `/emails`, `/resellers` and `/access` are admins only: the sidebar drops them, and the segment's layout renders a "Not available to your account" panel instead of the page, so the page's queries never run
+- A reseller sees only `/reseller` (their portal) and `/account`; opening `/` sends them to the portal
+- Every server action re-checks the permission before doing anything, so the disabled controls and hidden links are an explanation rather than the enforcement
 
 ## Out of Scope
 

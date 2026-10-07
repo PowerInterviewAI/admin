@@ -10,21 +10,33 @@ import { objectIdSchema, timestampsSchema } from "@/lib/schemas/common";
  * here. Keeping the enums apart is what stops a future backend role from silently becoming a
  * permission in this app.
  */
-export const accountRoleSchema = z.enum(["admin", "guest"]);
+export const accountRoleSchema = z.enum(["admin", "guest", "reseller"]);
 
 export type AccountRole = z.infer<typeof accountRoleSchema>;
 export const ACCOUNT_ROLES = accountRoleSchema.options;
 
+/** What each role may do lives in `src/lib/rbac.ts`; these only describe it to a person. */
 export const ACCOUNT_ROLE_LABELS: Record<AccountRole, string> = {
   admin: "Admin",
   guest: "Guest",
+  reseller: "Reseller",
 };
 
 export const ACCOUNT_ROLE_DESCRIPTIONS: Record<AccountRole, string> = {
-  admin: "Reads everything, and can edit, delete, set passwords, and send email.",
+  admin: "Reads everything, and can edit, delete, set passwords, send email, and manage resellers.",
   guest:
-    "Reads the dashboard, users, and payments. Sessions, audit logs, email, and this page are " +
-    "admin-only, and every write is refused on the server as well as in the UI.",
+    "Reads the dashboard, users, interviews, and payments. Sessions, audit logs, email, resellers, " +
+    "and this page are admin-only, and every write is refused on the server as well as in the UI.",
+  reseller:
+    "An outside partner. Sees only their reseller portal: their API key, the customers they " +
+    "created, and what they sold. No product data, and no other customers.",
+};
+
+/** The two-word version, for the account menu where the full description does not fit. */
+export const ACCOUNT_ROLE_SUMMARIES: Record<AccountRole, string> = {
+  admin: "Full access",
+  guest: "Read-only, some pages hidden",
+  reseller: "Reseller portal only",
 };
 
 /**

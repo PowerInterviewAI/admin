@@ -7,6 +7,8 @@ import {
   LayoutDashboard,
   Users,
   CreditCard,
+  Handshake,
+  KeyRound,
   Mail,
   Mic,
   Monitor,
@@ -30,7 +32,7 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 import { Spinner } from "@/components/ui/spinner";
-import { isAdminOnlyPath } from "@/lib/auth-routes";
+import { canAccessPath } from "@/lib/rbac";
 
 interface NavEntry {
   href: string;
@@ -46,6 +48,7 @@ const NAV_ITEMS: NavEntry[] = [
   { href: "/sessions", label: "Sessions", icon: Monitor },
   { href: "/emails", label: "Email", icon: Mail },
   { href: "/audit-logs", label: "Audit Logs", icon: ScrollText },
+  { href: "/resellers", label: "Resellers", icon: Handshake },
 ];
 
 /**
@@ -53,18 +56,20 @@ const NAV_ITEMS: NavEntry[] = [
  * product: every item above reads backend's data, and these two read who is allowed to.
  */
 const ADMIN_NAV_ITEMS: NavEntry[] = [
+  { href: "/reseller", label: "Reseller API", icon: KeyRound },
   { href: "/access", label: "Access", icon: ShieldCheck },
   { href: "/account", label: "Your account", icon: UserRound },
 ];
 
 export function AppSidebar({ pendingCount = 0 }: { pendingCount?: number }) {
   const pathname = usePathname();
-  const isAdmin = useSession().role === "admin";
+  const { role } = useSession();
 
-  // A guest gets no entry for a page the gate would refuse. Listing them disabled was the other
-  // option and it reads worse: the sidebar is a map of where you can go, and five of the six
-  // entries above are places this account genuinely can.
-  const visible = (item: NavEntry) => isAdmin || !isAdminOnlyPath(item.href);
+  // No entry for a page the gate would refuse. Listing them disabled was the other option and it
+  // reads worse: the sidebar is a map of where you can go, not a list of where you cannot.
+  const visible = (item: NavEntry) => canAccessPath(role, item.href);
+  const overview = NAV_ITEMS.filter(visible);
+  const dashboard = ADMIN_NAV_ITEMS.filter(visible);
 
   return (
     <Sidebar collapsible="icon">
@@ -85,22 +90,26 @@ export function AppSidebar({ pendingCount = 0 }: { pendingCount?: number }) {
         </div>
       </SidebarHeader>
       <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupLabel>Overview</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {NAV_ITEMS.filter(visible).map((item) => (
-                <NavItem key={item.href} item={item} pathname={pathname} />
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        {/* A reseller has no product-wide pages, and an empty "Overview" heading would promise
+            content that is not there. */}
+        {overview.length > 0 && (
+          <SidebarGroup>
+            <SidebarGroupLabel>Overview</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {overview.map((item) => (
+                  <NavItem key={item.href} item={item} pathname={pathname} />
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
 
         <SidebarGroup>
           <SidebarGroupLabel>This dashboard</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {ADMIN_NAV_ITEMS.filter(visible).map((item) => (
+              {dashboard.map((item) => (
                 <NavItem
                   key={item.href}
                   item={item}

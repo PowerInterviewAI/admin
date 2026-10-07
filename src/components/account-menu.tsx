@@ -19,7 +19,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { SIGN_IN_PATH } from "@/lib/auth-routes";
-import type { AccountRole } from "@/lib/schemas/account";
+import { ACCOUNT_ROLE_SUMMARIES } from "@/lib/schemas/account";
 import { signOut } from "@/server/actions/auth";
 
 /** First letter of the name, falling back to the email - an avatar without an image to load. */
@@ -71,7 +71,7 @@ export function AccountMenu() {
               <span className="truncate text-xs text-muted-foreground">{account.email}</span>
               <span className="flex items-center gap-2 pt-1">
                 <RoleBadge role={account.role} />
-                <span className="text-xs text-muted-foreground">{describeAccess(account.role)}</span>
+                <span className="text-xs text-muted-foreground">{ACCOUNT_ROLE_SUMMARIES[account.role]}</span>
               </span>
             </div>
           </DropdownMenuLabel>
@@ -105,10 +105,3 @@ export function AccountMenu() {
   );
 }
 
-/**
- * Two words beside the badge, not the role's full description: the dropdown is 16rem wide and the
- * long form now has to name three admin-only pages. `/account` renders the whole thing.
- */
-function describeAccess(role: AccountRole): string {
-  return role === "admin" ? "Full access" : "Read-only, some pages hidden";
-}

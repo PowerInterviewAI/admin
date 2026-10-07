@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import {
   CheckCircle2,
   Coins,
@@ -25,7 +26,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { formatNumber, formatUsd } from "@/lib/format";
 import { dashboardSearchParamsSchema, parseSearchParams } from "@/lib/search-params";
-import { isAdminRequest } from "@/server/auth/guard";
+import { hasPermission, homePathFor } from "@/lib/rbac";
+import { requireAccount } from "@/server/auth/guard";
 import { getAnalyticsOverview, windowStartDate } from "@/server/queries/analytics";
 
 import { RangeSelect } from "./range-select";
@@ -52,8 +54,15 @@ function formatPercent(ratio: number): string {
 }
 
 export default async function DashboardPage({ searchParams }: PageProps<"/">) {
+  const account = await requireAccount();
+  // Signing in lands everybody on `/`. A role that cannot read the product-wide numbers (a
+  // reseller) is sent to its own home before a single aggregation runs, rather than shown a refusal
+  // on arrival.
+  if (!hasPermission(account.role, "dashboard:read")) redirect(homePathFor(account.role));
+  const canReadAuditLogs = hasPermission(account.role, "audit_logs:read");
+
   const { days } = parseSearchParams(dashboardSearchParamsSchema, await searchParams);
-  const [data, isAdmin] = await Promise.all([getAnalyticsOverview(days), isAdminRequest()]);
+  const data = await getAnalyticsOverview(days);
 
   const window = `last ${days} days`;
 
@@ -127,7 +136,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
         />
         <StatCard
           label="Active Users"
-          href={isAdmin ? `/audit-logs?from=${from}` : undefined}
+          href={canReadAuditLogs ? `/audit-logs?from=${from}` : undefined}
           value={formatNumber(data.activity.active_users)}
           icon={UserCheck}
           hint={`Distinct accounts with any event, ${window}`}
@@ -287,7 +296,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
           counts per day, and a guest reading "eleven logins on Tuesday" learns about the product,
           not about a person. Not passed to the client component at all for a guest, so the rows are
           never serialised into the response. */}
-      {isAdmin && (
+      {canReadAuditLogs && (
         <Card className="mt-4">
           <CardHeader>
             <CardTitle>Recent activity</CardTitle>

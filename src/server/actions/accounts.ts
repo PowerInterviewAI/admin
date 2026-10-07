@@ -19,7 +19,7 @@ import {
   setAccountName,
   setAccountPasswordHash,
 } from "@/server/auth/accounts";
-import { denyRead, denyWrite } from "@/server/auth/guard";
+import { denySelfService, denyUnless } from "@/server/auth/guard";
 import { getCurrentAccount, revokeAccountSessions } from "@/server/auth/session";
 import { COLLECTIONS, currentTimestampMs, getCollection, toObjectId } from "@/server/db";
 import { AppError, describeWriteError, notFound } from "@/server/errors";
@@ -59,7 +59,7 @@ async function denyActingOnBootstrap(accountId: string, what: string): Promise<D
 }
 
 export async function createAdminAccount(input: unknown): Promise<ActionResult> {
-  const denied = await denyWrite();
+  const denied = await denyUnless("access:manage");
   if (denied) return denied;
 
   const parsed = accountCreateSchema.safeParse(input);
@@ -93,7 +93,7 @@ export async function createAdminAccount(input: unknown): Promise<ActionResult> 
  * `getCurrentAccount` re-reads the status on every request too, so this is belt and braces.
  */
 export async function setAccountStatus(accountId: string, input: unknown): Promise<ActionResult> {
-  const denied = await denyWrite();
+  const denied = await denyUnless("access:manage");
   if (denied) return denied;
 
   const parsed = accountStatusUpdateSchema.safeParse(input);
@@ -132,7 +132,7 @@ export async function setAccountStatus(accountId: string, input: unknown): Promi
 }
 
 export async function setAccountRole(accountId: string, input: unknown): Promise<ActionResult> {
-  const denied = await denyWrite();
+  const denied = await denyUnless("access:manage");
   if (denied) return denied;
 
   const self = await denyActingOnSelf(accountId, "change the role of");
@@ -176,7 +176,7 @@ export async function setAccountRole(accountId: string, input: unknown): Promise
  * proved it belongs to the caller.
  */
 export async function setAccountPassword(accountId: string, input: unknown): Promise<ActionResult> {
-  const denied = await denyWrite();
+  const denied = await denyUnless("access:manage");
   if (denied) return denied;
 
   const parsed = accountPasswordSchema.safeParse(input);
@@ -199,7 +199,7 @@ export async function setAccountPassword(accountId: string, input: unknown): Pro
 }
 
 export async function signOutAccountEverywhere(accountId: string): Promise<ActionResult> {
-  const denied = await denyWrite();
+  const denied = await denyUnless("access:manage");
   if (denied) return denied;
 
   const self = await denyActingOnSelf(accountId, "sign out");
@@ -216,7 +216,7 @@ export async function signOutAccountEverywhere(accountId: string): Promise<Actio
 }
 
 export async function deleteAdminAccount(accountId: string): Promise<ActionResult> {
-  const denied = await denyWrite();
+  const denied = await denyUnless("access:manage");
   if (denied) return denied;
 
   const self = await denyActingOnSelf(accountId, "delete");
@@ -246,14 +246,14 @@ export async function deleteAdminAccount(accountId: string): Promise<ActionResul
 }
 
 /* -------------------------------------------------------------------------------------------- */
-/* Your own account. These four are the account page, and they are guarded by `denyRead` rather   */
-/* than `denyWrite`: they act only on the caller, so a guest changing their own password is not a */
-/* write to anything a guest is forbidden from - it is the one thing every signed-in account must */
-/* be able to do regardless of role.                                                              */
+/* Your own account. These are the account page, and they are guarded by `denySelfService`      */
+/* rather than a permission: they act only on the caller, so a guest or a reseller changing their */
+/* own password is not a write to anything they are forbidden from - it is the one thing every   */
+/* signed-in account must be able to do regardless of role.                                       */
 /* -------------------------------------------------------------------------------------------- */
 
 export async function changeOwnPassword(input: unknown): Promise<ActionResult> {
-  const denied = await denyRead();
+  const denied = await denySelfService();
   if (denied) return denied;
 
   const parsed = ownPasswordSchema.safeParse(input);
@@ -289,7 +289,7 @@ export async function changeOwnPassword(input: unknown): Promise<ActionResult> {
 }
 
 export async function updateOwnProfile(input: unknown): Promise<ActionResult> {
-  const denied = await denyRead();
+  const denied = await denySelfService();
   if (denied) return denied;
 
   const parsed = accountProfileSchema.safeParse(input);
@@ -312,7 +312,7 @@ export async function updateOwnProfile(input: unknown): Promise<ActionResult> {
 
 /** Ends every session except the one this request is holding. */
 export async function signOutOtherDevices(): Promise<ActionResult> {
-  const denied = await denyRead();
+  const denied = await denySelfService();
   if (denied) return denied;
 
   try {

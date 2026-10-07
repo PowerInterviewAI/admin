@@ -5,6 +5,7 @@ import {
   type AccountRole,
   type AccountRow,
   type AccountStatus,
+  accountRoleSchema,
   accountRowSchema,
   accountSchema,
   normalizeEmail,
@@ -78,7 +79,9 @@ export async function findAccountCredentials(email: string): Promise<{
 
   return {
     id: String(doc._id),
-    role: doc.role === "admin" ? "admin" : "guest",
+    // Through the schema rather than a hand-written `=== "admin" ? ... : "guest"`, which quietly
+    // turned every role added after the first two into a guest. Same least-privileged fallback.
+    role: accountRoleSchema.catch("guest").parse(doc.role),
     // Anything that is not one of the three known words is treated as pending, which is the
     // reading that denies access rather than granting it.
     status: doc.status === "approved" || doc.status === "rejected" ? doc.status : "pending",

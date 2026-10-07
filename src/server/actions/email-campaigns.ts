@@ -19,7 +19,7 @@ import {
   getCollection,
   toObjectId,
 } from "@/server/db";
-import { denyAdminArea, denyWrite } from "@/server/auth/guard";
+import { denyUnless } from "@/server/auth/guard";
 import { startCampaign } from "@/server/email/campaign-runner";
 import {
   type EmailConfig,
@@ -41,7 +41,7 @@ import {
 
 /** Backs the recipient picker's search box. Reads only, so it needs no confirmation or refresh. */
 export async function findRecipients(query: string): Promise<ActionData<RecipientOption[]>> {
-  const denied = await denyAdminArea();
+  const denied = await denyUnless("emails:send");
   if (denied) return denied;
 
   try {
@@ -58,7 +58,7 @@ export async function findRecipients(query: string): Promise<ActionData<Recipien
  * campaign, and recording every draft iteration would bury the real sends in the history table.
  */
 export async function sendTestEmail(input: unknown): Promise<ActionResult> {
-  const denied = await denyWrite();
+  const denied = await denyUnless("emails:send");
   if (denied) return denied;
 
   const parsed = emailTestSchema.safeParse(input);
@@ -123,7 +123,7 @@ function describeEmptyAudience(audience: "one" | "selected" | "all"): string {
 export async function startEmailCampaign(
   input: unknown,
 ): Promise<ActionData<EmailCampaignProgress>> {
-  const denied = await denyWrite();
+  const denied = await denyUnless("emails:send");
   if (denied) return denied;
 
   const parsed = emailCampaignInputSchema.safeParse(input);
@@ -261,7 +261,7 @@ function toProgress(doc: Document, timeoutMs: number): EmailCampaignProgress {
 export async function getCampaignProgress(
   campaignId: string,
 ): Promise<ActionData<EmailCampaignProgress>> {
-  const denied = await denyAdminArea();
+  const denied = await denyUnless("emails:send");
   if (denied) return denied;
 
   try {
@@ -289,7 +289,7 @@ export async function getCampaignProgress(
 export async function getCampaignsProgress(
   campaignIds: string[],
 ): Promise<ActionData<EmailCampaignProgress[]>> {
-  const denied = await denyAdminArea();
+  const denied = await denyUnless("emails:send");
   if (denied) return denied;
 
   if (campaignIds.length === 0) return succeeded([]);
@@ -313,7 +313,7 @@ export async function getCampaignsProgress(
 export async function loadEmailCampaign(
   campaignId: string,
 ): Promise<ActionData<EmailCampaign>> {
-  const denied = await denyAdminArea();
+  const denied = await denyUnless("emails:send");
   if (denied) return denied;
 
   try {

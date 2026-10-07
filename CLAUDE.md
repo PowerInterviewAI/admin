@@ -25,6 +25,7 @@ pnpm build        # production build (also type-checks the whole app)
 pnpm start        # serve the production build on :13000
 pnpm lint         # eslint
 pnpm typecheck    # tsc --noEmit
+pnpm check:rbac   # asserts each role reaches exactly the routes it should
 ```
 
 **Whenever you change anything under `src/`, run `pnpm build` before considering the change done** - `next build` type-checks the whole app and this project has already hit real bugs (see below) that only surfaced there, not in the editor.
@@ -58,13 +59,14 @@ src/
     repository.ts          paged find, grouped counts, update/delete, document validation
     errors.ts              AppError plus duplicate-key mapping
     auth/                  accounts, sessions, the built-in admin bootstrap, the
-                           denyWrite/denyAdminArea/denyRead guards, sign-in throttle
+                           denyUnless/denySelfService guards, sign-in throttle
     queries/               one module per entity, plus analytics, user-labels, and list-stats
     actions/               "use server" mutations
     email/                 SMTP transport and the background campaign runner
   lib/
     schemas/             zod schemas: the single source of truth for the app's types
     auth-routes.ts       the cookie name and public paths, shared with proxy.ts (no db import)
+    rbac.ts              roles -> permissions, and which permission opens which route (no db import)
     search-params.ts     per-route URL state schemas and query-string building
     list-tabs.ts         the quick-filter tabs each list offers, as params patches
     action-result.ts     the { ok } | { ok: false, error } shape every action returns
@@ -80,9 +82,17 @@ Route-specific components are colocated with their route; only genuinely shared 
 
 `../backend` has an `admin` role and an unused `get_admin_user` dependency, but zero list/edit/delete endpoints for anything - every backend endpoint operates on "the current user" only. Rather than build ~15 new endpoints in a second repo and keep both in sync, this app connects straight to the same MongoDB database (`MONGO_URL`/`MONGO_DB` in `.env.local`). This means `src/lib/schemas/*.ts` are a second copy of backend's document shapes - if backend changes a field, update it here too. There's no migration tool enforcing that; it's a manual sync, which is exactly why every document is validated on read.
 
-### Authentication: two roles, and where each is enforced
+### Authentication: RBAC, and where it is enforced
 
-The dashboard is behind an email/password sign-in with two roles. `admin` does everything; `guest` reads the dashboard, users, interviews and payments, and writes nothing. Four routes are not part of "reads": `/sessions`, `/audit-logs`, `/emails` and `/access` are admins only.
+The dashboard is behind an email/password sign-in, and what an account may do is decided by **role-based access control** in `src/lib/rbac.ts`. Three fixed roles map to permissions in one table (`ROLE_PERMISSIONS`):
+
+- `admin`: every permission except `reseller:portal`.
+- `guest`: `dashboard:read`, `users:read`, `interviews:read`, `payments:read` - the same reads it had before roles became permissions, and no writes. Sessions, audit logs, email and access are not reads a guest gets: they carry transcripts, IP addresses, customers' inboxes, and who may sign in.
+- `reseller`: `reseller:portal` only. An outside partner sees their own portal and nothing product-wide (see "Resellers" below).
+
+**Nothing outside `rbac.ts` decides access by comparing a role name.** Guards, gates, nav entries and buttons all ask for a permission (`denyUnless`, `PermissionGate`, `useCan`, `canAccessPath`). A `role === "admin"` check elsewhere is how a third role inherits a guest's reads by accident - which is exactly what the old hand-written `doc.role === "admin" ? "admin" : "guest"` in `findAccountCredentials` would have done to every reseller. Role names still appear as *data* (`RoleBadge` styling, the admin count on `/access`, the bootstrap and self-demotion guards in `actions/accounts.ts`), and none of those grants anything. `pnpm check:rbac` (`scripts/check-rbac.ts`) pins each role's reachable routes, including that guest access is unchanged.
+
+`ROUTE_PERMISSIONS` says which permission opens which route, prefix-matched on a segment boundary (`/emails` covers `/emails/history`; `/reseller` does not match `/resellers`), with `/` matched exactly. A route with no rule (`/account`) is open to every signed-in account.
 
 **An admin account is not a product user.** `admin_accounts` and `admin_sessions` live in their own database (`ADMIN_MONGO_DB`, default `pia_admin`), not beside backend's collections, and `accountRoleSchema` is a separate enum from `userRoleSchema`. The two never join: a `users` row with `role: "admin"` is a customer of the product and grants nothing here, and an `admin_accounts` row grants nothing in the product. Keeping them apart is what stops a backend role change from silently becoming a permission in this app - and it is why `getCollection` is the only thing that knows which database a collection name belongs to.
 
@@ -102,16 +112,16 @@ Authorization is checked in four places, and only two of them are controls:
 
 1. **`src/proxy.ts` is optimistic and knows only whether a cookie is present.** It runs ahead of every request including prefetches, so a database lookup there would put one on the path of every hovered link. What it buys is that a signed-out visitor lands on the form instead of watching a dashboard render and vanish.
 2. **`requireAccount()` in `(dashboard)/layout.tsx` is the real route check.** It resolves the cookie against the database, so a forged or revoked cookie gets past the proxy and dies here. It lives in the layout so no route underneath can forget it.
-3. **`AdminGate` in the layout of each segment under `ADMIN_ONLY_PATHS` is the route check for the four admin-only routes.** It renders an "Admins only" panel *instead of* `children`, so the page component is never invoked and its queries never run - nothing about those rows is fetched, let alone serialised. It sits in the segment layout for the same reason `requireAccount` sits in the group layout: a route added under `/emails` tomorrow inherits it. It explains rather than redirects, because a guest bounced to the dashboard would be looking at a page they did not ask for with nothing saying why.
-4. **Every server action starts with `denyWrite()`, `denyAdminArea()` or `denyRead()`**, before it validates its input or touches the database. Actions are reachable by direct POST, not only through the UI, so a hidden button is a courtesy and never a control. `denyWrite` is admins only. `denyRead` requires any signed-in account and is what the users, payments and own-account actions use - a guest may run those, because they return what that guest can already see on the page calling them. `denyAdminArea` is the third because the other two each say the wrong thing about an action that only reads a page a guest cannot open: the recipient search, the campaign pollers, and the sessions and audit-log exports would hand a guest by direct POST exactly the rows `AdminGate` withholds, while `denyWrite` would refuse them with a message about a change nobody attempted.
+3. **`PermissionGate need="..."` in the layout of every gated segment is the route check.** Every segment with a rule in `ROUTE_PERMISSIONS` has one. It renders a refusal *instead of* `children`, so the page component is never invoked and its queries never run - nothing about those rows is fetched, let alone serialised. It sits in the segment layout for the same reason `requireAccount` sits in the group layout: a route added under `/emails` tomorrow inherits it. It explains rather than redirects, because an account bounced elsewhere would be looking at a page they did not ask for with nothing saying why. `/` is the exception: it is the group's own page, so `(dashboard)/page.tsx` checks `dashboard:read` itself and *redirects* to `homePathFor(role)` - signing in lands everybody on `/`, and a reseller should arrive at their portal rather than at a refusal.
+4. **Every server action starts with `denyUnless(permission)` or `denySelfService()`**, before it validates its input or touches the database. Actions are reachable by direct POST, not only through the UI, so a hidden button is a courtesy and never a control. The permission follows the page the action belongs to, not what it does to the database: the users export asks for `users:read` (a guest may run it, because it returns what that guest can already see), the sessions and audit-log exports ask for `sessions:read` / `audit_logs:read`, and the recipient search and campaign pollers ask for `emails:send` - otherwise they would hand out by direct POST exactly the rows the gate withholds.
 
-The dashboard is the one page where the gate had to reach inside a route rather than in front of it: `/` renders the newest twenty audit rows, addresses and all, which is exactly what gating `/audit-logs` withholds. That card is admin-only (`isAdminRequest()` in `(dashboard)/page.tsx`), and a guest never has those rows passed to the client component, so they are not serialised into the response either. The charts above it stay, because they are counts per day - "eleven logins on Tuesday" is a fact about the product, not about a person.
+The dashboard is the one page where the gate had to reach inside a route rather than in front of it: `/` renders the newest twenty audit rows, addresses and all, which is exactly what gating `/audit-logs` withholds. That card needs `audit_logs:read` (checked in `(dashboard)/page.tsx`), and an account without it never has those rows passed to the client component, so they are not serialised into the response either. The charts above it stay, because they are counts per day - "eleven logins on Tuesday" is a fact about the product, not about a person.
 
-`ADMIN_ONLY_PATHS` in `src/lib/auth-routes.ts` is the single list, prefix-matched and free of any database import so the client can ask the same question. `useCanAccess(href)` is what drops the sidebar entries, the account menu's access item, and the "sessions"/"audit log" cross-links in the user and payment sheets - a link to a refusal is worse than no link.
+`rbac.ts` carries no database import so the client can ask the same question as the server. `useCanAccess(href)` (`canAccessPath`) is what drops the sidebar entries, the account menu's access item, and the "sessions"/"audit log" cross-links in the user and payment sheets - a link to a refusal is worse than no link. A sidebar group with no visible entries is not rendered at all.
 
-`useCanWrite()`, `useCanAccess()` and `ReadOnlyNotice` gate the UI, and gate nothing: a guest who edits the role in memory gets the buttons and the nav entries back, and every one of them fails in the action or at the gate. They exist so the interface tells the truth about what will work.
+`useCan(permission)`, `useCanAccess()` and `ReadOnlyNotice permission="..."` gate the UI, and gate nothing: an account that edits its role in memory gets the buttons and the nav entries back, and every one of them fails in the action or at the gate. They exist so the interface tells the truth about what will work.
 
-**The account page's four actions are guarded by `denyRead`, not `denyWrite`**, and that is deliberate rather than an oversight: they act only on the caller. Changing your own password, renaming yourself, and signing out your own devices are not writes a guest should have to ask permission for - they are the things every signed-in account must be able to do regardless of role. `changeOwnPassword` additionally demands the current password, which `setAccountPassword` (an admin resetting someone else's) cannot: you always have your own, and requiring it is what stops a borrowed session from locking the real owner out in one step.
+**The account page's actions are guarded by `denySelfService`, not a permission**, and that is deliberate rather than an oversight: they act only on the caller. Changing your own password, renaming yourself, and signing out your own devices are not writes any role should have to ask permission for - they are the things every signed-in account must be able to do regardless of role. `changeOwnPassword` additionally demands the current password, which `setAccountPassword` (an admin resetting someone else's) cannot: you always have your own, and requiring it is what stops a borrowed session from locking the real owner out in one step.
 
 **The role and the status are read from the account document on every request, never carried in the cookie.** That is the whole reason a demotion, a revocation, or a deletion takes effect on the victim's next navigation rather than whenever they happen to sign out. Revoking access also deletes that account's sessions, so `getCurrentAccount`'s status check is the belt rather than the braces - but it is the half that cannot be raced. Verified end to end: a promoted account starts writing with the same cookie it already held, and a revoked or deleted account's unexpired cookie stops authenticating immediately.
 
@@ -236,7 +246,7 @@ Only columns with a plain-string `header` are offered in the Columns menu - an a
 
 Because the exports re-run the list query from `params`, the tab filters (`bucket`, `group`) come along for free: exporting from the "Credits owed" tab exports the payments that are actually owed.
 
-These actions are reachable by direct POST like every other action here, so each one opens with a guard (see "Authentication" above), and which guard follows the page rather than the action: the users and payments exports take `denyRead` and are runnable by a guest on purpose - an export returns the rows of the list that guest is already looking at, and refusing would make read-only mean something narrower than it says. The sessions and audit-log exports take `denyAdminArea`, because those two pages are admins only and a CSV is not a loophole in that.
+These actions are reachable by direct POST like every other action here, so each one opens with `denyUnless` and the `:read` permission of the list it exports (see "Authentication" above): the users and payments exports are runnable by a guest on purpose - an export returns the rows of the list that guest is already looking at, and refusing would make read-only mean something narrower than it says. The sessions and audit-log exports need `sessions:read` / `audit_logs:read`, because those pages are admins only and a CSV is not a loophole in that.
 
 ### Session activity is decided on the server
 

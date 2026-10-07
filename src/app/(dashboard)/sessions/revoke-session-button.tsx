@@ -4,7 +4,7 @@ import { LogOut } from "lucide-react";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
-import { useCanWrite } from "@/components/session-context";
+import { useCan } from "@/components/session-context";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -25,7 +25,7 @@ import { revokeSession } from "@/server/actions/sessions";
  * module-level constant instead of being rebuilt on every render to close over a handler.
  */
 export function RevokeSessionButton({ session }: { session: SessionRow }) {
-  const canWrite = useCanWrite();
+  const canWrite = useCan("sessions:write");
   const [open, setOpen] = useState(false);
   const [isRevoking, startRevoking] = useTransition();
 

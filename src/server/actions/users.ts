@@ -5,7 +5,7 @@ import { z } from "zod";
 
 import { type ActionResult, failed, ok } from "@/lib/action-result";
 import { type User, userPasswordSchema, userPatchSchema, userSchema } from "@/lib/schemas/user";
-import { denyWrite } from "@/server/auth/guard";
+import { denyUnless } from "@/server/auth/guard";
 import { COLLECTIONS, toObjectId } from "@/server/db";
 import { AppError, notFound } from "@/server/errors";
 import { deleteById, deleteMany, findOne, insertDocument, updateById } from "@/server/repository";
@@ -35,7 +35,7 @@ async function readPreviousCredits(userId: string): Promise<number | null> {
 }
 
 export async function updateUser(userId: string, input: unknown): Promise<ActionResult> {
-  const denied = await denyWrite();
+  const denied = await denyUnless("users:write");
   if (denied) return denied;
 
   const parsed = userPatchSchema.safeParse(input);
@@ -108,7 +108,7 @@ async function recordCreditsAdjusted(
  * migration or rehash step anywhere.
  */
 export async function setUserPassword(userId: string, input: unknown): Promise<ActionResult> {
-  const denied = await denyWrite();
+  const denied = await denyUnless("users:write");
   if (denied) return denied;
 
   const parsed = userPasswordSchema.safeParse(input);
@@ -177,7 +177,7 @@ async function recordPasswordChange(user: User, revokedSessions: number): Promis
 }
 
 export async function deleteUser(userId: string): Promise<ActionResult> {
-  const denied = await denyWrite();
+  const denied = await denyUnless("users:write");
   if (denied) return denied;
 
   try {

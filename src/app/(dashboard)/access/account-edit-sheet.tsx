@@ -5,7 +5,7 @@ import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { AccountPasswordDialog } from "@/components/account-password-dialog";
-import { useCanWrite } from "@/components/session-context";
+import { useCan } from "@/components/session-context";
 import { StatusBadge } from "@/components/status-badge";
 import {
   AlertDialog,
@@ -99,7 +99,7 @@ function AccountEditForm({
   isSelf: boolean;
   onClose: () => void;
 }) {
-  const canWrite = useCanWrite();
+  const canWrite = useCan("access:manage");
   const [role, setRole] = useState<AccountRole>(account.role);
   const [status, setStatus] = useState<AccountStatus>(account.status);
   const [passwordOpen, setPasswordOpen] = useState(false);

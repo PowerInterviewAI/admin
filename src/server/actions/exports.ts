@@ -9,7 +9,7 @@ import {
   sessionsSearchParamsSchema,
   usersSearchParamsSchema,
 } from "@/lib/search-params";
-import { denyAdminArea, denyRead } from "@/server/auth/guard";
+import { denyUnless } from "@/server/auth/guard";
 import { AppError } from "@/server/errors";
 import { listAuditLogs } from "@/server/queries/audit-logs";
 import { listInterviews } from "@/server/queries/interviews";
@@ -64,7 +64,7 @@ function build(prefix: string, headers: string[], rows: CsvValue[][]): CsvExport
 }
 
 export async function exportUsersCsv(input: unknown): Promise<ActionData<CsvExport>> {
-  const denied = await denyRead();
+  const denied = await denyUnless("users:read");
   if (denied) return denied;
 
   const params = usersSearchParamsSchema.safeParse(input);
@@ -114,7 +114,7 @@ export async function exportUsersCsv(input: unknown): Promise<ActionData<CsvExpo
 }
 
 export async function exportPaymentsCsv(input: unknown): Promise<ActionData<CsvExport>> {
-  const denied = await denyRead();
+  const denied = await denyUnless("payments:read");
   if (denied) return denied;
 
   const params = paymentsSearchParamsSchema.safeParse(input);
@@ -165,8 +165,7 @@ export async function exportPaymentsCsv(input: unknown): Promise<ActionData<CsvE
 }
 
 export async function exportInterviewsCsv(input: unknown): Promise<ActionData<CsvExport>> {
-  // `denyRead`, like users: `/interviews` is open to guests and carries no device detail.
-  const denied = await denyRead();
+  const denied = await denyUnless("interviews:read");
   if (denied) return denied;
 
   const params = interviewsSearchParamsSchema.safeParse(input);
@@ -210,9 +209,9 @@ export async function exportInterviewsCsv(input: unknown): Promise<ActionData<Cs
 }
 
 export async function exportSessionsCsv(input: unknown): Promise<ActionData<CsvExport>> {
-  // `denyAdminArea`, not `denyRead`: `/sessions` is admin-only, so this file is exactly the rows
-  // a guest is refused on screen.
-  const denied = await denyAdminArea();
+  // The page's own permission, not a looser one: this file is exactly the rows a guest is refused
+  // on screen.
+  const denied = await denyUnless("sessions:read");
   if (denied) return denied;
 
   const params = sessionsSearchParamsSchema.safeParse(input);
@@ -244,7 +243,7 @@ export async function exportSessionsCsv(input: unknown): Promise<ActionData<CsvE
 export async function exportAuditLogsCsv(input: unknown): Promise<ActionData<CsvExport>> {
   // Admin-only for the same reason as the sessions export: `/audit-logs` is gated, so this file
   // is the rows a guest is refused on screen.
-  const denied = await denyAdminArea();
+  const denied = await denyUnless("audit_logs:read");
   if (denied) return denied;
 
   const params = auditLogsSearchParamsSchema.safeParse(input);

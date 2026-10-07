@@ -2,7 +2,7 @@
 
 import { createContext, useContext } from "react";
 
-import { isAdminOnlyPath } from "@/lib/auth-routes";
+import { canAccessPath, hasPermission, type Permission } from "@/lib/rbac";
 import type { AccountSummary } from "@/lib/schemas/account";
 
 const SessionContext = createContext<AccountSummary | null>(null);
@@ -14,7 +14,7 @@ const SessionContext = createContext<AccountSummary | null>(null);
  *
  * Nothing this provides is a permission. A guest who edits the role in memory gets the buttons
  * back and every one of them fails in the action, which is where the actual check lives
- * (`denyWrite` in `src/server/auth/guard.ts`). This exists so the interface tells the truth about
+ * (`denyUnless` in `src/server/auth/guard.ts`). This exists so the interface tells the truth about
  * what will work, not so the interface enforces it.
  */
 export function SessionProvider({
@@ -35,20 +35,21 @@ export function useSession(): AccountSummary {
   return account;
 }
 
-/** True for an admin. The one question the UI asks about a role, so it gets its own hook. */
-export function useCanWrite(): boolean {
-  return useSession().role === "admin";
+/**
+ * Whether the signed-in role holds `permission`. The question every button and notice asks, so the
+ * interface and `denyUnless` read the same table and cannot disagree about what will work.
+ */
+export function useCan(permission: Permission): boolean {
+  return hasPermission(useSession().role, permission);
 }
 
 /**
- * Whether this account may open `href` at all - false only for a guest and one of
- * `ADMIN_ONLY_PATHS`. Used to drop links to those pages rather than leave them pointing at the
- * gate's "Admins only" panel.
+ * Whether this account may open `href` at all. Used to drop links to pages the role cannot open
+ * rather than leave them pointing at the gate's refusal.
  *
- * Like `useCanWrite`, it gates the interface and gates nothing else: `AdminGate` is what actually
- * refuses the page, and `denyAdminArea` what refuses the actions behind it.
+ * Like `useCan`, it gates the interface and gates nothing else: `PermissionGate` is what actually
+ * refuses the page, and `denyUnless` what refuses the actions behind it.
  */
 export function useCanAccess(href: string): boolean {
-  const { role } = useSession();
-  return role === "admin" || !isAdminOnlyPath(href);
+  return canAccessPath(useSession().role, href);
 }

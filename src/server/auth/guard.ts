@@ -4,13 +4,14 @@ import { redirect } from "next/navigation";
 
 import { SIGN_IN_PATH } from "@/lib/auth-routes";
 import { failed } from "@/lib/action-result";
+import { hasPermission, type Permission } from "@/lib/rbac";
 import type { Account } from "@/lib/schemas/account";
 import { getCurrentAccount } from "@/server/auth/session";
 
 /**
  * Server actions are reachable by direct POST, not only through the UI, so hiding a button is a
- * courtesy and never a control. Every action in `src/server/actions/` therefore starts with one of
- * the three guards below, before it validates its input or touches the database.
+ * courtesy and never a control. Every action in `src/server/actions/` therefore starts with
+ * `denyUnless` or `denySelfService`, before it validates its input or touches the database.
  *
  * They return the failure rather than throwing it, because `{ ok: false, error }` is the shape
  * every action already returns and every caller already toasts - a throw would reach the client as
@@ -19,55 +20,41 @@ import { getCurrentAccount } from "@/server/auth/session";
  */
 type Denial = { ok: false; error: string };
 
+const SESSION_EXPIRED = "Your session has expired. Sign in again to continue.";
+
 /**
- * For mutations: admins only.
- *
- * Returns `null` when the caller may proceed. A guest is refused here rather than being allowed a
- * write that a later check might catch, which is what makes "read-only" a property of the server
- * instead of a property of the interface.
+ * Which permission an action needs follows the page it belongs to, not what it does to the
+ * database: an export only reads, but it reads the rows of one list, so it asks for that list's
+ * `:read`. A guest's users export works for the same reason the users page does; a reseller's does
+ * not, for the same reason they cannot open `/users`.
  */
-export async function denyWrite(): Promise<Denial | null> {
+export async function denyUnless(permission: Permission): Promise<Denial | null> {
   const account = await getCurrentAccount();
-  if (!account) {
-    return failed("Your session has expired. Sign in again to continue.");
-  }
-  if (account.role !== "admin") {
-    return failed("Your account has read-only access, so this change was not saved.");
-  }
-  return null;
+  if (!account) return failed(SESSION_EXPIRED);
+  if (hasPermission(account.role, permission)) return null;
+
+  const isWrite = !permission.endsWith(":read");
+  return failed(
+    isWrite
+      ? "Your account cannot make this change, so it was not saved."
+      : "This part of the dashboard is not available to your account.",
+  );
 }
 
 /**
- * For actions that only read a page every signed-in account can open - the users and payments
- * exports. A guest may run them: they return what that guest can already see on the page
- * that calls them, and refusing would make read-only mean something narrower than it says.
+ * For the account page's actions, which act only on the caller: renaming yourself, changing your
+ * own password, signing out your other devices. Every signed-in account may do these whatever its
+ * role, so there is no permission to ask for - only a session.
  */
-export async function denyRead(): Promise<Denial | null> {
+export async function denySelfService(): Promise<Denial | null> {
   const account = await getCurrentAccount();
-  if (!account) {
-    return failed("Your session has expired. Sign in again to continue.");
-  }
-  return null;
+  return account ? null : failed(SESSION_EXPIRED);
 }
 
-/**
- * For actions that only read, but read a page a guest cannot open (`ADMIN_ONLY_PATHS`): the
- * recipient search, the campaign pollers, the sessions and audit-log exports.
- *
- * `denyRead` would let a guest fetch by direct POST exactly the rows the gate on those pages
- * exists to withhold, and `denyWrite` would refuse them with a message about a change
- * that was never attempted. The rule these enforce is which page the action belongs to, not what
- * it does to the database.
- */
-export async function denyAdminArea(): Promise<Denial | null> {
+/** For server components that render part of a page only for some roles. */
+export async function can(permission: Permission): Promise<boolean> {
   const account = await getCurrentAccount();
-  if (!account) {
-    return failed("Your session has expired. Sign in again to continue.");
-  }
-  if (account.role !== "admin") {
-    return failed("This part of the dashboard is limited to admins.");
-  }
-  return null;
+  return account !== null && hasPermission(account.role, permission);
 }
 
 /**
@@ -83,17 +70,4 @@ export async function requireAccount(): Promise<Account> {
     redirect(SIGN_IN_PATH);
   }
   return account;
-}
-
-/**
- * For the layouts over `ADMIN_ONLY_PATHS`: the same question `requireAccount` answers, plus the
- * role.
- *
- * It reports rather than redirects, because the caller (`AdminGate`) renders an explanation in
- * place of the page. A bounce to the dashboard would leave a guest who followed a stale link
- * staring at a route they did not ask for, with nothing saying why.
- */
-export async function isAdminRequest(): Promise<boolean> {
-  const account = await getCurrentAccount();
-  return account?.role === "admin";
 }

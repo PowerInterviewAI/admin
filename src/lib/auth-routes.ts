@@ -28,26 +28,4 @@ export function safeNextPath(next: string | null | undefined): string {
   return next;
 }
 
-/**
- * Routes an approved guest may not open at all, as opposed to may not write to.
- *
- * Read access stops being enough on these four: `/access` decides who may sign in, `/emails` sends
- * mail to real customers from this product's address, `/sessions` shows interview transcripts and
- * device detail, and `/audit-logs` is the record of what everyone did, IP addresses included. A
- * guest reading them is not the harmless half of read-only.
- *
- * Prefix-matched, so `/emails` covers `/emails/history` and any route added under it later. This
- * list is where the sidebar, the account menu, and the per-segment gates all read the rule from;
- * it carries no database import so a client component can ask the same question the server does.
- */
-export const ADMIN_ONLY_PATHS: readonly string[] = [
-  "/access",
-  "/emails",
-  "/sessions",
-  "/audit-logs",
-];
-
-export function isAdminOnlyPath(pathname: string): boolean {
-  const path = pathname.split("?")[0] ?? "";
-  return ADMIN_ONLY_PATHS.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
-}
+// Which routes each role may open is in `src/lib/rbac.ts` (`ROUTE_PERMISSIONS`).
