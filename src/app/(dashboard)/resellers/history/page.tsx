@@ -52,7 +52,7 @@ export default async function ResellerHistoryPage({
             hint:
               params.state === "unresolved"
                 ? "Only if an admin confirms they were applied"
-                : "Credits x the rate each sale was made at",
+                : "Credits x each sale's rate. Settlements round per day",
           },
           {
             label: "Unpriced credits",

@@ -95,8 +95,8 @@ export function ResellersView({ rows, days }: { rows: ResellerOverviewRow[]; day
         emptyMessage="Give an account the Reseller role from Access, and it will appear here."
       />
       <p className="mt-2 text-xs text-muted-foreground">
-        Customers, credits and last sale cover the last {days} days. Owed now is every open
-        settlement, whatever the window.
+        Customers and credits cover the last {days} days. Last sale and Owed now are not limited to
+        the window: the first is the most recent sale ever, the second is every open settlement.
       </p>
 
       <ResellerSheet reseller={selected} onClose={() => setSelectedId(null)} />

@@ -238,19 +238,26 @@ export async function countResellerSettlementsTabs(
 export async function getResellerOverview(days: AnalyticsRange): Promise<ResellerOverviewRow[]> {
   const cutoff = startOfLocalDay(days - 1);
 
-  const [accounts, sales, open] = await Promise.all([
+  const [accounts, sales, lastSales, open] = await Promise.all([
     listResellerAccounts(),
     getCollection(COLLECTIONS.resellerLedger)
-      .aggregate<{ _id: unknown; customers: number; credits: number; last_sale_at: number | null }>([
+      .aggregate<{ _id: unknown; customers: number; credits: number }>([
         { $match: { ...COMMITTED, committed_at: { $gte: cutoff } } },
         {
           $group: {
             _id: "$reseller_id",
             customers: countWhere({ $eq: ["$kind", "user_created"] }),
             credits: { $sum: "$credits" },
-            last_sale_at: { $max: "$committed_at" },
           },
         },
+      ])
+      .toArray(),
+    // All-time, unlike the window figures: inside a 30-day window a reseller whose last sale was
+    // ninety days ago would show a blank, which reads as "never sold" rather than "not recently".
+    getCollection(COLLECTIONS.resellerLedger)
+      .aggregate<{ _id: unknown; last_sale_at: number | null }>([
+        { $match: COMMITTED },
+        { $group: { _id: "$reseller_id", last_sale_at: { $max: "$committed_at" } } },
       ])
       .toArray(),
     getCollection(COLLECTIONS.resellerSettlements)
@@ -268,13 +275,14 @@ export async function getResellerOverview(days: AnalyticsRange): Promise<Reselle
   ]);
 
   const salesBy = new Map(sales.map((row) => [String(row._id), row]));
+  const lastSaleBy = new Map(lastSales.map((row) => [String(row._id), row.last_sale_at]));
   const openBy = new Map(open.map((row) => [String(row._id), row]));
 
   return accounts.map((account) => ({
     ...account,
     customers: salesBy.get(account.id)?.customers ?? 0,
     credits: salesBy.get(account.id)?.credits ?? 0,
-    last_sale_at: salesBy.get(account.id)?.last_sale_at ?? null,
+    last_sale_at: lastSaleBy.get(account.id) ?? null,
     owed_open_cents: openBy.get(account.id)?.owed ?? 0,
     unpriced_open_credits: openBy.get(account.id)?.unpriced ?? 0,
   }));
