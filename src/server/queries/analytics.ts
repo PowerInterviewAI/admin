@@ -78,6 +78,11 @@ function windowCutoff(days: number): number {
   return start.getTime();
 }
 
+/** The window's first day as a `from` filter, so a card links to exactly the rows it counted. */
+export function windowStartDate(days: AnalyticsRange): string {
+  return formatDay(new Date(windowCutoff(days)));
+}
+
 /**
  * A day with no events comes back absent, not zero. Left sparse, an area chart draws a straight
  * line from the day before to the day after and the x-axis spaces its ticks by row rather than by

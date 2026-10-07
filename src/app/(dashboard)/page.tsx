@@ -26,7 +26,7 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/u
 import { formatNumber, formatUsd } from "@/lib/format";
 import { dashboardSearchParamsSchema, parseSearchParams } from "@/lib/search-params";
 import { isAdminRequest } from "@/server/auth/guard";
-import { getAnalyticsOverview } from "@/server/queries/analytics";
+import { getAnalyticsOverview, windowStartDate } from "@/server/queries/analytics";
 
 import { RangeSelect } from "./range-select";
 import { RecentActivityTable } from "./recent-activity-table";
@@ -77,6 +77,8 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
   }));
   const running = data.now.live_interviews + data.now.mock_interviews;
 
+  const from = windowStartDate(days);
+
   const conversion = data.users.total > 0 ? data.revenue.paying_users / data.users.total : 0;
 
   return (
@@ -90,48 +92,56 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
       <div className="stale-dim grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="Apps Online"
+          href="/users?online=yes"
           value={formatNumber(data.now.apps_online)}
           icon={Monitor}
           hint={`${formatNumber(data.now.users_online)} signed-in user${data.now.users_online === 1 ? "" : "s"}, right now`}
         />
         <StatCard
           label="Interviews Running"
+          href="/interviews?state=running"
           value={formatNumber(running)}
           icon={Radio}
           hint={`${formatNumber(data.now.live_interviews)} live / ${formatNumber(data.now.mock_interviews)} mock, right now`}
         />
         <StatCard
           label="Live Interviews"
+          href={`/interviews?kind=live&from=${from}`}
           value={formatNumber(data.interviews.live_in_window)}
           icon={Mic}
           hint={`Started in the ${window}`}
         />
         <StatCard
           label="Mock Interviews"
+          href={`/interviews?kind=mock&from=${from}`}
           value={formatNumber(data.interviews.mock_in_window)}
           icon={GraduationCap}
           hint={`Started in the ${window}`}
         />
         <StatCard
           label="Total Users"
+          href="/users"
           value={formatNumber(data.users.total)}
           icon={Users}
           hint={`${formatNumber(data.users.new_in_window)} new in the ${window}`}
         />
         <StatCard
           label="Active Users"
+          href={isAdmin ? `/audit-logs?from=${from}` : undefined}
           value={formatNumber(data.activity.active_users)}
           icon={UserCheck}
           hint={`Distinct accounts with any event, ${window}`}
         />
         <StatCard
           label="Paying Users"
+          href="/payments?bucket=finished"
           value={formatNumber(data.revenue.paying_users)}
           icon={CreditCard}
           hint={`${formatPercent(conversion)} of all accounts`}
         />
         <StatCard
           label="Payment Success"
+          href="/payments"
           value={formatPercent(data.revenue.success_rate)}
           icon={CheckCircle2}
           hint="Finished, as a share of every payment"
@@ -141,18 +151,21 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
       <div className="stale-dim mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatCard
           label="Revenue (finished)"
+          href="/payments?bucket=finished"
           value={formatUsd(data.revenue.total_usd)}
           icon={Wallet}
           hint={`${formatUsd(data.revenue.window_usd)} in the ${window}`}
         />
         <StatCard
           label="Revenue per Payer"
+          href="/payments?bucket=finished"
           value={formatUsd(data.revenue.avg_per_paying_user)}
           icon={TrendingUp}
           hint="Lifetime, across paying accounts"
         />
         <StatCard
           label="Credits Outstanding"
+          href="/users?role=user&min_credits=1&sort_by=credits"
           value={formatNumber(data.credits_outstanding)}
           icon={Coins}
           hint="Sum across all users"
