@@ -37,8 +37,10 @@ async function interviewStages(
   if (params.q) events.push({ user_id: { $in: await findUserIdsMatching(params.q) } });
 
   const started = dayRangeMs(params.from, params.to);
-  // Every row of an interview that started on or after `from` is itself on or after `from`, so the
-  // lower bound can narrow the scan before grouping. The upper bound cannot: a stop can land later.
+  // The lower bound narrows the rows before grouping, which is what `dailyInterviews` does: an
+  // interview counts from its earliest start inside the window, so one that began the evening
+  // before and reconnected after midnight is listed from the reconnect, as the card counted it.
+  // The upper bound cannot go here, because an interview's stop can land after `to`.
   if (started?.$gte !== undefined) events.push({ created_at: { $gte: started.$gte } });
 
   const open = { $gt: ["$starts", "$stops"] };

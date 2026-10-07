@@ -101,12 +101,16 @@ export async function getRunningInterviews(live: LiveState): Promise<RunningInte
         },
       },
       {
+        // Keyed by interview as well as socket, as `/interviews` groups them, so a row with no
+        // `asr_session_id` cannot merge sockets from different interviews into one.
         $group: {
-          _id: "$metadata.asr_session_id",
+          _id: {
+            user: "$user_id",
+            session: "$metadata.client_session_id",
+            socket: "$metadata.asr_session_id",
+          },
           starts: { $sum: { $cond: [isStart, 1, 0] } },
           stops: { $sum: { $cond: [isStart, 0, 1] } },
-          user: { $first: "$user_id" },
-          session: { $first: "$metadata.client_session_id" },
           opened: {
             $min: { created_at: "$created_at", kind: "$metadata.kind" },
           },
@@ -117,7 +121,7 @@ export async function getRunningInterviews(live: LiveState): Promise<RunningInte
       // `dailyInterviews`, so sockets that disagree cannot count it under both.
       {
         $group: {
-          _id: { user: "$user", session: "$session" },
+          _id: { user: "$_id.user", session: "$_id.session" },
           first: { $min: "$opened" },
         },
       },
