@@ -197,6 +197,11 @@ export const resellerSalesSearchParamsSchema = z.object({
   q: z.string().optional().catch(undefined),
   reseller_id: resellerIdSchema,
   kind: ledgerKindSchema.optional().catch(undefined),
+  /**
+   * The review queue. An allowlist of one rather than a free state: `committed` is the default, and
+   * `pending` / `void` rows are not something any page should be asked to list.
+   */
+  state: z.enum(["unresolved"]).optional().catch(undefined),
   from: dateSchema,
   to: dateSchema,
   sort_by: z.enum(["committed_at", "credits", "price_amount"]).catch("committed_at"),

@@ -7,7 +7,7 @@
  * - their customers in `users` (`reseller_id`, role `user`), with `signup` / `credits_applied`
  *   audit rows marked `metadata.source = "reseller"`;
  * - `reseller_ledger` rows, committed, with the rate snapshotted per sale, plus one in-flight
- *   `pending` row that no page may show;
+ *   `pending` row that no page may show, and one `unresolved` top-up that only the review tab lists;
  * - `reseller_settlements`, one per reseller per complete UTC day, computed with backend's rule
  *   (`round_half_up(sum(credits x rate) / 600)`, null when any credit that day was unpriced).
  *
@@ -327,6 +327,24 @@ async function main() {
         reference: "acme-ord-IN-FLIGHT",
         state: "pending",
         created_at: NOW - 2 * MINUTE,
+      });
+    }
+
+    // A top-up backend could not confirm (its credit write may or may not have landed). Unbilled,
+    // hidden from every total, and listed under Sales history > Needs review for an admin to decide.
+    if (spec.slug === "bright" && userDocs.length > 0) {
+      saleDocs.push({
+        reseller_id: resellerId,
+        user_id: userDocs[1]._id,
+        customer_email: userDocs[1].email,
+        kind: "credits_granted",
+        credits: 1200,
+        rate_cents_per_hour: rateAt(NOW),
+        reference: "bright-ord-UNCONFIRMED",
+        price_amount: 17.99,
+        price_currency: "USD",
+        state: "unresolved",
+        created_at: NOW - 3 * HOUR,
       });
     }
 

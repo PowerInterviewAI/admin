@@ -23,7 +23,8 @@ export function saleColumns(withReseller: boolean): ColumnDef<ResellerSaleRow, u
       accessorKey: "committed_at",
       header: "When",
       enableSorting: true,
-      cell: ({ row }) => formatDate(row.original.committed_at),
+      // An unresolved grant was never committed, so it shows when it was reserved.
+      cell: ({ row }) => formatDate(row.original.committed_at ?? row.original.created_at),
     },
     ...(withReseller
       ? [
@@ -39,9 +40,12 @@ export function saleColumns(withReseller: boolean): ColumnDef<ResellerSaleRow, u
       accessorKey: "kind",
       header: "Kind",
       cell: ({ row }) => (
-        <Badge variant={row.original.kind === "user_created" ? "secondary" : "outline"}>
-          {LEDGER_KIND_LABELS[row.original.kind]}
-        </Badge>
+        <span className="flex items-center gap-2">
+          <Badge variant={row.original.kind === "user_created" ? "secondary" : "outline"}>
+            {LEDGER_KIND_LABELS[row.original.kind]}
+          </Badge>
+          {row.original.state === "unresolved" && <Badge variant="destructive">Needs review</Badge>}
+        </span>
       ),
     },
     {

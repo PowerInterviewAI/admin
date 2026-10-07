@@ -20,6 +20,15 @@ export const LEDGER_KIND_LABELS: Record<LedgerKind, string> = {
   credits_granted: "Top-up",
 };
 
+/**
+ * Where a ledger row is in its life. Backend reserves a row `pending`, commits it once the customer
+ * or the credits exist, and parks one it cannot decide as `unresolved` (a grant whose `$inc` may or
+ * may not have landed). This app reads `committed` rows as sales and `unresolved` ones as a review
+ * queue; `pending` and `void` are never shown.
+ */
+export const saleStateSchema = z.enum(["pending", "committed", "unresolved", "void"]);
+export type SaleState = z.infer<typeof saleStateSchema>;
+
 export const resellerSaleSchema = z.object({
   _id: objectIdSchema,
   reseller_id: objectIdSchema,
@@ -34,6 +43,10 @@ export const resellerSaleSchema = z.object({
   price_amount: z.number().nullish().default(null),
   price_currency: z.string().nullish().default(null),
   note: z.string().nullish().default(null),
+  // Committed rows are the only ones backend bills, so anything unrecognised reads as the state that
+  // bills nothing and asks for review rather than as a sale.
+  state: saleStateSchema.catch("unresolved"),
+  created_at: z.number().int().nullish().default(null),
   committed_at: z.number().int().nullish().default(null),
 });
 
@@ -75,6 +88,9 @@ export type ResellerSettlement = z.infer<typeof resellerSettlementSchema>;
 export interface ResellerSettlementRow extends ResellerSettlement {
   reseller: ResellerLabel | null;
 }
+
+/** What an admin decides about a grant backend could not: it did land (bill it), or it did not. */
+export const saleResolutionSchema = z.object({ state: z.enum(["committed", "void"]) });
 
 export const settlementStatusUpdateSchema = z.object({ status: settlementStatusSchema });
 

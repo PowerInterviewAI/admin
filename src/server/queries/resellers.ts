@@ -54,7 +54,10 @@ async function getResellerLabels(ids: string[]): Promise<Map<string, ResellerLab
 /* --------------------------------------------------------------------------------------------- */
 
 function buildSalesFilter(params: ResellerSalesSearchParams, resellerId?: string): Filter<Document> {
-  const and: Document[] = [COMMITTED];
+  // A reseller's portal is always committed sales, whatever the params say: the review queue is
+  // an admin's business and not something a URL on the portal should be able to ask for.
+  const state = resellerId ? "committed" : (params.state ?? "committed");
+  const and: Document[] = [{ state }];
 
   // The session's own id wins over anything in the URL, so a reseller cannot widen their portal
   // to somebody else's sales with `?reseller_id=`.
@@ -62,8 +65,9 @@ function buildSalesFilter(params: ResellerSalesSearchParams, resellerId?: string
   if (scopedTo) and.push({ reseller_id: toObjectId(scopedTo) });
   if (params.kind) and.push({ kind: params.kind });
 
+  // Unresolved rows have no commit time, so the date filter reads when they were reserved.
   const range = dayRangeMs(params.from, params.to);
-  if (range) and.push({ committed_at: range });
+  if (range) and.push({ [state === "unresolved" ? "created_at" : "committed_at"]: range });
 
   if (params.q) {
     const pattern = { $regex: escapeRegExp(params.q.trim()), $options: "i" };
@@ -317,4 +321,9 @@ export async function lastResellerSaleAt(resellerId: string): Promise<number | n
     { sort: { committed_at: -1 }, projection: { committed_at: 1 } },
   );
   return typeof doc?.committed_at === "number" ? doc.committed_at : null;
+}
+
+/** Grants backend parked as `unresolved`: unbilled, reference taken, waiting on an admin. */
+export async function countUnresolvedSales(): Promise<number> {
+  return getCollection(COLLECTIONS.resellerLedger).countDocuments({ state: "unresolved" });
 }

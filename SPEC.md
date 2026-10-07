@@ -39,11 +39,18 @@ Five MongoDB collections owned by `../backend`, read/written here without any sc
 | `global_state`| `active_sessions`, `booted_at`                                                                         | Only `booted_at` is read, to drop ASR starts from before the last backend restart out of "running now". `active_sessions` is **not used anywhere in this app** - it's a simulated `random.gauss(260, 10)` value in backend, not real data |
 | `email_campaigns` | `subject`, `template`, `body`, `audience`, `status`, `total`, `sent_count`, `failed_count`, `recipients[]` | **Owned by this app**, not backend. Written by the email marketing page; nothing else reads it. `recipients[]` is the per-address delivery log |
 
+Two more collections belong to the reseller feature and live in the product database. **Backend writes both** (`app/models/reseller.py` is the authority; `src/lib/schemas/reseller.ts` is the copy kept in step):
+
+| Collection              | Key fields | Notes |
+| ----------------------- | ---------- | ----- |
+| `reseller_ledger`       | `reseller_id`, `user_id`, `customer_email`, `kind` (`user_created`/`credits_granted`), `credits`, `rate_cents_per_hour` (snapshot), `reference`, `price_amount`, `price_currency`, `note`, `state` (`pending`/`committed`/`unresolved`/`void`), `created_at`, `committed_at` | One row per sale, reserved `pending` before the customer or credits exist and `committed` after. Only `committed` rows are sales; `unresolved` is the review queue. `users.reseller_id` marks which customers a reseller created |
+| `reseller_settlements`  | `reseller_id`, `day` (UTC date), `credits`, `users_created`, `amount_owed_cents` (null when unpriced), `unpriced_credits`, `status` (`open`/`paid`), `paid_at`, `paid_by` | One row per reseller per complete UTC day, insert-only. This app writes only `status` and `paid_*` |
+
 Two more collections are owned by this app and live in a **separate database** (`ADMIN_MONGO_DB`, default `pia_admin`), because they describe operators of the dashboard rather than customers of the product:
 
 | Collection        | Key fields                                                        | Notes |
 | ----------------- | ----------------------------------------------------------------- | ----- |
-| `admin_accounts`  | `email` (unique), `name`, `role` (`admin`/`guest`/`reseller`), `status` (`pending`/`approved`/`rejected`), `is_bootstrap`, `last_login_at` | Who can sign in to the dashboard. Unrelated to `users` - the two never join, and a product user with `role: "admin"` grants nothing here. `status` gates signing in at all; `role` gates writing once in. `is_bootstrap` marks the account named by `ADMIN_EMAIL`. `password_hash` has no field in the schema, same rule as `users` |
+| `admin_accounts`  | `email` (unique), `name`, `role` (`admin`/`guest`/`reseller`), `status` (`pending`/`approved`/`rejected`), `is_bootstrap`, `last_login_at`, and for a reseller `api_key_hash` (SHA-256), `api_key_prefix`, `api_key_created_at`, `credit_rate_cents_per_hour` | Who can sign in to the dashboard. Unrelated to `users` - the two never join, and a product user with `role: "admin"` grants nothing here. `status` gates signing in at all; `role` gates writing once in. `is_bootstrap` marks the account named by `ADMIN_EMAIL`. `password_hash` has no field in the schema, same rule as `users` |
 | `admin_sessions`  | `account_id`, `token_hash` (unique), `expires_at`                  | One row per live sign-in. Stores the SHA-256 of the cookie's token, never the token itself |
 
 ## Features
@@ -117,6 +124,18 @@ Tabs grouping twenty-three event types into three families - accounts, payments,
 
 The three groups are exhaustive by construction: payments and ASR are named explicitly and "accounts" is everything else, so an event type backend adds later shows up under a tab rather than disappearing from all of them.
 
+### Resellers (`/resellers`, `/resellers/history`, `/resellers/settlements`)
+
+Needs `resellers:read` (admins). A reseller is an outside partner who sells access through their own app, which calls backend's `/api/reseller` with an API key to create customers and add credits, reporting each sale (order reference, price, currency, note). Three pages share one section nav:
+
+- **Overview** (`/resellers`): one row per reseller account with access status, key prefix, rate, customers and credits sold over a selectable window (7/30/90/180 days), last sale, and what they owe now (every open settlement, whatever the window). A row opens a sheet to set the rate (USD per interview hour of 600 credits, stored as integer cents; changing it prices later sales only) and to revoke the key. A "Needs review" figure appears when backend has parked any top-up it could not confirm.
+- **Sales history** (`/resellers/history`): every committed sale across all resellers. Tabs: all, new customers, top-ups, and **needs review** (grants whose credit write backend cannot confirm; unbilled, with the order reference still taken). Filters: reseller, kind, date range, and a search on order reference or customer email. A row in the review queue takes one of two decisions, each confirmed: *applied* (billed from now) or *not applied* (voided). Exports to CSV.
+- **Settlements** (`/resellers/settlements`): one row per reseller per complete UTC day, written by backend's hourly worker an hour after the day ends: credits, customers created, and what is owed (`round_half_up(sum(credits x rate) / 600)`, using the rate each sale was made at). A day containing credits sold without a rate shows "Unpriced" instead of a total. Tabs: open, paid, all. Mark a day paid or reopen it; exports to CSV. Nothing is sent anywhere: payment is collected by hand.
+
+### Reseller portal (`/reseller`)
+
+Needs `reseller:portal` (resellers only; an admin has no key to manage). Everything on it is scoped to the signed-in account's own id, never to anything in the URL. A key card to generate, rotate or revoke the API key (shown once; only its SHA-256 is stored, on the reseller's own `admin_accounts` row), a strip of totals, curl examples for the endpoints, and three tables: their customers, their sales, and their daily totals. A reseller also reads everything a guest can; this page is what is theirs.
+
 ### Dashboard access (`/access`)
 
 The admin user management panel. A summary strip (waiting for approval, approved, admins, live sessions, last sign-in) over a table of every account, sorted so the ones waiting on a decision come first. Pending rows carry **Approve** and **Reject** buttons inline; the sidebar shows a badge with the pending count, since a sign-up is the one thing here that blocks a person on a human.
@@ -161,7 +180,8 @@ There is always one way in: `ADMIN_EMAIL`/`ADMIN_PASSWORD` name a built-in admin
 - No user creation from the admin panel (only editing existing users). Creating a *dashboard* account is supported, from `/access`
 - No payment creation - payments only originate from the real NOWPayments flow in backend
 - `global_state.active_sessions` is excluded everywhere as simulated, non-real data
-- No changes to `../backend` - this app is fully independent of it at the code level, coupled only by reading/writing the same database
+- No code shared with `../backend` - the two are coupled only by the database. The one runtime dependency in the other direction is the reseller API: backend reads `admin_accounts` (read only) to authenticate a reseller's API key, and this app reads the ledger and settlements backend writes
+- No reseller billing beyond recording it: no invoices, no payment collection, no notification channel. Settlements are listed, exported, and marked paid by hand
 
 ## Project Structure
 

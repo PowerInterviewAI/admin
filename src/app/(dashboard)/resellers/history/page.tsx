@@ -46,9 +46,13 @@ export default async function ResellerHistoryPage({
           { label: "New customers", value: formatNumber(summary.customers_created) },
           { label: "Credits sold", value: formatNumber(summary.credits) },
           {
-            label: "Billable",
+            // The review queue is not billed, so its figure is what it would come to, not a charge.
+            label: params.state === "unresolved" ? "If billed" : "Billable",
             value: formatUsd(summary.owed_cents / 100),
-            hint: "Credits x the rate each sale was made at",
+            hint:
+              params.state === "unresolved"
+                ? "Only if an admin confirms they were applied"
+                : "Credits x the rate each sale was made at",
           },
           {
             label: "Unpriced credits",

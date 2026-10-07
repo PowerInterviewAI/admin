@@ -3,7 +3,11 @@
 import { refresh } from "next/cache";
 
 import { type ActionData, type ActionResult, failed, ok, succeeded } from "@/lib/action-result";
-import { resellerRateSchema, settlementStatusUpdateSchema } from "@/lib/schemas/reseller";
+import {
+  resellerRateSchema,
+  saleResolutionSchema,
+  settlementStatusUpdateSchema,
+} from "@/lib/schemas/reseller";
 import { issueApiKey, revokeApiKey, setCreditRate } from "@/server/auth/api-keys";
 import { denyUnless } from "@/server/auth/guard";
 import { getCurrentAccount } from "@/server/auth/session";
@@ -126,6 +130,48 @@ export async function setSettlementStatus(settlementId: string, input: unknown):
     if (result.matchedCount === 0) throw notFound("settlement");
   } catch (error) {
     return describe(error, "Could not update this settlement");
+  }
+
+  refresh();
+  return ok;
+}
+
+/**
+ * Decides a grant backend parked as `unresolved`: its credit write may or may not have landed
+ * before the request died, and there is no record to say which. The admin compares the customer's
+ * balance with the sale and answers - `committed` bills the reseller for it, `void` drops it.
+ *
+ * The filter on `state: "unresolved"` is what makes this safe to call twice or from two tabs: the
+ * second call matches nothing and says so, rather than re-stamping a row already decided.
+ * Committing stamps the time of the decision, not of the sale, because a past day may already be
+ * settled and settlement never revisits one.
+ */
+export async function resolveUnresolvedSale(saleId: string, input: unknown): Promise<ActionResult> {
+  const denied = await denyUnless("resellers:manage");
+  if (denied) return denied;
+
+  const parsed = saleResolutionSchema.safeParse(input);
+  if (!parsed.success) return failed("That is not a decision this sale can take");
+
+  try {
+    const account = await getCurrentAccount();
+    const now = currentTimestampMs();
+    const result = await getCollection(COLLECTIONS.resellerLedger).updateOne(
+      { _id: toObjectId(saleId), state: "unresolved" },
+      {
+        $set: {
+          state: parsed.data.state,
+          ...(parsed.data.state === "committed" ? { committed_at: now } : {}),
+          resolved_at: now,
+          resolved_by: account?.email ?? null,
+        },
+      },
+    );
+    if (result.matchedCount === 0) {
+      return failed("That sale is no longer waiting for review. Someone may have decided it already.");
+    }
+  } catch (error) {
+    return describe(error, "Could not save this decision");
   }
 
   refresh();

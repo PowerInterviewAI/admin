@@ -290,7 +290,8 @@ export async function exportResellerSalesCsv(input: unknown): Promise<ActionData
       build(
         "reseller-sales",
         [
-          "Committed",
+          "When",
+          "State",
           "Reseller",
           "Reseller email",
           "Kind",
@@ -305,7 +306,8 @@ export async function exportResellerSalesCsv(input: unknown): Promise<ActionData
           "Sale id",
         ],
         page.items.map((sale) => [
-          csvDate(sale.committed_at),
+          csvDate(sale.committed_at ?? sale.created_at),
+          sale.state,
           sale.reseller?.name ?? "",
           sale.reseller?.email ?? "",
           sale.kind,

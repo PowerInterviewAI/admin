@@ -118,6 +118,8 @@ export const RESELLER_SALES_TABS: readonly ListTab<ResellerSalesSearchParams>[] 
   { value: "all", label: "All", patch: {} },
   { value: "user_created", label: "New customers", patch: { kind: "user_created" } },
   { value: "credits_granted", label: "Top-ups", patch: { kind: "credits_granted" } },
+  // Grants backend could not decide. Last, and only worth an admin's attention when it is not zero.
+  { value: "review", label: "Needs review", patch: { state: "unresolved" } },
 ];
 
 export const RESELLER_SETTLEMENTS_TABS: readonly ListTab<ResellerSettlementsSearchParams>[] = [

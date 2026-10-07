@@ -23,6 +23,8 @@ import {
 } from "@/lib/search-params";
 import { exportResellerSalesCsv } from "@/server/actions/exports";
 
+import { ResolveSaleButtons } from "./resolve-sale-buttons";
+
 const HIDDEN_BY_DEFAULT = ["note", "rate"];
 
 export function SalesHistoryView({
@@ -41,7 +43,19 @@ export function SalesHistoryView({
     params,
   );
 
-  const columns = useMemo(() => saleColumns(true), []);
+  const columns = useMemo(
+    () => [
+      ...saleColumns(true),
+      // Only rows in the review queue have anything to decide; the others render nothing here.
+      {
+        id: "review",
+        cell: ({ row }: { row: { original: ResellerSaleRow } }) => (
+          <ResolveSaleButtons sale={row.original} />
+        ),
+      },
+    ],
+    [],
+  );
   const resellerIds = useMemo(() => resellers.map((reseller) => reseller.id), [resellers]);
   const resellerName = useMemo(
     () => new Map(resellers.map((reseller) => [reseller.id, reseller.name || reseller.email])),
