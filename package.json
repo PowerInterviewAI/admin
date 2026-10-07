@@ -9,6 +9,7 @@
     "start": "next start -p 13000",
     "lint": "eslint",
     "seed": "node scripts/seed-mock-data.mjs",
+    "seed:resellers": "node scripts/seed-reseller-fixtures.mjs",
     "typecheck": "tsc --noEmit",
     "check:rbac": "tsx scripts/check-rbac.ts"
   },

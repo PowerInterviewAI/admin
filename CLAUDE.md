@@ -26,6 +26,7 @@ pnpm start        # serve the production build on :13000
 pnpm lint         # eslint
 pnpm typecheck    # tsc --noEmit
 pnpm check:rbac   # asserts each role reaches exactly the routes it should
+pnpm seed:resellers  # local-only reseller fixtures (accounts, customers, sales, settlements); re-runnable
 ```
 
 **Whenever you change anything under `src/`, run `pnpm build` before considering the change done** - `next build` type-checks the whole app and this project has already hit real bugs (see below) that only surfaced there, not in the editor.
