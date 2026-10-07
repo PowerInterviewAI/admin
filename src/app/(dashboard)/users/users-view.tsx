@@ -1,6 +1,7 @@
 "use client";
 
 import type { ColumnDef } from "@tanstack/react-table";
+import Link from "next/link";
 import { useMemo, useState } from "react";
 
 import { DataTable } from "@/components/data-table";
@@ -13,6 +14,8 @@ import {
   NumberRangeFilter,
   SearchInput,
 } from "@/components/filters";
+import { LiveDot } from "@/components/live-dot";
+import { LinkPending } from "@/components/navigation-progress";
 import { Badge } from "@/components/ui/badge";
 import { useListParams } from "@/hooks/use-list-params";
 import { formatDate, formatNumber, titleCase } from "@/lib/format";
@@ -39,6 +42,42 @@ function isConfigured(user: UserRow): boolean {
   return !!(user.interview_config?.full_name || user.interview_config?.profile_data);
 }
 
+/** Online, and what the account is doing in the app. Empty when no app is signed in. */
+function PresenceCell({ user }: { user: UserRow }) {
+  const { presence } = user;
+  if (!presence) return null;
+
+  if (!presence.interview) {
+    return (
+      <Badge variant="outline" className="gap-1.5">
+        <LiveDot />
+        Online
+      </Badge>
+    );
+  }
+
+  return (
+    <div className="flex flex-col items-start gap-0.5">
+      {/* The row opens the edit sheet, so the link keeps its click to itself. */}
+      <Link
+        href={`/interviews?user_id=${user._id}&state=running`}
+        onClick={(event) => event.stopPropagation()}
+        onKeyDown={(event) => event.stopPropagation()}
+        className="rounded-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+      >
+        <Badge variant="secondary" className="gap-1.5 hover:bg-secondary/80">
+          <LiveDot pulse />
+          In {presence.interview.kind} interview
+          <LinkPending />
+        </Badge>
+      </Link>
+      <span className="text-xs text-muted-foreground">
+        since {formatDate(presence.interview.started_at)}
+      </span>
+    </div>
+  );
+}
+
 const columns: ColumnDef<UserRow, unknown>[] = [
   {
     accessorKey: "username",
@@ -56,6 +95,11 @@ const columns: ColumnDef<UserRow, unknown>[] = [
     header: "Email",
     enableSorting: true,
     cell: ({ row }) => <span className="text-sm">{row.original.email}</span>,
+  },
+  {
+    id: "presence",
+    header: "Now",
+    cell: ({ row }) => <PresenceCell user={row.original} />,
   },
   {
     accessorKey: "role",
@@ -187,6 +231,15 @@ export function UsersView({
           value={params.status}
           options={USER_STATUSES}
           onChange={(status) => setParams({ status })}
+          className="w-40"
+        />
+        <FilterSelect
+          label="Filter by app online"
+          allLabel="Online or not"
+          value={params.online}
+          options={YES_NO_OPTIONS}
+          onChange={(online) => setParams({ online })}
+          formatOption={(value) => (value === "yes" ? "Online now" : "Offline")}
           className="w-40"
         />
         <FilterSelect

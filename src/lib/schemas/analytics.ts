@@ -120,6 +120,8 @@ export interface UsersSummary {
   active: number;
   /** Accounts with a name or a CV filled in: the product's activation signal. */
   configured: number;
+  /** Accounts with a client app signed in right now. */
+  online: number;
   credits: number;
   new_in_week: number;
 }

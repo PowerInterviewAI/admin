@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { objectIdSchema, timestampsSchema } from "@/lib/schemas/common";
+import { INTERVIEW_KINDS } from "@/lib/schemas/interview";
 
 export const userRoleSchema = z.enum(["user", "trial_user", "admin"]);
 export const userStatusSchema = z.enum(["active", "inactive"]);
@@ -59,6 +60,17 @@ export const userSchema = timestampsSchema.extend({
 export type User = z.infer<typeof userSchema>;
 
 /**
+ * Set when the account has a client app signed in right now, with the interview running in it if
+ * any. Decided on the server against one clock per page, like a session's activity badge.
+ */
+export const userPresenceSchema = z.object({
+  last_seen_at: z.number(),
+  interview: z.object({ kind: z.enum(INTERVIEW_KINDS), started_at: z.number() }).nullable(),
+});
+
+export type UserPresence = z.infer<typeof userPresenceSchema>;
+
+/**
  * A user row carries its payment and session counts. The old API served them from a separate
  * `GET /users/{id}`; resolving them for the whole page in one aggregation removes a per-row
  * round trip and lets the edit sheet open from row data alone.
@@ -66,6 +78,7 @@ export type User = z.infer<typeof userSchema>;
 export const userRowSchema = userSchema.extend({
   payment_count: z.number().int().default(0),
   session_count: z.number().int().default(0),
+  presence: userPresenceSchema.nullable().default(null),
 });
 
 export type UserRow = z.infer<typeof userRowSchema>;

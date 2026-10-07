@@ -6,7 +6,7 @@ import { USERS_TABS } from "@/lib/list-tabs";
 import { escapeRegExp } from "@/lib/regex";
 import type { UsersSummary } from "@/lib/schemas/analytics";
 import type { Page } from "@/lib/schemas/common";
-import { type UserRow, userSchema } from "@/lib/schemas/user";
+import { type UserPresence, type UserRow, userSchema } from "@/lib/schemas/user";
 import type { UsersSearchParams } from "@/lib/search-params";
 import {
   COLLECTIONS,
@@ -16,6 +16,7 @@ import {
   toObjectId,
 } from "@/server/db";
 import { countListTabs, countWhere, summarize } from "@/server/queries/list-stats";
+import { type LiveState, getRunningInterviews } from "@/server/queries/live";
 import { findPage } from "@/server/repository";
 import { dayRangeMs } from "@/server/queries/time";
 
@@ -72,8 +73,11 @@ async function getRelatedCounts(
  * (`q` and `configured`) are each an `$or` and a second assignment to `filter.$or` would silently
  * replace the first - dropping the search term while still looking like it applied.
  */
-function buildUsersFilter(params: UsersSearchParams): Filter<Document> {
+function buildUsersFilter(params: UsersSearchParams, live: LiveState): Filter<Document> {
   const and: Document[] = [];
+
+  if (params.online === "yes") and.push({ _id: { $in: live.userIds } });
+  if (params.online === "no") and.push({ _id: { $nin: live.userIds } });
 
   if (params.q) {
     const pattern = new RegExp(escapeRegExp(params.q), "i");
@@ -100,15 +104,42 @@ function buildUsersSort(params: UsersSearchParams): Sort {
   return { [params.sort_by]: params.sort_dir === "desc" ? -1 : 1 };
 }
 
-export async function listUsers(params: UsersSearchParams): Promise<Page<UserRow>> {
-  const page = await findPage({
-    collection: COLLECTIONS.users,
-    schema: userSchema,
-    filter: buildUsersFilter(params),
-    sort: buildUsersSort(params),
-    offset: (params.page - 1) * params.per_page,
-    limit: params.per_page,
-  });
+/**
+ * Which accounts have an app online, and the interview running in each. An account interviewing
+ * on two machines at once shows the one that started first.
+ */
+async function getPresence(live: LiveState): Promise<Map<string, UserPresence>> {
+  const running = await getRunningInterviews(live);
+  const interviews = new Map<string, UserPresence["interview"]>();
+  for (const row of [...running].sort((a, b) => a.started_at - b.started_at)) {
+    if (!interviews.has(row.user_id)) {
+      interviews.set(row.user_id, { kind: row.kind, started_at: row.started_at });
+    }
+  }
+
+  return new Map(
+    [...live.lastSeen].map(([id, lastSeen]) => [
+      id,
+      { last_seen_at: lastSeen, interview: interviews.get(id) ?? null },
+    ]),
+  );
+}
+
+export async function listUsers(
+  params: UsersSearchParams,
+  live: LiveState,
+): Promise<Page<UserRow>> {
+  const [page, presence] = await Promise.all([
+    findPage({
+      collection: COLLECTIONS.users,
+      schema: userSchema,
+      filter: buildUsersFilter(params, live),
+      sort: buildUsersSort(params),
+      offset: (params.page - 1) * params.per_page,
+      limit: params.per_page,
+    }),
+    getPresence(live),
+  ]);
 
   const counts = await getRelatedCounts(page.items.map((user) => user._id));
 
@@ -118,33 +149,38 @@ export async function listUsers(params: UsersSearchParams): Promise<Page<UserRow
       ...user,
       payment_count: counts.payments.get(user._id) ?? 0,
       session_count: counts.sessions.get(user._id) ?? 0,
+      presence: presence.get(user._id) ?? null,
     })),
   };
 }
 
-export async function getUsersSummary(params: UsersSearchParams): Promise<UsersSummary> {
+export async function getUsersSummary(
+  params: UsersSearchParams,
+  live: LiveState,
+): Promise<UsersSummary> {
   const weekAgo = currentTimestampMs() - WEEK_MS;
 
   const summary = await summarize<UsersSummary>({
     collection: COLLECTIONS.users,
-    filter: buildUsersFilter(params),
+    filter: buildUsersFilter(params, live),
     group: {
       total: { $sum: 1 },
       active: countWhere({ $eq: ["$status", "active"] }),
       configured: countWhere(CONFIGURED_EXPR),
+      online: countWhere({ $in: ["$_id", live.userIds] }),
       credits: { $sum: "$credits" },
       // A rolling week, not a calendar one: this answers "has anyone signed up lately", where the
       // dashboard's day buckets answer "when", and only the latter needs aligning to a day.
       new_in_week: countWhere({ $gte: [{ $ifNull: ["$created_at", 0] }, weekAgo] }),
     },
-    empty: { total: 0, active: 0, configured: 0, credits: 0, new_in_week: 0 },
+    empty: { total: 0, active: 0, configured: 0, online: 0, credits: 0, new_in_week: 0 },
   });
 
   return { ...summary, credits: Math.round(summary.credits) };
 }
 
-export function countUsersTabs(params: UsersSearchParams) {
+export function countUsersTabs(params: UsersSearchParams, live: LiveState) {
   return countListTabs(USERS_TABS, params, (tab) =>
-    getCollection(COLLECTIONS.users).countDocuments(buildUsersFilter(tab)),
+    getCollection(COLLECTIONS.users).countDocuments(buildUsersFilter(tab, live)),
   );
 }

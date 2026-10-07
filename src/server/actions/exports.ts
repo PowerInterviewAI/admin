@@ -11,6 +11,7 @@ import {
 import { denyAdminArea, denyRead } from "@/server/auth/guard";
 import { AppError } from "@/server/errors";
 import { listAuditLogs } from "@/server/queries/audit-logs";
+import { getLiveState } from "@/server/queries/live";
 import { listPayments } from "@/server/queries/payments";
 import { listSessions } from "@/server/queries/sessions";
 import { listUsers } from "@/server/queries/users";
@@ -68,7 +69,8 @@ export async function exportUsersCsv(input: unknown): Promise<ActionData<CsvExpo
   if (!params.success) return failed("Those filters are not valid");
 
   try {
-    const page = await listUsers({ ...params.data, page: 1, per_page: EXPORT_LIMIT });
+    const live = await getLiveState();
+    const page = await listUsers({ ...params.data, page: 1, per_page: EXPORT_LIMIT }, live);
     return succeeded(
       build(
         "users",
@@ -80,6 +82,8 @@ export async function exportUsersCsv(input: unknown): Promise<ActionData<CsvExpo
           "Credits",
           "Payments",
           "Sessions",
+          "Online",
+          "In interview",
           "Interview name",
           "Joined",
           "Updated",
@@ -93,6 +97,8 @@ export async function exportUsersCsv(input: unknown): Promise<ActionData<CsvExpo
           user.credits,
           user.payment_count,
           user.session_count,
+          user.presence ? "yes" : "no",
+          user.presence?.interview?.kind ?? "",
           user.interview_config?.full_name ?? "",
           csvDate(user.created_at),
           csvDate(user.updated_at),

@@ -85,6 +85,8 @@ export const usersSearchParamsSchema = z.object({
   max_credits: countSchema,
   /** Whether the account has a non-empty interview setup - the product's actual activation signal. */
   configured: yesNoSchema,
+  /** Whether the account has a client app signed in right now. */
+  online: yesNoSchema,
   // An allowlist, not a raw Mongo field name: sorting on a field the collection does not index
   // just produces a confusingly ordered result set.
   sort_by: z.enum(["created_at", "updated_at", "credits", "username", "email"]).catch("created_at"),
