@@ -1,14 +1,36 @@
 import "server-only";
 
+import { ExternalLink } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
+const DEFAULT_API_BASE = "https://api.powerinterviewai.com/api";
+
 /**
- * Where a reseller's app sends its calls. Configurable because the public API address is a
- * deployment fact this dashboard has no other way to know; without it the snippets still show the
- * shape, with a placeholder a reseller cannot mistake for a working URL.
+ * Where a reseller's app sends its calls: the production API unless `RESELLER_API_BASE_URL` points
+ * somewhere else (a staging backend, say). A value that is not a URL falls back to production
+ * rather than printing a snippet that cannot work.
  */
 function apiBase(): string {
-  return (process.env.RESELLER_API_BASE_URL?.trim() || "https://<your-api-host>/api").replace(/\/$/, "");
+  const configured = process.env.RESELLER_API_BASE_URL?.trim();
+  if (configured) {
+    try {
+      new URL(configured);
+      return configured.replace(/\/$/, "");
+    } catch {
+      // Fall through to the default.
+    }
+  }
+  return DEFAULT_API_BASE;
+}
+
+/**
+ * The backend's interactive API reference, opened at its Reseller section. It is served at `/docs`
+ * on the API's own origin, so it follows `apiBase()` and a staging override moves both together.
+ */
+function docsUrl(base: string): string {
+  return `${new URL(base).origin}/docs#/Reseller`;
 }
 
 const ENDPOINTS = [
@@ -20,6 +42,7 @@ const ENDPOINTS = [
 
 export function IntegrationGuide() {
   const base = apiBase();
+  const docs = docsUrl(base);
 
   const create = [
     `curl -X POST ${base}/reseller/users \\`,
@@ -37,6 +60,16 @@ export function IntegrationGuide() {
           <code className="font-mono">reference</code>: a retry with the same reference returns the
           first result instead of creating or crediting twice.
         </CardDescription>
+        <Button
+          variant="outline"
+          size="sm"
+          className="mt-2 justify-self-start"
+          nativeButton={false}
+          render={<a href={docs} target="_blank" rel="noopener noreferrer" />}
+        >
+          API reference
+          <ExternalLink data-icon="inline-end" />
+        </Button>
       </CardHeader>
       <CardContent className="flex flex-col gap-3 text-sm">
         <ul className="flex flex-col gap-1">
