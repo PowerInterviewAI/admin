@@ -1,3 +1,5 @@
+import Image from "next/image";
+
 import { ThemeToggle } from "@/components/theme-toggle";
 
 /**
@@ -10,9 +12,14 @@ export default function AuthLayout({ children }: LayoutProps<"/">) {
     <div className="flex min-h-svh flex-col">
       <header className="flex h-14 shrink-0 items-center justify-between px-4">
         <div className="flex items-center gap-2">
-          <div className="flex size-8 items-center justify-center rounded-md bg-primary text-sm font-semibold text-primary-foreground">
-            PI
-          </div>
+          <Image
+            src="/logo.png"
+            alt=""
+            width={32}
+            height={32}
+            loading="eager"
+            className="size-8 shrink-0"
+          />
           <div className="flex flex-col leading-tight">
             <span className="text-sm font-semibold">Power Interview AI</span>
             <span className="text-xs text-muted-foreground">Admin</span>

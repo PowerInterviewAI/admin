@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -65,11 +66,16 @@ export function AppSidebar({ pendingCount = 0 }: { pendingCount?: number }) {
 
   return (
     <Sidebar collapsible="icon">
-      <SidebarHeader className="px-4 py-3">
+      <SidebarHeader className="px-4 py-3 transition-[padding] duration-200 ease-linear group-data-[collapsible=icon]:px-2">
         <div className="flex items-center gap-2">
-          <div className="flex size-8 items-center justify-center rounded-md bg-primary text-primary-foreground font-semibold text-sm">
-            PI
-          </div>
+          <Image
+            src="/logo.png"
+            alt=""
+            width={32}
+            height={32}
+            loading="eager"
+            className="size-8 shrink-0"
+          />
           <div className="flex flex-col leading-tight group-data-[collapsible=icon]:hidden">
             <span className="text-sm font-semibold">Power Interview AI</span>
             <span className="text-xs text-muted-foreground">Admin</span>

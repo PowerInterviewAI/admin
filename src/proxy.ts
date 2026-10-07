@@ -36,8 +36,9 @@ export function proxy(request: NextRequest): NextResponse {
 }
 
 export const config = {
-  // Everything except Next's own static output and the favicon. Auth wants to run on all routes;
-  // the exclusions are the assets that would otherwise be redirected into a sign-in page and break
-  // the styling of the very form they were sent to.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  // Everything except Next's own static output, the favicon and the logo. Auth wants to run on all
+  // routes; the exclusions are the assets that would otherwise be redirected into a sign-in page and
+  // break the styling of the very form they were sent to. The logo needs its own entry even though
+  // `_next/image` is excluded: the optimizer fetches the source file through this proxy.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|logo.png).*)"],
 };
