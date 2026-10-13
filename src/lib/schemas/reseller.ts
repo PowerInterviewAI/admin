@@ -153,7 +153,7 @@ export const resellerRateSchema = z.object({
 export type ResellerRateInput = z.infer<typeof resellerRateSchema>;
 
 export const CREDITS_PER_HOUR = 600;
-export const DAYS_PER_MONTH = 30;
+const DAYS_PER_MONTH = 30;
 
 /**
  * Days are priced per 30-day month and legacy credits per 600-credit hour. Scaling
