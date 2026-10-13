@@ -3,9 +3,9 @@ import { z } from "zod";
 import { objectIdSchema, timestampsSchema, userLabelSchema } from "@/lib/schemas/common";
 
 /**
- * `monthly` and `yearly` are the subscription passes on sale. The credit packs are no longer sold by
- * current clients but stay: every order before subscriptions carries one, and backend still accepts
- * them from installed clients that predate subscriptions (granting days at 100 credits a day).
+ * `monthly` and `yearly` are the subscription passes on sale. The credit packs are no longer sold
+ * (backend refuses an order for one) but stay: every order before subscriptions carries one, and
+ * one still in flight when subscriptions shipped is granted as days at 100 credits a day.
  */
 export const paymentPlanSchema = z.enum(["monthly", "yearly", "starter", "pro", "enterprise"]);
 
