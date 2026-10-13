@@ -117,7 +117,7 @@ export const paymentsSearchParamsSchema = z.object({
   max_amount: amountSchema,
   applied: yesNoSchema,
   sort_by: z
-    .enum(["created_at", "updated_at", "price_amount", "credits_amount", "status"])
+    .enum(["created_at", "updated_at", "price_amount", "status"])
     .catch("created_at"),
   sort_dir: sortDirSchema.catch("desc"),
   page: pageSchema,
@@ -208,7 +208,7 @@ export const resellerSalesSearchParamsSchema = z.object({
   state: z.enum(["unresolved"]).optional().catch(undefined),
   from: dateSchema,
   to: dateSchema,
-  sort_by: z.enum(["committed_at", "days", "credits", "price_amount"]).catch("committed_at"),
+  sort_by: z.enum(["committed_at", "days", "price_amount"]).catch("committed_at"),
   sort_dir: sortDirSchema.catch("desc"),
   page: pageSchema,
   per_page: perPageSchema(PAGE_SIZE),
@@ -220,7 +220,7 @@ export const resellerSettlementsSearchParamsSchema = z.object({
   status: settlementStatusSchema.optional().catch(undefined),
   from: dateSchema,
   to: dateSchema,
-  sort_by: z.enum(["day", "amount_owed_cents", "days", "credits"]).catch("day"),
+  sort_by: z.enum(["day", "amount_owed_cents", "days"]).catch("day"),
   sort_dir: sortDirSchema.catch("desc"),
   page: pageSchema,
   per_page: perPageSchema(PAGE_SIZE),
