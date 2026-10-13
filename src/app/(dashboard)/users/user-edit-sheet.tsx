@@ -161,7 +161,7 @@ function UserEditForm({ user, onClose }: { user: UserRow; onClose: () => void })
     register,
     control,
     handleSubmit,
-    formState: { errors, isDirty },
+    formState: { errors, isDirty, dirtyFields },
   } = useForm<UserPatch>({
     resolver: zodResolver(userPatchSchema),
     defaultValues: {
@@ -177,7 +177,10 @@ function UserEditForm({ user, onClose }: { user: UserRow; onClose: () => void })
 
   const onSubmit = handleSubmit((values) => {
     startSaving(async () => {
-      const result = await updateUser(user._id, values);
+      // The end date is sent only when it was edited here; see `userPatchSchema`.
+      const { subscription_expires_at: expiresAt, ...rest } = values;
+      const patch = dirtyFields.subscription_expires_at ? { ...rest, subscription_expires_at: expiresAt } : rest;
+      const result = await updateUser(user._id, patch);
       if (!result.ok) {
         toast.error(result.error);
         return;
@@ -296,7 +299,7 @@ function UserEditForm({ user, onClose }: { user: UserRow; onClose: () => void })
                 control={control}
                 name="subscription_expires_at"
                 render={({ field }) => (
-                  <SubscriptionInput value={field.value} onChange={field.onChange} />
+                  <SubscriptionInput value={field.value ?? null} onChange={field.onChange} />
                 )}
               />
               <FieldDescription>

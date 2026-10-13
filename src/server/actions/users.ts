@@ -52,18 +52,20 @@ export async function updateUser(userId: string, input: unknown): Promise<Action
 
     // `$set` replaces `interview_config` wholesale rather than merging into it, which is why the
     // edit sheet always submits all three inner fields.
-    await updateById(COLLECTIONS.users, userId, parsed.data, "user");
+    //
+    // `subscription_expires_at` is written only when the sheet sent it, which it does only when the
+    // admin changed it. Backend moves that field itself, so a save that changed a name must not put
+    // back the end date the sheet happened to open with. Dropped rather than left `undefined`,
+    // which the driver would store as null.
+    const { subscription_expires_at: nextExpiresAt, ...fields } = parsed.data;
+    const patch = nextExpiresAt === undefined ? fields : { ...fields, subscription_expires_at: nextExpiresAt };
+    await updateById(COLLECTIONS.users, userId, patch, "user");
 
     if (previous && previous.credits !== parsed.data.credits) {
       await recordCreditsAdjusted(userId, parsed.data.email, previous.credits, parsed.data.credits);
     }
-    if (previous && previous.subscription_expires_at !== parsed.data.subscription_expires_at) {
-      await recordSubscriptionAdjusted(
-        userId,
-        parsed.data.email,
-        previous.subscription_expires_at,
-        parsed.data.subscription_expires_at,
-      );
+    if (previous && nextExpiresAt !== undefined && previous.subscription_expires_at !== nextExpiresAt) {
+      await recordSubscriptionAdjusted(userId, parsed.data.email, previous.subscription_expires_at, nextExpiresAt);
     }
   } catch (error) {
     return failed(error instanceof AppError ? error.message : "Could not update this user");

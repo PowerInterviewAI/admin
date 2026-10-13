@@ -100,7 +100,10 @@ export const userPatchSchema = z.object({
   role: userRoleSchema,
   status: userStatusSchema,
   credits: z.number().int().min(0, "Credits cannot be negative"),
-  subscription_expires_at: z.number().int().nullable(),
+  // Optional, and left out unless the admin changed it: backend extends this field on its own (a
+  // finished payment, a reseller grant), so writing back the value the sheet opened with would
+  // undo any extension that landed in between. `null` removes the subscription.
+  subscription_expires_at: z.number().int().nullable().optional(),
   interview_config: interviewConfigSchema,
 });
 
