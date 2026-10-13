@@ -68,16 +68,16 @@ async function getRelatedCounts(
   };
 }
 
-/**
- * Clauses go into `$and` rather than onto the filter object directly, because two of them
- * (`q` and `configured`) are each an `$or` and a second assignment to `filter.$or` would silently
- * replace the first - dropping the search term while still looking like it applied.
- */
 /** Active means the expiry is still ahead; a missing or null expiry never matches `$gt`. */
 function subscribedClause(now: number): Document {
   return { subscription_expires_at: { $gt: now } };
 }
 
+/**
+ * Clauses go into `$and` rather than onto the filter object directly, because two of them
+ * (`q` and `configured`) are each an `$or` and a second assignment to `filter.$or` would silently
+ * replace the first - dropping the search term while still looking like it applied.
+ */
 function buildUsersFilter(params: UsersSearchParams, live: LiveState): Filter<Document> {
   const and: Document[] = [];
   const now = currentTimestampMs();
