@@ -16,7 +16,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { formatNumber } from "@/lib/format";
+import { formatGrant } from "@/lib/format";
 import type { ResellerSaleRow } from "@/lib/schemas/reseller";
 import { resolveUnresolvedSale } from "@/server/actions/resellers";
 
@@ -25,7 +25,7 @@ type Decision = "committed" | "void";
 /**
  * The two answers to "did this top-up reach the customer?". Nothing here can be inferred from the
  * row, so each is a confirmed decision with the evidence to check spelled out: this is the point
- * where a reseller either is or is not billed for credits.
+ * where a reseller either is or is not billed for what it sold.
  */
 export function ResolveSaleButtons({ sale }: { sale: ResellerSaleRow }) {
   const canManage = useCan("resellers:manage");
@@ -47,7 +47,7 @@ export function ResolveSaleButtons({ sale }: { sale: ResellerSaleRow }) {
   };
 
   const who = sale.user?.email ?? sale.customer_email;
-  const credits = formatNumber(sale.credits);
+  const sold = formatGrant(sale.days, sale.credits);
 
   return (
     <div className="flex gap-2" onClick={(event) => event.stopPropagation()}>
@@ -59,8 +59,8 @@ export function ResolveSaleButtons({ sale }: { sale: ResellerSaleRow }) {
           <AlertDialogHeader>
             <AlertDialogTitle>Bill this sale?</AlertDialogTitle>
             <AlertDialogDescription>
-              Choose this only if {who} actually received {credits} credits from it: check their
-              balance and their audit log. The reseller is billed for them from today, and their app
+              Choose this only if {who} actually received {sold} from it: check their subscription
+              end date and their audit log. The reseller is billed for it from today, and their app
               stays blocked from retrying this reference.
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -81,9 +81,9 @@ export function ResolveSaleButtons({ sale }: { sale: ResellerSaleRow }) {
           <AlertDialogHeader>
             <AlertDialogTitle>Void this sale?</AlertDialogTitle>
             <AlertDialogDescription>
-              Choose this only if {who} did <strong>not</strong> receive these {credits} credits. It
-              is not billed, and the reseller must use a new reference to sell again. If the credits
-              did arrive, voiding gives them away unbilled.
+              Choose this only if {who} did <strong>not</strong> receive these {sold}. It is not
+              billed, and the reseller must use a new reference to sell again. If they did arrive,
+              voiding gives them away unbilled.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

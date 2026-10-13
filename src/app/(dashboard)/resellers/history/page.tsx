@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 import { ListSummary } from "@/components/list-summary";
 import { PageHeader } from "@/components/page-header";
-import { formatNumber, formatUsd } from "@/lib/format";
+import { formatGrant, formatNumber, formatUsd } from "@/lib/format";
 import {
   countActiveFilters,
   parseSearchParams,
@@ -37,14 +37,18 @@ export default async function ResellerHistoryPage({
     <div className="flex flex-col">
       <PageHeader
         title="Sales history"
-        description="Every customer created and every top-up, across all resellers, as their apps reported them."
+        description="Every customer created and every extension, across all resellers, as their apps reported them."
       />
 
       <ListSummary
         stats={[
           { label: filtered ? "Matching sales" : "Sales", value: formatNumber(summary.total) },
           { label: "New customers", value: formatNumber(summary.customers_created) },
-          { label: "Credits sold", value: formatNumber(summary.credits) },
+          {
+            label: "Days sold",
+            value: formatNumber(summary.days),
+            hint: summary.credits > 0 ? `Plus ${formatNumber(summary.credits)} legacy credits` : undefined,
+          },
           {
             // The review queue is not billed, so its figure is what it would come to, not a charge.
             label: params.state === "unresolved" ? "If billed" : "Billable",
@@ -52,13 +56,13 @@ export default async function ResellerHistoryPage({
             hint:
               params.state === "unresolved"
                 ? "Only if an admin confirms they were applied"
-                : "Credits x each sale's rate. Settlements round per day",
+                : "Days x each sale's monthly rate / 30. Settlements round per day",
           },
           {
-            label: "Unpriced credits",
-            value: formatNumber(summary.unpriced_credits),
+            label: "Unpriced",
+            value: formatGrant(summary.unpriced_days, summary.unpriced_credits),
             hint: "Sold while the reseller had no rate",
-            alert: summary.unpriced_credits > 0,
+            alert: summary.unpriced_days + summary.unpriced_credits > 0,
           },
         ]}
       />

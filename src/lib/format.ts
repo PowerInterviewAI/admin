@@ -48,7 +48,10 @@ export function titleCase(value: string | null | undefined): string {
     .join(" ");
 }
 
-/** A reseller's rate, stored as integer cents per interview hour (600 credits). */
-export function formatRate(centsPerHour: number | null): string {
-  return centsPerHour === null ? "Not set" : `${formatUsd(centsPerHour / 100)} / hour`;
+/**
+ * A reseller's rate in integer cents: per 30 days of subscription, or per interview hour (600
+ * credits) on a sale from before subscriptions.
+ */
+export function formatRate(cents: number | null, per: "month" | "hour" = "month"): string {
+  return cents === null ? "Not set" : `${formatUsd(cents / 100)} / ${per === "month" ? "30 days" : "hour"}`;
 }

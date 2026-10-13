@@ -46,8 +46,8 @@ export default async function ResellerSettlementsPage({
 
       <ListSummary
         stats={[
-          { label: filtered ? "Matching days" : "Days", value: formatNumber(summary.days) },
-          { label: "Credits", value: formatNumber(summary.credits) },
+          { label: filtered ? "Matching days" : "Days", value: formatNumber(summary.rows) },
+          { label: "Subscription days sold", value: formatNumber(summary.days_sold) },
           {
             label: "Open",
             value: formatUsd(summary.open_cents / 100),
@@ -57,9 +57,9 @@ export default async function ResellerSettlementsPage({
           { label: "Paid", value: formatUsd(summary.paid_cents / 100) },
           {
             label: "Unpriced days",
-            value: formatNumber(summary.unpriced_days),
-            hint: "Credits sold with no rate set",
-            alert: summary.unpriced_days > 0,
+            value: formatNumber(summary.unpriced_rows),
+            hint: "Sold with no rate set",
+            alert: summary.unpriced_rows > 0,
           },
         ]}
       />

@@ -11,6 +11,7 @@ import {
   type ResellerOverviewRow,
   type ResellerSaleRow,
   type ResellerSettlementRow,
+  DAY_PRICE_SCALE,
   owedCents,
   resellerCustomerSchema,
   resellerSaleSchema,
@@ -23,7 +24,7 @@ import type {
   ResellerSettlementsSearchParams,
 } from "@/lib/search-params";
 import { listResellerAccounts } from "@/server/auth/api-keys";
-import { COLLECTIONS, getCollection, toObjectId } from "@/server/db";
+import { COLLECTIONS, currentTimestampMs, getCollection, toObjectId } from "@/server/db";
 import { countListTabs, countWhere, summarize } from "@/server/queries/list-stats";
 import { dayRangeMs, startOfLocalDay } from "@/server/queries/time";
 import { getUserLabels } from "@/server/queries/user-labels";
@@ -33,7 +34,7 @@ import { findPage } from "@/server/repository";
  * Reads over backend's reseller ledger and settlements.
  *
  * **Every sales read is restricted to `state: "committed"`.** Backend reserves a ledger row as
- * `pending` before creating the customer or adding the credits and only commits it afterwards, so a
+ * `pending` before creating the customer or adding the days and only commits it afterwards, so a
  * pending row is a request in flight or one that died before its side effect. Showing it would be
  * reporting - and billing - a sale that may never have happened.
  *
@@ -108,9 +109,14 @@ export async function listResellerSales(
 export interface ResellerSalesSummary {
   total: number;
   customers_created: number;
+  days: number;
   credits: number;
-  /** `sum(credits x rate)` over the priced sales; turned into cents once, by `owedCents`. */
-  priced_credit_cents: number;
+  /**
+   * `sum(credits x rate_per_hour) + sum(days x rate_per_month) x 20` over the priced sales; turned
+   * into cents once, by `owedCents`.
+   */
+  priced: number;
+  unpriced_days: number;
   unpriced_credits: number;
 }
 
@@ -122,22 +128,40 @@ export async function getResellerSalesSummary(
   params: ResellerSalesSearchParams,
   resellerId?: string,
 ): Promise<ResellerSalesSummaryView> {
-  const hasRate = { $ne: [{ $ifNull: ["$rate_cents_per_hour", null] }, null] };
+  const hasHourRate = { $ne: [{ $ifNull: ["$rate_cents_per_hour", null] }, null] };
+  const hasMonthRate = { $ne: [{ $ifNull: ["$rate_cents_per_month", null] }, null] };
+  const credits = { $ifNull: ["$credits", 0] };
+  const days = { $ifNull: ["$days", 0] };
   const summary = await summarize<ResellerSalesSummary>({
     collection: COLLECTIONS.resellerLedger,
     filter: buildSalesFilter(params, resellerId),
     group: {
       total: { $sum: 1 },
       customers_created: countWhere({ $eq: ["$kind", "user_created"] }),
-      credits: { $sum: "$credits" },
-      priced_credit_cents: {
-        $sum: { $cond: [hasRate, { $multiply: ["$credits", "$rate_cents_per_hour"] }, 0] },
+      days: { $sum: days },
+      credits: { $sum: credits },
+      priced: {
+        $sum: {
+          $add: [
+            { $cond: [hasHourRate, { $multiply: [credits, "$rate_cents_per_hour"] }, 0] },
+            { $cond: [hasMonthRate, { $multiply: [days, "$rate_cents_per_month", DAY_PRICE_SCALE] }, 0] },
+          ],
+        },
       },
-      unpriced_credits: { $sum: { $cond: [hasRate, 0, "$credits"] } },
+      unpriced_days: { $sum: { $cond: [hasMonthRate, 0, days] } },
+      unpriced_credits: { $sum: { $cond: [hasHourRate, 0, credits] } },
     },
-    empty: { total: 0, customers_created: 0, credits: 0, priced_credit_cents: 0, unpriced_credits: 0 },
+    empty: {
+      total: 0,
+      customers_created: 0,
+      days: 0,
+      credits: 0,
+      priced: 0,
+      unpriced_days: 0,
+      unpriced_credits: 0,
+    },
   });
-  return { ...summary, owed_cents: owedCents(summary.priced_credit_cents) };
+  return { ...summary, owed_cents: owedCents(summary.priced) };
 }
 
 export async function countResellerSalesTabs(params: ResellerSalesSearchParams): Promise<ListTabCounts> {
@@ -191,12 +215,14 @@ export async function listResellerSettlements(
 }
 
 export interface ResellerSettlementsSummary {
-  days: number;
-  credits: number;
+  /** Settlement rows: one per reseller per UTC day. */
+  rows: number;
+  /** Subscription days sold across those rows. */
+  days_sold: number;
   open_cents: number;
   paid_cents: number;
-  /** Days whose amount is unknown because some credits were sold without a rate. */
-  unpriced_days: number;
+  /** Rows whose amount is unknown because something that day was sold without a rate. */
+  unpriced_rows: number;
 }
 
 export async function getResellerSettlementsSummary(
@@ -208,13 +234,13 @@ export async function getResellerSettlementsSummary(
     collection: COLLECTIONS.resellerSettlements,
     filter: buildSettlementsFilter(params, resellerId),
     group: {
-      days: { $sum: 1 },
-      credits: { $sum: "$credits" },
+      rows: { $sum: 1 },
+      days_sold: { $sum: { $ifNull: ["$days", 0] } },
       open_cents: { $sum: { $cond: [{ $eq: ["$status", "open"] }, amount, 0] } },
       paid_cents: { $sum: { $cond: [{ $eq: ["$status", "paid"] }, amount, 0] } },
-      unpriced_days: countWhere({ $eq: [{ $ifNull: ["$amount_owed_cents", null] }, null] }),
+      unpriced_rows: countWhere({ $eq: [{ $ifNull: ["$amount_owed_cents", null] }, null] }),
     },
-    empty: { days: 0, credits: 0, open_cents: 0, paid_cents: 0, unpriced_days: 0 },
+    empty: { rows: 0, days_sold: 0, open_cents: 0, paid_cents: 0, unpriced_rows: 0 },
   });
 }
 
@@ -241,13 +267,13 @@ export async function getResellerOverview(days: AnalyticsRange): Promise<Reselle
   const [accounts, sales, lastSales, open] = await Promise.all([
     listResellerAccounts(),
     getCollection(COLLECTIONS.resellerLedger)
-      .aggregate<{ _id: unknown; customers: number; credits: number }>([
+      .aggregate<{ _id: unknown; customers: number; days: number }>([
         { $match: { ...COMMITTED, committed_at: { $gte: cutoff } } },
         {
           $group: {
             _id: "$reseller_id",
             customers: countWhere({ $eq: ["$kind", "user_created"] }),
-            credits: { $sum: "$credits" },
+            days: { $sum: { $ifNull: ["$days", 0] } },
           },
         },
       ])
@@ -261,13 +287,14 @@ export async function getResellerOverview(days: AnalyticsRange): Promise<Reselle
       ])
       .toArray(),
     getCollection(COLLECTIONS.resellerSettlements)
-      .aggregate<{ _id: unknown; owed: number; unpriced: number }>([
+      .aggregate<{ _id: unknown; owed: number; unpriced_days: number; unpriced_credits: number }>([
         { $match: { status: "open" } },
         {
           $group: {
             _id: "$reseller_id",
             owed: { $sum: { $ifNull: ["$amount_owed_cents", 0] } },
-            unpriced: { $sum: "$unpriced_credits" },
+            unpriced_days: { $sum: { $ifNull: ["$unpriced_days", 0] } },
+            unpriced_credits: { $sum: { $ifNull: ["$unpriced_credits", 0] } },
           },
         },
       ])
@@ -281,10 +308,11 @@ export async function getResellerOverview(days: AnalyticsRange): Promise<Reselle
   return accounts.map((account) => ({
     ...account,
     customers: salesBy.get(account.id)?.customers ?? 0,
-    credits: salesBy.get(account.id)?.credits ?? 0,
+    days: salesBy.get(account.id)?.days ?? 0,
     last_sale_at: lastSaleBy.get(account.id) ?? null,
     owed_open_cents: openBy.get(account.id)?.owed ?? 0,
-    unpriced_open_credits: openBy.get(account.id)?.unpriced ?? 0,
+    unpriced_open_days: openBy.get(account.id)?.unpriced_days ?? 0,
+    unpriced_open_credits: openBy.get(account.id)?.unpriced_credits ?? 0,
   }));
 }
 
@@ -307,15 +335,30 @@ export async function listResellerCustomers(
     and.push({ $or: [{ username: pattern }, { email: pattern }] });
   }
 
-  return findPage({
+  const page = await findPage({
     collection: COLLECTIONS.users,
     schema: resellerCustomerSchema,
     filter: { $and: and },
     sort: { created_at: -1, _id: -1 },
     offset: (params.page - 1) * params.per_page,
     limit: params.per_page,
-    projection: { username: 1, email: 1, credits: 1, status: 1, created_at: 1, updated_at: 1 },
+    projection: {
+      username: 1,
+      email: 1,
+      subscription_expires_at: 1,
+      status: 1,
+      created_at: 1,
+      updated_at: 1,
+    },
   });
+  const now = currentTimestampMs();
+  return {
+    ...page,
+    items: page.items.map((customer) => ({
+      ...customer,
+      subscribed: (customer.subscription_expires_at ?? 0) > now,
+    })),
+  };
 }
 
 export async function countResellerCustomers(resellerId: string): Promise<number> {
