@@ -80,7 +80,7 @@ export const PAYMENTS_TABS: readonly ListTab<PaymentsSearchParams>[] = [
   { value: "finished", label: "Finished", patch: { bucket: "finished" } },
   { value: "failed", label: "Failed", patch: { bucket: "failed" } },
   // Paid for and not granted. The one bucket here that is a job rather than a status.
-  { value: "credits_owed", label: "Credits owed", patch: { bucket: "unapplied" } },
+  { value: "credits_owed", label: "Not granted", patch: { bucket: "unapplied" } },
 ];
 
 export const SESSIONS_TABS: readonly ListTab<SessionsSearchParams>[] = [

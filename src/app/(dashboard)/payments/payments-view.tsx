@@ -17,7 +17,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { UserCell } from "@/components/user-cell";
 import { useListParams } from "@/hooks/use-list-params";
-import { formatDate, formatUsd, titleCase } from "@/lib/format";
+import { formatDate, formatGrant, formatUsd, titleCase } from "@/lib/format";
 import { PAYMENTS_TABS, type ListTabCounts } from "@/lib/list-tabs";
 import type { Page } from "@/lib/schemas/common";
 import {
@@ -84,9 +84,10 @@ const columns: ColumnDef<PaymentRow, unknown>[] = [
     cell: ({ row }) => formatUsd(row.original.price_amount),
   },
   {
-    accessorKey: "credits_amount",
-    header: "Credits",
-    enableSorting: true,
+    id: "grant",
+    header: "Grants",
+    cell: ({ row }) =>
+      formatGrant(row.original.days_granted ?? row.original.days_amount, row.original.credits_amount),
   },
   {
     accessorKey: "credits_applied",
@@ -205,12 +206,12 @@ export function PaymentsView({
           className="w-40"
         />
         <FilterSelect
-          label="Filter by credits applied"
+          label="Filter by applied"
           allLabel="Applied or not"
           value={params.applied}
           options={YES_NO_OPTIONS}
           onChange={(applied) => setParams({ applied })}
-          formatOption={(value) => (value === "yes" ? "Credits applied" : "Not applied")}
+          formatOption={(value) => (value === "yes" ? "Applied" : "Not applied")}
           className="w-44"
         />
         <NumberRangeFilter

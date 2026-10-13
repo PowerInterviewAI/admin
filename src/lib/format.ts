@@ -30,6 +30,16 @@ export function formatDuration(ms: number): string {
   return `${hours} hour${hours === 1 ? "" : "s"}`;
 }
 
+/**
+ * What a payment or a sale gives the customer: days of subscription, or credits on an order from
+ * before subscriptions. Days win when both are set, since that is what was actually granted.
+ */
+export function formatGrant(days: number | null | undefined, credits: number | null | undefined): string {
+  if (days) return `${formatNumber(days)} day${days === 1 ? "" : "s"}`;
+  if (credits) return `${formatNumber(credits)} credits`;
+  return "—";
+}
+
 export function titleCase(value: string | null | undefined): string {
   if (!value) return "";
   return value

@@ -2,7 +2,12 @@ import { z } from "zod";
 
 import { objectIdSchema, timestampsSchema, userLabelSchema } from "@/lib/schemas/common";
 
-export const paymentPlanSchema = z.enum(["starter", "pro", "enterprise"]);
+/**
+ * `monthly` and `yearly` are the subscription passes on sale. The credit packs are no longer sold by
+ * current clients but stay: every order before subscriptions carries one, and backend still accepts
+ * them from installed clients that predate subscriptions (granting days at 100 credits a day).
+ */
+export const paymentPlanSchema = z.enum(["monthly", "yearly", "starter", "pro", "enterprise"]);
 
 /** Mirrors NOWPayments' lifecycle, as stored by backend's webhook handler. */
 export const paymentStatusSchema = z.enum([
@@ -67,7 +72,14 @@ export const paymentSchema = timestampsSchema.extend({
   pay_currency: z.string().nullish().default(null),
   price_amount: z.number().default(0),
   credits_amount: z.number().int().default(0),
+  /** Days of subscription a pass buys; 0 on a credit pack. */
+  days_amount: z.number().int().default(0),
   credits_applied: z.boolean().default(false),
+  /**
+   * What the order actually granted once applied, overpay bonus included. Every order backend
+   * applies since subscriptions is granted in days, credit packs too; null on older orders.
+   */
+  days_granted: z.number().int().nullish().default(null),
   purchase_id: z.string().nullish().default(null),
   root_payment_id: objectIdSchema.nullish().default(null),
 });

@@ -54,9 +54,9 @@ export default async function PaymentsPage({ searchParams }: PageProps<"/payment
             hint: "Not settled either way",
           },
           {
-            label: "Credits owed",
+            label: "Not granted",
             value: formatNumber(summary.credits_owed),
-            hint: "Finished, credits never granted",
+            hint: "Finished, never applied",
             alert: summary.credits_owed > 0,
           },
         ]}
