@@ -95,14 +95,10 @@ export interface AnalyticsOverview {
   interviews: InterviewsAnalytics;
   now: LiveNowAnalytics;
   /**
-   * The sum of every non-trial, non-admin user's `credits` balance - not a count, and not the
-   * same thing `PaymentsSummary.credits_owed` below measures despite the similar name. Rendered
-   * next to `revenue.total_usd` as if it were a liability against money received, which is why
-   * trial and admin *accounts* are excluded: neither role's balance ever had a payment behind it.
-   * A hand-set balance on an ordinary account is still included - see the note in
-   * `server/queries/analytics.ts` for why that one is left to the audit trail instead.
+   * Accounts whose subscription is active right now. It replaced a sum of paid credit balances,
+   * which stopped meaning anything once backend converted every paid balance into subscription days.
    */
-  credits_outstanding: number;
+  active_subscribers: number;
   activity: ActivityAnalytics;
   recent_activity: AuditLog[];
 }
@@ -134,10 +130,8 @@ export interface PaymentsSummary {
   finished: number;
   in_flight: number;
   /**
-   * A *count of orders* that are finished and never granted - not a sum of credits, despite the
-   * name reading like a cousin of `AnalyticsOverview.credits_outstanding` above, which sums a
-   * balance. The number that means somebody is owed something, in "how many orders" rather than
-   * "how many credits".
+   * A *count of orders* that are finished and never granted - not a sum of what they grant. The
+   * number that means somebody is owed something, in "how many orders".
    *
    * Orders, not payment documents: a follow-up leg is excluded, because an order's credits are
    * claimed against its root and a leg never carries `credits_applied` at all. See
