@@ -5,7 +5,7 @@ import { useState } from "react";
 
 import { DataTable } from "@/components/data-table";
 import { Badge } from "@/components/ui/badge";
-import { formatDate, formatGrant, formatNumber, formatRate, formatUsd, titleCase } from "@/lib/format";
+import { formatDate, formatNumber, formatRate, formatSold, formatUsd, titleCase } from "@/lib/format";
 import type { ResellerOverviewRow } from "@/lib/schemas/reseller";
 
 import { ResellerSheet } from "./reseller-sheet";
@@ -67,7 +67,7 @@ const columns: ColumnDef<ResellerOverviewRow, unknown>[] = [
         {formatUsd(row.original.owed_open_cents / 100)}
         {row.original.unpriced_open_days + row.original.unpriced_open_credits > 0 && (
           <span className="ml-1 text-xs text-destructive">
-            + {formatGrant(row.original.unpriced_open_days, row.original.unpriced_open_credits)} unpriced
+            + {formatSold(row.original.unpriced_open_days, row.original.unpriced_open_credits)} unpriced
           </span>
         )}
       </span>

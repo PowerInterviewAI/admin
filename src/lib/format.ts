@@ -40,6 +40,17 @@ export function formatGrant(days: number | null | undefined, credits: number | n
   return "—";
 }
 
+/**
+ * A total across several sales, which unlike one sale can hold both units at once (a day that
+ * mixes legacy credit sales with subscription sales), so both are shown rather than one winning.
+ */
+export function formatSold(days: number, credits: number): string {
+  const parts: string[] = [];
+  if (days) parts.push(`${formatNumber(days)} day${days === 1 ? "" : "s"}`);
+  if (credits) parts.push(`${formatNumber(credits)} credits`);
+  return parts.join(" + ") || "—";
+}
+
 export function titleCase(value: string | null | undefined): string {
   if (!value) return "";
   return value

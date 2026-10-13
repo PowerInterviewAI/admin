@@ -1,7 +1,7 @@
 import type { ColumnDef } from "@tanstack/react-table";
 
 import { Badge } from "@/components/ui/badge";
-import { formatDate, formatGrant, formatNumber, formatUsd } from "@/lib/format";
+import { formatDate, formatNumber, formatSold, formatUsd } from "@/lib/format";
 import type { ResellerSettlementRow } from "@/lib/schemas/reseller";
 
 /**
@@ -35,7 +35,7 @@ export function settlementColumns(withReseller: boolean): ColumnDef<ResellerSett
       accessorKey: "days",
       header: "Sold",
       enableSorting: true,
-      cell: ({ row }) => formatGrant(row.original.days, row.original.credits),
+      cell: ({ row }) => formatSold(row.original.days, row.original.credits),
     },
     {
       accessorKey: "amount_owed_cents",
@@ -45,7 +45,7 @@ export function settlementColumns(withReseller: boolean): ColumnDef<ResellerSett
         row.original.amount_owed_cents === null ? (
           // Unknown rather than understated: part of the day was sold with no rate set.
           <span className="text-destructive">
-            Unpriced ({formatGrant(row.original.unpriced_days, row.original.unpriced_credits)})
+            Unpriced ({formatSold(row.original.unpriced_days, row.original.unpriced_credits)})
           </span>
         ) : (
           formatUsd(row.original.amount_owed_cents / 100)

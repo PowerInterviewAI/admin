@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 import { ListSummary } from "@/components/list-summary";
 import { PageHeader } from "@/components/page-header";
-import { formatGrant, formatNumber, formatUsd } from "@/lib/format";
+import { formatNumber, formatSold, formatUsd } from "@/lib/format";
 import {
   countActiveFilters,
   parseSearchParams,
@@ -60,7 +60,7 @@ export default async function ResellerHistoryPage({
           },
           {
             label: "Unpriced",
-            value: formatGrant(summary.unpriced_days, summary.unpriced_credits),
+            value: formatSold(summary.unpriced_days, summary.unpriced_credits),
             hint: "Sold while the reseller had no rate",
             alert: summary.unpriced_days + summary.unpriced_credits > 0,
           },

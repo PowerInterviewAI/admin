@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 import { ListSummary } from "@/components/list-summary";
 import { PageHeader } from "@/components/page-header";
-import { formatGrant, formatNumber, formatUsd } from "@/lib/format";
+import { formatNumber, formatSold, formatUsd } from "@/lib/format";
 import { dashboardSearchParamsSchema, parseSearchParams } from "@/lib/search-params";
 import { countUnresolvedSales, getResellerOverview } from "@/server/queries/resellers";
 
@@ -51,7 +51,7 @@ export default async function ResellersPage({ searchParams }: PageProps<"/resell
             value: formatUsd(owed / 100),
             hint:
               unpriced > 0
-                ? `Plus ${formatGrant(unpricedDays, unpricedCredits)} unpriced`
+                ? `Plus ${formatSold(unpricedDays, unpricedCredits)} unpriced`
                 : "Open settlements",
             alert: unpriced > 0,
           },
