@@ -89,9 +89,13 @@ export const usersSearchParamsSchema = z.object({
   configured: yesNoSchema,
   /** Whether the account has a client app signed in right now. */
   online: yesNoSchema,
+  /** Whether the account's subscription is active right now. */
+  subscribed: yesNoSchema,
   // An allowlist, not a raw Mongo field name: sorting on a field the collection does not index
   // just produces a confusingly ordered result set.
-  sort_by: z.enum(["created_at", "updated_at", "credits", "username", "email"]).catch("created_at"),
+  sort_by: z
+    .enum(["created_at", "updated_at", "credits", "subscription_expires_at", "username", "email"])
+    .catch("created_at"),
   sort_dir: sortDirSchema.catch("desc"),
   page: pageSchema,
   per_page: perPageSchema(PAGE_SIZE),

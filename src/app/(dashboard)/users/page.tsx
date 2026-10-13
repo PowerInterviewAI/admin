@@ -58,9 +58,9 @@ export default async function UsersPage({ searchParams }: PageProps<"/users">) {
             hint: "Signed up, never configured",
           },
           {
-            label: "Credits held",
-            value: formatNumber(summary.credits),
-            hint: "Sum across these accounts",
+            label: "Subscribed",
+            value: formatNumber(summary.subscribed),
+            hint: shareOf(summary.subscribed, summary.total),
           },
         ]}
       />

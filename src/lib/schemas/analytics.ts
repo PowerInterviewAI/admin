@@ -122,7 +122,8 @@ export interface UsersSummary {
   configured: number;
   /** Accounts with a client app signed in right now. */
   online: number;
-  credits: number;
+  /** Accounts whose subscription is active right now. */
+  subscribed: number;
   new_in_week: number;
 }
 

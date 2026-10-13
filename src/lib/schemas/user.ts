@@ -53,7 +53,12 @@ export const userSchema = timestampsSchema.extend({
   email: z.string().default(""),
   role: userRoleSchema.catch("user"),
   status: userStatusSchema.catch("inactive"),
+  /** Free-tier interview time left, in credits (10 a minute). Only spent while unsubscribed. */
   credits: z.number().int().default(0),
+  /** When the subscription ends (unix ms); null for anyone who never had one. */
+  subscription_expires_at: z.number().int().nullish().default(null),
+  /** The last pass applied, for display only: whether it is active is `subscription_expires_at`. */
+  subscription_plan: z.string().nullish().default(null),
   interview_config: storedInterviewConfigSchema.nullish().default(null),
 });
 
@@ -79,6 +84,8 @@ export const userRowSchema = userSchema.extend({
   payment_count: z.number().int().default(0),
   session_count: z.number().int().default(0),
   presence: userPresenceSchema.nullable().default(null),
+  /** Decided on the server against the same clock as the `subscribed` filter, not in the browser. */
+  subscribed: z.boolean().default(false),
 });
 
 export type UserRow = z.infer<typeof userRowSchema>;
@@ -93,6 +100,7 @@ export const userPatchSchema = z.object({
   role: userRoleSchema,
   status: userStatusSchema,
   credits: z.number().int().min(0, "Credits cannot be negative"),
+  subscription_expires_at: z.number().int().nullable(),
   interview_config: interviewConfigSchema,
 });
 

@@ -68,6 +68,7 @@ export const USERS_TABS: readonly ListTab<UsersSearchParams>[] = [
   { value: "all", label: "All", patch: {} },
   { value: "active", label: "Active", patch: { status: "active" } },
   { value: "online", label: "Online now", patch: { online: "yes" } },
+  { value: "subscribed", label: "Subscribed", patch: { subscribed: "yes" } },
   { value: "trial", label: "Trial", patch: { role: "trial_user" } },
   { value: "admins", label: "Admins", patch: { role: "admin" } },
   // The product's activation gap: accounts that signed up and never set an interview up.

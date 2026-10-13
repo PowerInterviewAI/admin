@@ -61,6 +61,68 @@ import { deleteUser, updateUser } from "@/server/actions/users";
 
 import { SetPasswordDialog } from "./set-password-dialog";
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** The expiry as the UTC date it ends on: an expiry at midnight belongs to the day before it. */
+function toDateInput(ms: number | null): string {
+  return ms === null ? "" : new Date(ms - 1).toISOString().slice(0, 10);
+}
+
+/** A picked date means "through the end of that day, UTC". */
+function fromDateInput(value: string): number | null {
+  if (!value) return null;
+  const [year, month, day] = value.split("-").map(Number);
+  return Date.UTC(year, month - 1, day + 1);
+}
+
+function describeSubscription(user: UserRow): string {
+  if (user.subscription_expires_at === null) return "Never subscribed.";
+  const when = formatDate(user.subscription_expires_at);
+  return user.subscribed ? `Active until ${when}.` : `Ended ${when}.`;
+}
+
+function SubscriptionInput({
+  value,
+  onChange,
+}: {
+  value: number | null;
+  onChange: (value: number | null) => void;
+}) {
+  // Read in the handlers, not during render: the clock is not something a render may depend on.
+  const extend = (days: number) => onChange(Math.max(Date.now(), value ?? 0) + days * DAY_MS);
+
+  return (
+    <div className="flex flex-col gap-2">
+      <Input
+        id="subscription-ends"
+        type="date"
+        value={toDateInput(value)}
+        onChange={(event) => onChange(fromDateInput(event.target.value))}
+      />
+      <div className="flex flex-wrap gap-2">
+        <Button type="button" variant="outline" size="sm" onClick={() => extend(30)}>
+          +30 days
+        </Button>
+        <Button type="button" variant="outline" size="sm" onClick={() => extend(365)}>
+          +365 days
+        </Button>
+        <Button type="button" variant="outline" size="sm" onClick={() => onChange(Date.now())}>
+          End now
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={value === null}
+          onClick={() => onChange(null)}
+        >
+          Remove
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 interface UserEditSheetProps {
   user: UserRow | null;
   onClose: () => void;
@@ -73,7 +135,7 @@ export function UserEditSheet({ user, onClose }: UserEditSheetProps) {
         <SheetHeader>
           <SheetTitle>Edit user</SheetTitle>
           <SheetDescription>
-            Update the account, credit balance, and interview setup.
+            Update the account, subscription, free time, and interview setup.
           </SheetDescription>
         </SheetHeader>
 
@@ -108,6 +170,7 @@ function UserEditForm({ user, onClose }: { user: UserRow; onClose: () => void })
       role: user.role,
       status: user.status,
       credits: user.credits,
+      subscription_expires_at: user.subscription_expires_at,
       interview_config: user.interview_config ?? EMPTY_INTERVIEW_CONFIG,
     },
   });
@@ -227,8 +290,23 @@ function UserEditForm({ user, onClose }: { user: UserRow; onClose: () => void })
               />
             </Field>
 
+            <Field>
+              <FieldLabel htmlFor="subscription-ends">Subscription ends (UTC)</FieldLabel>
+              <Controller
+                control={control}
+                name="subscription_expires_at"
+                render={({ field }) => (
+                  <SubscriptionInput value={field.value} onChange={field.onChange} />
+                )}
+              />
+              <FieldDescription>
+                {describeSubscription(user)} Subscribers get unlimited interviews on the paid model.
+                Adding days extends from the current end date while it is still ahead.
+              </FieldDescription>
+            </Field>
+
             <Field data-invalid={!!errors.credits}>
-              <FieldLabel htmlFor="credits">Credits</FieldLabel>
+              <FieldLabel htmlFor="credits">Free credits</FieldLabel>
               <Input
                 id="credits"
                 type="number"
@@ -237,8 +315,8 @@ function UserEditForm({ user, onClose }: { user: UserRow; onClose: () => void })
                 {...register("credits", { valueAsNumber: true })}
               />
               <FieldDescription>
-                Live and mock interviews both spend 10 credits a minute. A session needs a minute
-                of credit to start and stops at zero; this balance also selects the LLM tier.
+                The free hour (600 credits), spent at 10 a minute only while the user has no
+                subscription. At zero a free user&apos;s session stops.
               </FieldDescription>
               <FieldError errors={[errors.credits]} />
             </Field>

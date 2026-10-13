@@ -78,6 +78,23 @@ function PresenceCell({ user }: { user: UserRow }) {
   );
 }
 
+/** Active with its end date, lapsed with when it ended, or nothing for a free account. */
+function SubscriptionCell({ user }: { user: UserRow }) {
+  if (user.subscription_expires_at === null) {
+    return <span className="text-sm text-muted-foreground">Free</span>;
+  }
+  return (
+    <div className="flex flex-col items-start gap-0.5">
+      <Badge variant={user.subscribed ? "secondary" : "outline"}>
+        {user.subscribed ? titleCase(user.subscription_plan ?? "subscribed") : "Expired"}
+      </Badge>
+      <span className="text-xs text-muted-foreground">
+        {user.subscribed ? "until" : "ended"} {formatDate(user.subscription_expires_at)}
+      </span>
+    </div>
+  );
+}
+
 const columns: ColumnDef<UserRow, unknown>[] = [
   {
     accessorKey: "username",
@@ -128,8 +145,14 @@ const columns: ColumnDef<UserRow, unknown>[] = [
       ),
   },
   {
+    accessorKey: "subscription_expires_at",
+    header: "Subscription",
+    enableSorting: true,
+    cell: ({ row }) => <SubscriptionCell user={row.original} />,
+  },
+  {
     accessorKey: "credits",
-    header: "Credits",
+    header: "Free credits",
     enableSorting: true,
     cell: ({ row }) => formatNumber(row.original.credits),
   },
@@ -243,6 +266,15 @@ export function UsersView({
           className="w-40"
         />
         <FilterSelect
+          label="Filter by subscription"
+          allLabel="Any plan"
+          value={params.subscribed}
+          options={YES_NO_OPTIONS}
+          onChange={(subscribed) => setParams({ subscribed })}
+          formatOption={(value) => (value === "yes" ? "Subscribed" : "Not subscribed")}
+          className="w-40"
+        />
+        <FilterSelect
           label="Filter by interview setup"
           allLabel="Any setup"
           value={params.configured}
@@ -252,7 +284,7 @@ export function UsersView({
           className="w-40"
         />
         <NumberRangeFilter
-          label="Credits"
+          label="Free credits"
           min={params.min_credits}
           max={params.max_credits}
           onChange={({ min, max }) => setParams({ min_credits: min, max_credits: max })}

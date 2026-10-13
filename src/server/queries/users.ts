@@ -73,8 +73,17 @@ async function getRelatedCounts(
  * (`q` and `configured`) are each an `$or` and a second assignment to `filter.$or` would silently
  * replace the first - dropping the search term while still looking like it applied.
  */
+/** Active means the expiry is still ahead; a missing or null expiry never matches `$gt`. */
+function subscribedClause(now: number): Document {
+  return { subscription_expires_at: { $gt: now } };
+}
+
 function buildUsersFilter(params: UsersSearchParams, live: LiveState): Filter<Document> {
   const and: Document[] = [];
+  const now = currentTimestampMs();
+
+  if (params.subscribed === "yes") and.push(subscribedClause(now));
+  if (params.subscribed === "no") and.push({ $nor: [subscribedClause(now)] });
 
   if (params.online === "yes") and.push({ _id: { $in: live.userIds } });
   if (params.online === "no") and.push({ _id: { $nin: live.userIds } });
@@ -142,6 +151,7 @@ export async function listUsers(
   ]);
 
   const counts = await getRelatedCounts(page.items.map((user) => user._id));
+  const now = currentTimestampMs();
 
   return {
     ...page,
@@ -150,6 +160,7 @@ export async function listUsers(
       payment_count: counts.payments.get(user._id) ?? 0,
       session_count: counts.sessions.get(user._id) ?? 0,
       presence: presence.get(user._id) ?? null,
+      subscribed: (user.subscription_expires_at ?? 0) > now,
     })),
   };
 }
@@ -158,7 +169,8 @@ export async function getUsersSummary(
   params: UsersSearchParams,
   live: LiveState,
 ): Promise<UsersSummary> {
-  const weekAgo = currentTimestampMs() - WEEK_MS;
+  const now = currentTimestampMs();
+  const weekAgo = now - WEEK_MS;
 
   const summary = await summarize<UsersSummary>({
     collection: COLLECTIONS.users,
@@ -168,15 +180,15 @@ export async function getUsersSummary(
       active: countWhere({ $eq: ["$status", "active"] }),
       configured: countWhere(CONFIGURED_EXPR),
       online: countWhere({ $in: ["$_id", live.userIds] }),
-      credits: { $sum: "$credits" },
+      subscribed: countWhere({ $gt: [{ $ifNull: ["$subscription_expires_at", 0] }, now] }),
       // A rolling week, not a calendar one: this answers "has anyone signed up lately", where the
       // dashboard's day buckets answer "when", and only the latter needs aligning to a day.
       new_in_week: countWhere({ $gte: [{ $ifNull: ["$created_at", 0] }, weekAgo] }),
     },
-    empty: { total: 0, active: 0, configured: 0, online: 0, credits: 0, new_in_week: 0 },
+    empty: { total: 0, active: 0, configured: 0, online: 0, subscribed: 0, new_in_week: 0 },
   });
 
-  return { ...summary, credits: Math.round(summary.credits) };
+  return summary;
 }
 
 export function countUsersTabs(params: UsersSearchParams, live: LiveState) {
