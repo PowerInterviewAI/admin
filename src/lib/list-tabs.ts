@@ -118,7 +118,9 @@ export const CAMPAIGNS_TABS: readonly ListTab<EmailCampaignsSearchParams>[] = [
 export const RESELLER_SALES_TABS: readonly ListTab<ResellerSalesSearchParams>[] = [
   { value: "all", label: "All", patch: {} },
   { value: "user_created", label: "New customers", patch: { kind: "user_created" } },
-  { value: "credits_granted", label: "Top-ups", patch: { kind: "credits_granted" } },
+  { value: "subscription_granted", label: "Extensions", patch: { kind: "subscription_granted" } },
+  // Sold before subscriptions. Kept as a tab so that history stays one click away.
+  { value: "credits_granted", label: "Credit top-ups", patch: { kind: "credits_granted" } },
   // Grants backend could not decide. Last, and only worth an admin's attention when it is not zero.
   { value: "review", label: "Needs review", patch: { state: "unresolved" } },
 ];
