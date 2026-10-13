@@ -43,9 +43,9 @@ async function searchClauses(q: string): Promise<Document[]> {
 }
 
 /**
- * `unapplied` is a finished *order* whose credits were never granted, so it is a clause rather than
+ * `unapplied` is a finished *order* that was never granted, so it is a clause rather than
  * a status list. Kept here beside the status buckets so the tab, its count, and the summary's
- * "credits owed" figure cannot come to mean three different things.
+ * "not granted" figure cannot come to mean three different things.
  */
 function bucketClause(bucket: PaymentBucket): Document {
   if (bucket === "unapplied") {

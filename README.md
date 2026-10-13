@@ -73,12 +73,12 @@ A reseller is an outside partner who sells access through their own app. Give an
 **Reseller** role from Access and they get a **Reseller API** page: they issue, rotate and revoke
 their own API key there (shown once; only its hash is stored), and see the customers and sales
 their app has created. Their app sends the key to the backend's `/api/reseller` endpoints to create
-customers and add credits, so the backend has to be running a version that has them, with read
+customers and sell them subscription days, so the backend has to be running a version that has them, with read
 access to this dashboard's `ADMIN_MONGO_DB`.
 
-Admins manage resellers under **Resellers**: set each one's rate (USD per interview hour, which is
-600 credits), revoke a key, browse every sale, and see what each reseller owes per day. Payment is
-collected by hand: mark a day paid on the **Settlements** page, which also exports to CSV. Top-ups
+Admins manage resellers under **Resellers**: set each one's rate (USD per 30 days of
+subscription), revoke a key, browse every sale, and see what each reseller owes per day. Payment is
+collected by hand: mark a day paid on the **Settlements** page, which also exports to CSV. Extensions
 the backend could not confirm appear under **Sales history > Needs review** for an admin to decide.
 
 `RESELLER_API_BASE_URL` (optional, default `https://api.powerinterviewai.com/api`) is the backend's
@@ -101,7 +101,7 @@ all share the password `Interview!2026`.
 
 `pnpm seed:resellers` adds fixtures for the reseller pages: four resellers (steady, partly
 unpriced, brand new, rejected), a guest account, their customers, sales, daily settlements and one
-top-up awaiting review. Its accounts all use the password `Fixture!2026`, and it prints a fresh API
+extension awaiting review. Its accounts all use the password `Fixture!2026`, and it prints a fresh API
 key for each reseller that has one. Run it against a local database only (it refuses anything else),
 and re-run it any time: it replaces just its own fixtures.
 

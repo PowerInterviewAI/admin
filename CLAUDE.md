@@ -259,7 +259,7 @@ Only columns with a plain-string `header` are offered in the Columns menu - an a
 
 `CSV_BOM` is built with `String.fromCharCode(0xfeff)` rather than written literally: without it Excel reads the bytes in the system codepage and every non-ASCII name arrives mojibaked, and a zero-width character sitting in source is invisible to review.
 
-Because the exports re-run the list query from `params`, the tab filters (`bucket`, `group`) come along for free: exporting from the "Credits owed" tab exports the payments that are actually owed.
+Because the exports re-run the list query from `params`, the tab filters (`bucket`, `group`) come along for free: exporting from the "Not granted" tab exports the payments that are actually owed.
 
 These actions are reachable by direct POST like every other action here, so each one opens with `denyUnless` and the `:read` permission of the list it exports (see "Authentication" above): every export needs the `:read` of its list (`users:read`, `payments:read`, `interviews:read`, `sessions:read`, `audit_logs:read`), so each is admin-only today because its page is. A role that may read a list may export it - an export returns the rows that role is already looking at - and one that may not is not given a CSV as a loophole.
 

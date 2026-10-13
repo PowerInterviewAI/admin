@@ -128,7 +128,7 @@ export function ResellerPortalView({
           data={sales.items}
           getRowId={(row) => row._id}
           emptyTitle="No sales yet"
-          emptyMessage="Every customer you create and every top-up is recorded here."
+          emptyMessage="Every customer you create and every extension is recorded here."
           isPending={isPending}
           pagination={pagination}
           defaultHiddenColumns={["note"]}

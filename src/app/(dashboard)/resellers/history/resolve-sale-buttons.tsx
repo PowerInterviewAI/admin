@@ -23,7 +23,7 @@ import { resolveUnresolvedSale } from "@/server/actions/resellers";
 type Decision = "committed" | "void";
 
 /**
- * The two answers to "did this top-up reach the customer?". Nothing here can be inferred from the
+ * The two answers to "did this sale reach the customer?". Nothing here can be inferred from the
  * row, so each is a confirmed decision with the evidence to check spelled out: this is the point
  * where a reseller either is or is not billed for what it sold.
  */

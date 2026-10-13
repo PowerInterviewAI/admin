@@ -4,12 +4,13 @@
  *
  * Writes what backend and this app would have written themselves:
  * - reseller and guest accounts in `ADMIN_MONGO_DB` (`admin_accounts`), with API key digests;
- * - their customers in `users` (`reseller_id`, role `user`), with `signup` / `credits_applied`
- *   audit rows marked `metadata.source = "reseller"`;
+ * - their customers in `users` (`reseller_id`, role `user`, a `subscription_expires_at` built from
+ *   what they were sold), with `signup` / `credits_applied` audit rows marked
+ *   `metadata.source = "reseller"`;
  * - `reseller_ledger` rows, committed, with the rate snapshotted per sale, plus one in-flight
- *   `pending` row that no page may show, and one `unresolved` top-up that only the review tab lists;
+ *   `pending` row that no page may show, and one `unresolved` extension that only the review tab lists;
  * - `reseller_settlements`, one per reseller per complete UTC day, computed with backend's rule
- *   (`round_half_up(sum(credits x rate) / 600)`, null when any credit that day was unpriced).
+ *   (`round_half_up(sum(days x rate_per_month) / 30)`, null when any day sold was unpriced).
  *
  * Run with: node scripts/seed-reseller-fixtures.mjs
  *
@@ -41,7 +42,7 @@ const NOW = Date.now();
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
-const CREDITS_PER_HOUR = 600;
+const DAYS_PER_MONTH = 30;
 const SETTLEMENT_GRACE = HOUR;
 
 /**
@@ -106,8 +107,8 @@ const RESELLERS = [
   },
 ];
 
-const PRICES = { 0: null, 600: 9.99, 1200: 17.99, 3000: 39.99 };
-const NOTES = ["Black Friday bundle", "Referral discount", "Corporate seat", "Renewal", "Upgrade from 1h pack"];
+const PRICES = { 0: null, 30: 19.99, 90: 49.99, 365: 149.99 };
+const NOTES = ["Black Friday bundle", "Referral discount", "Corporate seat", "Renewal", "Upgrade to a year"];
 const FIRST = ["ava", "ben", "chloe", "dev", "elena", "farid", "grace", "hiro", "isla", "jonas", "kemi", "liam", "mia", "nora", "omar", "priya", "quinn", "ravi", "sofia", "tom"];
 const LAST = ["adams", "baker", "chen", "diaz", "evans", "fischer", "garcia", "haddad", "ito", "jones", "khan", "lopez", "moreau", "nakamura", "okafor", "patel"];
 
@@ -227,7 +228,7 @@ async function main() {
       is_bootstrap: false,
       password_hash: accountHash,
       last_login_at: null,
-      credit_rate_cents_per_hour: spec.rate,
+      subscription_rate_cents_per_month: spec.rate,
       ...(key ? key.fields : {}),
       created_at: NOW - (spec.fromDaysAgo + 5) * DAY,
       updated_at: null,
@@ -252,14 +253,19 @@ async function main() {
       const currency = pick(spec.currencies);
 
       const sales = [];
-      const opening = pick([600, 600, 1200, 3000, 0]);
-      sales.push({ kind: "user_created", at: createdAt, credits: opening });
+      const opening = pick([30, 30, 90, 365, 0]);
+      sales.push({ kind: "user_created", at: createdAt, days: opening });
       for (let t = 0, n = int(0, 3); t < n; t += 1) {
-        sales.push({ kind: "credits_granted", at: int(createdAt + HOUR, windowEnd), credits: pick([600, 1200, 3000]) });
+        sales.push({ kind: "subscription_granted", at: int(createdAt + HOUR, windowEnd), days: pick([30, 90, 365]) });
       }
       sales.sort((a, b) => a.at - b.at);
 
-      const granted = sales.reduce((sum, sale) => sum + sale.credits, 0);
+      // As backend extends it: each sale adds its days from the later of then and the current end.
+      let expiresAt = null;
+      for (const sale of sales) {
+        if (sale.days > 0) expiresAt = Math.max(sale.at, expiresAt ?? 0) + sale.days * DAY;
+        sale.expiresAt = expiresAt;
+      }
       const userId = new ObjectId();
       userDocs.push({
         _id: userId,
@@ -268,8 +274,9 @@ async function main() {
         password_hash: customerHash,
         role: "user",
         status: chance(0.9) ? "active" : "inactive",
-        // Customers have used some of what they were sold; the ledger is what billing reads.
-        credits: Math.max(0, granted - int(0, Math.floor(granted * 0.6))),
+        // A reseller's customer has no free hour; the subscription is all they were sold.
+        credits: 0,
+        subscription_expires_at: expiresAt,
         interview_config: null,
         onboarding_completed: chance(0.7),
         reseller_id: resellerId,
@@ -279,15 +286,15 @@ async function main() {
 
       for (const sale of sales) {
         const reference = `${spec.slug}-ord-${(order += int(1, 7))}`;
-        const price = PRICES[sale.credits];
+        const price = PRICES[sale.days];
         const rate = rateAt(sale.at);
         saleDocs.push({
           reseller_id: resellerId,
           user_id: userId,
           customer_email: email,
           kind: sale.kind,
-          credits: sale.credits,
-          rate_cents_per_hour: rate,
+          days: sale.days,
+          rate_cents_per_month: rate,
           reference,
           ...(price !== null
             ? { price_amount: currency === "EUR" ? Math.round(price * 92) / 100 : price, price_currency: currency }
@@ -306,7 +313,10 @@ async function main() {
           user_agent: `${spec.name} integration/1.0`,
           metadata: {
             ...(sale.kind === "user_created" ? { email } : { order_id: reference }),
-            credits_amount: sale.credits,
+            ...(sale.kind === "user_created"
+              ? {}
+              : { credits_amount: 0, subscription_expires_at: sale.expiresAt }),
+            subscription_days: sale.days,
             source: "reseller",
             reseller_id: String(resellerId),
           },
@@ -322,26 +332,26 @@ async function main() {
         reseller_id: resellerId,
         user_id: userDocs[0]._id,
         customer_email: userDocs[0].email,
-        kind: "credits_granted",
-        credits: 99_999,
+        kind: "subscription_granted",
+        days: 3650,
         reference: "acme-ord-IN-FLIGHT",
         state: "pending",
         created_at: NOW - 2 * MINUTE,
       });
     }
 
-    // A top-up backend could not confirm (its credit write may or may not have landed). Unbilled,
+    // An extension backend could not confirm (its write may or may not have landed). Unbilled,
     // hidden from every total, and listed under Sales history > Needs review for an admin to decide.
     if (spec.slug === "bright" && userDocs.length > 0) {
       saleDocs.push({
         reseller_id: resellerId,
         user_id: userDocs[1]._id,
         customer_email: userDocs[1].email,
-        kind: "credits_granted",
-        credits: 1200,
-        rate_cents_per_hour: rateAt(NOW),
+        kind: "subscription_granted",
+        days: 90,
+        rate_cents_per_month: rateAt(NOW),
         reference: "bright-ord-UNCONFIRMED",
-        price_amount: 17.99,
+        price_amount: 49.99,
         price_currency: "USD",
         state: "unresolved",
         created_at: NOW - 3 * HOUR,
@@ -358,11 +368,11 @@ async function main() {
     for (const sale of saleDocs) {
       if (sale.state !== "committed" || sale.committed_at >= lastComplete) continue;
       const day = utcDay(sale.committed_at);
-      const row = byDay.get(day) ?? { credits: 0, users: 0, priced: 0, unpriced: 0 };
-      row.credits += sale.credits;
+      const row = byDay.get(day) ?? { days: 0, users: 0, priced: 0, unpriced: 0 };
+      row.days += sale.days;
       if (sale.kind === "user_created") row.users += 1;
-      if (sale.rate_cents_per_hour === null) row.unpriced += sale.credits;
-      else row.priced += sale.credits * sale.rate_cents_per_hour;
+      if (sale.rate_cents_per_month === null) row.unpriced += sale.days;
+      else row.priced += sale.days * sale.rate_cents_per_month;
       byDay.set(day, row);
     }
     const settlementDocs = [...byDay.entries()].map(([day, row]) => {
@@ -372,11 +382,13 @@ async function main() {
       return {
         reseller_id: resellerId,
         day,
-        credits: row.credits,
+        days: row.days,
+        credits: 0,
         users_created: row.users,
         amount_owed_cents:
-          row.unpriced > 0 ? null : Math.floor((row.priced + CREDITS_PER_HOUR / 2) / CREDITS_PER_HOUR),
-        unpriced_credits: row.unpriced,
+          row.unpriced > 0 ? null : Math.floor((row.priced + DAYS_PER_MONTH / 2) / DAYS_PER_MONTH),
+        unpriced_days: row.unpriced,
+        unpriced_credits: 0,
         status: paid ? "paid" : "open",
         paid_at: paid ? Math.min(dayEnd + 2 * DAY, NOW) : null,
         paid_by: paid ? paidBy : null,
