@@ -6,7 +6,8 @@
  * `app/models/audit_log.py`, and the credit plans from `app/cfg/payment.py`. Credit balances are
  * walked forward per user through their own timeline (trial grant, ASR consumption, purchases),
  * so a user's `credits` agrees with their own audit trail rather than being an unrelated number:
- * every credit spent is on an `asr_stop` row's `credits_amount`.
+ * every credit spent is on an `asr_stop` row's `credits_amount`. The history ends with backend's
+ * conversion of paid balances into subscription days, so paying accounts arrive subscribed.
  *
  * Run with: node scripts/seed-mock-data.mjs
  *
@@ -1120,6 +1121,41 @@ async function main() {
       role: "admin",
       credits: Math.max(doc.credits, 3000),
       interview_config: null,
+    });
+  }
+
+  // -- the switch to subscriptions -----------------------------------------
+
+  // The history above is the credit era. Backend ended it with a one-time conversion
+  // (`SubscriptionService.migrate_paid_credits`): every `user` balance became subscription days
+  // at 100 credits a day, rounded up, from now, with a `credits_applied` row for each. Replayed
+  // here so the seeded accounts include subscribers, rather than waiting on a backend boot that
+  // skips the conversion once `global_state.credits_migrated_at` is set.
+  const CREDITS_PER_SUBSCRIPTION_DAY = 100;
+  const MIGRATED_AT = NOW - int(2, 6) * HOUR;
+  const personById = new Map(people.map((person) => [String(person._id), person]));
+  for (const doc of userDocs) {
+    if (doc.role !== "user" || doc.credits <= 0) continue;
+    const days = Math.ceil(doc.credits / CREDITS_PER_SUBSCRIPTION_DAY);
+    const expiresAt = MIGRATED_AT + days * DAY;
+    pushAudit(
+      personById.get(String(doc._id)),
+      "credits_applied",
+      MIGRATED_AT,
+      "success",
+      {
+        credits_amount: 0,
+        subscription_days: days,
+        subscription_expires_at: expiresAt,
+        source: "credits_migration",
+        previous_balance: doc.credits,
+      },
+      "server",
+    );
+    Object.assign(doc, {
+      credits: 0,
+      subscription_expires_at: expiresAt,
+      updated_at: MIGRATED_AT,
     });
   }
 
