@@ -53,16 +53,18 @@ export async function updateUser(userId: string, input: unknown): Promise<Action
     // `$set` replaces `interview_config` wholesale rather than merging into it, which is why the
     // edit sheet always submits all three inner fields.
     //
-    // `subscription_expires_at` is written only when the sheet sent it, which it does only when the
-    // admin changed it. Backend moves that field itself, so a save that changed a name must not put
-    // back the end date the sheet happened to open with. Dropped rather than left `undefined`,
-    // which the driver would store as null.
-    const { subscription_expires_at: nextExpiresAt, ...fields } = parsed.data;
-    const patch = nextExpiresAt === undefined ? fields : { ...fields, subscription_expires_at: nextExpiresAt };
+    // `credits` and `subscription_expires_at` are written only when the sheet sent them, which it
+    // does only when the admin changed them. Backend moves both itself, so a save that changed a
+    // name must not put back the values the sheet happened to open with. Dropped rather than left
+    // `undefined`, which the driver would store as null.
+    const { credits: nextCredits, subscription_expires_at: nextExpiresAt, ...fields } = parsed.data;
+    const patch: Record<string, unknown> = { ...fields };
+    if (nextCredits !== undefined) patch.credits = nextCredits;
+    if (nextExpiresAt !== undefined) patch.subscription_expires_at = nextExpiresAt;
     await updateById(COLLECTIONS.users, userId, patch, "user");
 
-    if (previous && previous.credits !== parsed.data.credits) {
-      await recordCreditsAdjusted(userId, parsed.data.email, previous.credits, parsed.data.credits);
+    if (previous && nextCredits !== undefined && previous.credits !== nextCredits) {
+      await recordCreditsAdjusted(userId, parsed.data.email, previous.credits, nextCredits);
     }
     if (previous && nextExpiresAt !== undefined && previous.subscription_expires_at !== nextExpiresAt) {
       await recordSubscriptionAdjusted(userId, parsed.data.email, previous.subscription_expires_at, nextExpiresAt);

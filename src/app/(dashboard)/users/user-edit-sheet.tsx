@@ -63,22 +63,34 @@ import { SetPasswordDialog } from "./set-password-dialog";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** The expiry as the UTC date it ends on: an expiry at midnight belongs to the day before it. */
+/** The last UTC day an expiry covers: it is exclusive, so one at midnight ends the day before. */
 function toDateInput(ms: number | null): string {
-  return ms === null ? "" : new Date(ms - 1).toISOString().slice(0, 10);
+  if (ms === null || !Number.isFinite(ms)) return "";
+  return new Date(ms - 1).toISOString().slice(0, 10);
 }
 
-/** A picked date means "through the end of that day, UTC". */
+const DATE_INPUT = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/**
+ * A picked date means "through the end of that day, UTC". Anything that is not a complete,
+ * plausible date is null and is ignored by the caller rather than read as "no subscription": a
+ * date input reports "" while a segment is cleared, and a year part-way through being typed
+ * ("0002") that `Date.UTC` would turn into 1902.
+ */
 function fromDateInput(value: string): number | null {
-  if (!value) return null;
-  const [year, month, day] = value.split("-").map(Number);
-  return Date.UTC(year, month - 1, day + 1);
+  const match = DATE_INPUT.exec(value);
+  if (!match) return null;
+  const [year, month, day] = match.slice(1).map(Number);
+  if (year < 2000 || year > 9999) return null;
+  const ms = Date.UTC(year, month - 1, day + 1);
+  return Number.isFinite(ms) ? ms : null;
 }
 
+/** In the same terms as the date field beside it: the last UTC day covered. */
 function describeSubscription(user: UserRow): string {
   if (user.subscription_expires_at === null) return "Never subscribed.";
-  const when = formatDate(user.subscription_expires_at);
-  return user.subscribed ? `Active until ${when}.` : `Ended ${when}.`;
+  const through = toDateInput(user.subscription_expires_at);
+  return user.subscribed ? `Active through ${through} (UTC).` : `Ended after ${through} (UTC).`;
 }
 
 function SubscriptionInput({
@@ -91,13 +103,27 @@ function SubscriptionInput({
   // Read in the handlers, not during render: the clock is not something a render may depend on.
   const extend = (days: number) => onChange(Math.max(Date.now(), value ?? 0) + days * DAY_MS);
 
+  // What the field shows is held here, because a date input passes through states that are not a
+  // date (a cleared segment, a half-typed year). Only a complete date reaches the form; removing
+  // the subscription is the Remove button's job. A new value from the buttons resets the text.
+  const [draft, setDraft] = useState(() => toDateInput(value));
+  const [shownValue, setShownValue] = useState(value);
+  if (value !== shownValue) {
+    setShownValue(value);
+    setDraft(toDateInput(value));
+  }
+
   return (
     <div className="flex flex-col gap-2">
       <Input
         id="subscription-ends"
         type="date"
-        value={toDateInput(value)}
-        onChange={(event) => onChange(fromDateInput(event.target.value))}
+        value={draft}
+        onChange={(event) => {
+          setDraft(event.target.value);
+          const ms = fromDateInput(event.target.value);
+          if (ms !== null) onChange(ms);
+        }}
       />
       <div className="flex flex-wrap gap-2">
         <Button type="button" variant="outline" size="sm" onClick={() => extend(30)}>
@@ -177,9 +203,13 @@ function UserEditForm({ user, onClose }: { user: UserRow; onClose: () => void })
 
   const onSubmit = handleSubmit((values) => {
     startSaving(async () => {
-      // The end date is sent only when it was edited here; see `userPatchSchema`.
-      const { subscription_expires_at: expiresAt, ...rest } = values;
-      const patch = dirtyFields.subscription_expires_at ? { ...rest, subscription_expires_at: expiresAt } : rest;
+      // Free credits and the end date are sent only when they were edited here; see `userPatchSchema`.
+      const { credits, subscription_expires_at: expiresAt, ...rest } = values;
+      const patch = {
+        ...rest,
+        ...(dirtyFields.credits ? { credits } : {}),
+        ...(dirtyFields.subscription_expires_at ? { subscription_expires_at: expiresAt } : {}),
+      };
       const result = await updateUser(user._id, patch);
       if (!result.ok) {
         toast.error(result.error);
