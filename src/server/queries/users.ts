@@ -109,8 +109,14 @@ function buildUsersFilter(params: UsersSearchParams, live: LiveState): Filter<Do
   return and.length > 0 ? { $and: and } : {};
 }
 
+/**
+ * `_id` breaks ties, because skip/limit paging over tied keys is not stable: sorting by
+ * subscription end puts every never-subscribed account on the same null, and without a tiebreaker
+ * Mongo may return those rows in a different order per page, showing some twice and others never.
+ */
 function buildUsersSort(params: UsersSearchParams): Sort {
-  return { [params.sort_by]: params.sort_dir === "desc" ? -1 : 1 };
+  const direction = params.sort_dir === "desc" ? -1 : 1;
+  return { [params.sort_by]: direction, _id: direction };
 }
 
 /**
