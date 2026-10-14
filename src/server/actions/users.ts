@@ -12,23 +12,27 @@ import { deleteById, deleteMany, findOne, insertDocument, updateById } from "@/s
 import { hashPassword } from "@/server/password";
 
 /**
- * Reads only `credits`, deliberately not `userSchema`. `updateUser` needs the balance before its
- * write so it can audit the change, but the full schema throws on any document that has drifted
- * out of it (a role or interview_config shape the model has moved past) - and editing is
- * plausibly how an admin fixes such a row. A read that requires whole-document validity would
- * make exactly that row uneditable. Failing (or finding nothing) here degrades to "write without
- * an audit row", never to a failed save - see `readPreviousCredits`.
+ * Reads only the balance and the subscription, deliberately not `userSchema`. `updateUser` needs
+ * both before its write so it can audit the change, but the full schema throws on any document
+ * that has drifted out of it (a role or interview_config shape the model has moved past) - and
+ * editing is plausibly how an admin fixes such a row. A read that requires whole-document validity
+ * would make exactly that row uneditable. Failing (or finding nothing) here degrades to "write
+ * without an audit row", never to a failed save - see `readPrevious`.
  */
-const creditsOnlySchema = z.object({ credits: z.number().int() });
+const auditedFieldsSchema = z.object({
+  credits: z.number().int(),
+  subscription_expires_at: z.number().int().nullish().default(null),
+});
 
-async function readPreviousCredits(userId: string): Promise<number | null> {
+type AuditedFields = z.infer<typeof auditedFieldsSchema>;
+
+async function readPrevious(userId: string): Promise<AuditedFields | null> {
   try {
-    const doc = await findOne({
+    return await findOne({
       collection: COLLECTIONS.users,
-      schema: creditsOnlySchema,
+      schema: auditedFieldsSchema,
       filter: { _id: toObjectId(userId) },
     });
-    return doc?.credits ?? null;
   } catch {
     return null;
   }
@@ -44,14 +48,32 @@ export async function updateUser(userId: string, input: unknown): Promise<Action
   }
 
   try {
-    const previousBalance = await readPreviousCredits(userId);
+    const previous = await readPrevious(userId);
 
     // `$set` replaces `interview_config` wholesale rather than merging into it, which is why the
     // edit sheet always submits all three inner fields.
-    await updateById(COLLECTIONS.users, userId, parsed.data, "user");
+    //
+    // `role`, `credits` and `subscription_expires_at` are written only when the sheet sent them,
+    // which it does only when the admin changed them. Backend moves all three itself, so a save
+    // that changed a name must not put back the values the sheet happened to open with. Dropped
+    // rather than left `undefined`, which the driver would store as null.
+    const {
+      role: nextRole,
+      credits: nextCredits,
+      subscription_expires_at: nextExpiresAt,
+      ...fields
+    } = parsed.data;
+    const patch: Record<string, unknown> = { ...fields };
+    if (nextRole !== undefined) patch.role = nextRole;
+    if (nextCredits !== undefined) patch.credits = nextCredits;
+    if (nextExpiresAt !== undefined) patch.subscription_expires_at = nextExpiresAt;
+    await updateById(COLLECTIONS.users, userId, patch, "user");
 
-    if (previousBalance !== null && previousBalance !== parsed.data.credits) {
-      await recordCreditsAdjusted(userId, parsed.data.email, previousBalance, parsed.data.credits);
+    if (previous && nextCredits !== undefined && previous.credits !== nextCredits) {
+      await recordCreditsAdjusted(userId, parsed.data.email, previous.credits, nextCredits);
+    }
+    if (previous && nextExpiresAt !== undefined && previous.subscription_expires_at !== nextExpiresAt) {
+      await recordSubscriptionAdjusted(userId, parsed.data.email, previous.subscription_expires_at, nextExpiresAt);
     }
   } catch (error) {
     return failed(error instanceof AppError ? error.message : "Could not update this user");
@@ -96,6 +118,42 @@ async function recordCreditsAdjusted(
     );
   } catch (error) {
     console.error("Credits were adjusted, but the audit log entry could not be written", error);
+  }
+}
+
+/**
+ * The same trail for a hand-set subscription. Still `credits_adjusted` rather than an event type of
+ * its own: backend declares the event types, and a value it does not know is the strict-enum break
+ * this app guards against when reading. `credits_amount` is 0 so a sum of credit adjustments is
+ * not thrown off by it.
+ */
+async function recordSubscriptionAdjusted(
+  userId: string,
+  email: string,
+  previousExpiresAt: number | null,
+  newExpiresAt: number | null,
+): Promise<void> {
+  try {
+    await insertDocument(
+      COLLECTIONS.auditLogs,
+      {
+        event_type: "credits_adjusted",
+        user_id: toObjectId(userId),
+        email,
+        status: "success",
+        ip_address: null,
+        user_agent: null,
+        metadata: {
+          source: "admin_dashboard",
+          credits_amount: 0,
+          previous_subscription_expires_at: previousExpiresAt,
+          subscription_expires_at: newExpiresAt,
+        },
+      },
+      "audit log",
+    );
+  } catch (error) {
+    console.error("The subscription was adjusted, but the audit log entry could not be written", error);
   }
 }
 

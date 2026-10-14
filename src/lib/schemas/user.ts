@@ -53,7 +53,12 @@ export const userSchema = timestampsSchema.extend({
   email: z.string().default(""),
   role: userRoleSchema.catch("user"),
   status: userStatusSchema.catch("inactive"),
+  /** Free-tier interview time left, in credits (10 a minute). Only spent while unsubscribed. */
   credits: z.number().int().default(0),
+  /** When the subscription ends (unix ms); null for anyone who never had one. */
+  subscription_expires_at: z.number().int().nullish().default(null),
+  /** The last pass applied, for display only: whether it is active is `subscription_expires_at`. */
+  subscription_plan: z.string().nullish().default(null),
   interview_config: storedInterviewConfigSchema.nullish().default(null),
 });
 
@@ -79,6 +84,8 @@ export const userRowSchema = userSchema.extend({
   payment_count: z.number().int().default(0),
   session_count: z.number().int().default(0),
   presence: userPresenceSchema.nullable().default(null),
+  /** Decided on the server against the same clock as the `subscribed` filter, not in the browser. */
+  subscribed: z.boolean().default(false),
 });
 
 export type UserRow = z.infer<typeof userRowSchema>;
@@ -90,9 +97,15 @@ export type UserRow = z.infer<typeof userRowSchema>;
 export const userPatchSchema = z.object({
   username: z.string().min(1, "Username is required"),
   email: z.email("Enter a valid email"),
-  role: userRoleSchema,
   status: userStatusSchema,
-  credits: z.number().int().min(0, "Credits cannot be negative"),
+  // These three are optional, and left out unless the admin changed them: backend moves each on
+  // its own (a payment or the free hour running out promotes a trial user; the meter spends free
+  // credits during an interview; a payment or reseller grant extends the subscription), so writing
+  // back the value the sheet opened with would undo whatever landed in between. `null` removes the
+  // subscription.
+  role: userRoleSchema.optional(),
+  credits: z.number().int().min(0, "Credits cannot be negative").optional(),
+  subscription_expires_at: z.number().int().nullable().optional(),
   interview_config: interviewConfigSchema,
 });
 

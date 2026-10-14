@@ -30,6 +30,27 @@ export function formatDuration(ms: number): string {
   return `${hours} hour${hours === 1 ? "" : "s"}`;
 }
 
+/**
+ * What a payment or a sale gives the customer: days of subscription, or credits on an order from
+ * before subscriptions. Days win when both are set, since that is what was actually granted.
+ */
+export function formatGrant(days: number | null | undefined, credits: number | null | undefined): string {
+  if (days) return `${formatNumber(days)} day${days === 1 ? "" : "s"}`;
+  if (credits) return `${formatNumber(credits)} credits`;
+  return "-";
+}
+
+/**
+ * A total across several sales, which unlike one sale can hold both units at once (a day that
+ * mixes legacy credit sales with subscription sales), so both are shown rather than one winning.
+ */
+export function formatSold(days: number, credits: number): string {
+  const parts: string[] = [];
+  if (days) parts.push(`${formatNumber(days)} day${days === 1 ? "" : "s"}`);
+  if (credits) parts.push(`${formatNumber(credits)} credits`);
+  return parts.join(" + ") || "-";
+}
+
 export function titleCase(value: string | null | undefined): string {
   if (!value) return "";
   return value
@@ -38,7 +59,10 @@ export function titleCase(value: string | null | undefined): string {
     .join(" ");
 }
 
-/** A reseller's rate, stored as integer cents per interview hour (600 credits). */
-export function formatRate(centsPerHour: number | null): string {
-  return centsPerHour === null ? "Not set" : `${formatUsd(centsPerHour / 100)} / hour`;
+/**
+ * A reseller's rate in integer cents: per 30 days of subscription, or per interview hour (600
+ * credits) on a sale from before subscriptions.
+ */
+export function formatRate(cents: number | null, per: "month" | "hour" = "month"): string {
+  return cents === null ? "Not set" : `${formatUsd(cents / 100)} / ${per === "month" ? "30 days" : "hour"}`;
 }

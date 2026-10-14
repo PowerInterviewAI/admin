@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 import { ListSummary } from "@/components/list-summary";
 import { PageHeader } from "@/components/page-header";
-import { formatNumber, formatUsd } from "@/lib/format";
+import { formatNumber, formatSold, formatUsd } from "@/lib/format";
 import {
   countActiveFilters,
   parseSearchParams,
@@ -46,8 +46,8 @@ export default async function ResellerSettlementsPage({
 
       <ListSummary
         stats={[
-          { label: filtered ? "Matching days" : "Days", value: formatNumber(summary.days) },
-          { label: "Credits", value: formatNumber(summary.credits) },
+          { label: filtered ? "Matching days" : "Days", value: formatNumber(summary.rows) },
+          { label: "Sold", value: formatSold(summary.days_sold, summary.credits_sold) },
           {
             label: "Open",
             value: formatUsd(summary.open_cents / 100),
@@ -57,9 +57,9 @@ export default async function ResellerSettlementsPage({
           { label: "Paid", value: formatUsd(summary.paid_cents / 100) },
           {
             label: "Unpriced days",
-            value: formatNumber(summary.unpriced_days),
-            hint: "Credits sold with no rate set",
-            alert: summary.unpriced_days > 0,
+            value: formatNumber(summary.unpriced_rows),
+            hint: "Sold with no rate set",
+            alert: summary.unpriced_rows > 0,
           },
         ]}
       />

@@ -43,7 +43,7 @@ export function IntegrationGuide() {
       <CardHeader>
         <CardTitle>Connecting your app</CardTitle>
         <CardDescription>
-          Create customers and add credits from your own app, authenticating with your API key. The
+          Create customers and sell them subscription days from your own app, authenticating with your API key. The
           API reference lists every endpoint with request and response examples.
         </CardDescription>
         <Button

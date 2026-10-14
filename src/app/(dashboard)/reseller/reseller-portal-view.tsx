@@ -10,7 +10,7 @@ import { saleColumns } from "@/components/reseller-sale-columns";
 import { settlementColumns } from "@/components/reseller-settlement-columns";
 import { Badge } from "@/components/ui/badge";
 import { useListParams } from "@/hooks/use-list-params";
-import { formatDate, formatNumber, titleCase } from "@/lib/format";
+import { formatDate, titleCase } from "@/lib/format";
 import { RESELLER_PORTAL_TABS } from "@/lib/list-tabs";
 import type { Page } from "@/lib/schemas/common";
 import type {
@@ -27,9 +27,12 @@ const customerColumns: ColumnDef<ResellerCustomer, unknown>[] = [
   { accessorKey: "username", header: "Name" },
   { accessorKey: "email", header: "Email" },
   {
-    accessorKey: "credits",
-    header: "Credits left",
-    cell: ({ row }) => formatNumber(row.original.credits),
+    accessorKey: "subscription_expires_at",
+    header: "Subscription",
+    cell: ({ row }) =>
+      row.original.subscription_expires_at === null
+        ? "None"
+        : `${row.original.subscribed ? "Until" : "Ended"} ${formatDate(row.original.subscription_expires_at)}`,
   },
   {
     accessorKey: "status",
@@ -125,7 +128,7 @@ export function ResellerPortalView({
           data={sales.items}
           getRowId={(row) => row._id}
           emptyTitle="No sales yet"
-          emptyMessage="Every customer you create and every top-up is recorded here."
+          emptyMessage="Every customer you create and every extension is recorded here."
           isPending={isPending}
           pagination={pagination}
           defaultHiddenColumns={["note"]}

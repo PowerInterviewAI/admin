@@ -2,7 +2,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 
 import { Badge } from "@/components/ui/badge";
 import { UserCell } from "@/components/user-cell";
-import { formatDate, formatNumber, formatRate } from "@/lib/format";
+import { formatDate, formatGrant, formatRate } from "@/lib/format";
 import { LEDGER_KIND_LABELS, type ResellerSaleRow } from "@/lib/schemas/reseller";
 
 /**
@@ -59,15 +59,20 @@ export function saleColumns(withReseller: boolean): ColumnDef<ResellerSaleRow, u
         ),
     },
     {
-      accessorKey: "credits",
-      header: "Credits",
+      accessorKey: "days",
+      header: "Sold",
       enableSorting: true,
-      cell: ({ row }) => formatNumber(row.original.credits),
+      cell: ({ row }) => formatGrant(row.original.days, row.original.credits),
     },
     {
       id: "rate",
       header: "Rate",
-      cell: ({ row }) => formatRate(row.original.rate_cents_per_hour),
+      // Each sale in the unit it was priced in, read off which rate it snapshotted: a sale from
+      // before subscriptions carries a per-hour rate, including a new customer sold no credits.
+      cell: ({ row }) =>
+        row.original.rate_cents_per_month === null && row.original.rate_cents_per_hour !== null
+          ? formatRate(row.original.rate_cents_per_hour, "hour")
+          : formatRate(row.original.rate_cents_per_month),
     },
     {
       accessorKey: "reference",

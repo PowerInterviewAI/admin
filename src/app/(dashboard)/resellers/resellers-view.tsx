@@ -5,7 +5,7 @@ import { useState } from "react";
 
 import { DataTable } from "@/components/data-table";
 import { Badge } from "@/components/ui/badge";
-import { formatDate, formatNumber, formatRate, formatUsd, titleCase } from "@/lib/format";
+import { formatDate, formatNumber, formatRate, formatSold, formatUsd, titleCase } from "@/lib/format";
 import type { ResellerOverviewRow } from "@/lib/schemas/reseller";
 
 import { ResellerSheet } from "./reseller-sheet";
@@ -44,8 +44,8 @@ const columns: ColumnDef<ResellerOverviewRow, unknown>[] = [
     id: "rate",
     header: "Rate",
     cell: ({ row }) => (
-      <span className={row.original.rate_cents_per_hour === null ? "text-destructive" : undefined}>
-        {formatRate(row.original.rate_cents_per_hour)}
+      <span className={row.original.rate_cents_per_month === null ? "text-destructive" : undefined}>
+        {formatRate(row.original.rate_cents_per_month)}
       </span>
     ),
   },
@@ -55,9 +55,9 @@ const columns: ColumnDef<ResellerOverviewRow, unknown>[] = [
     cell: ({ row }) => formatNumber(row.original.customers),
   },
   {
-    accessorKey: "credits",
-    header: "Credits",
-    cell: ({ row }) => formatNumber(row.original.credits),
+    accessorKey: "days",
+    header: "Sold",
+    cell: ({ row }) => formatSold(row.original.days, row.original.credits),
   },
   {
     id: "owed",
@@ -65,9 +65,9 @@ const columns: ColumnDef<ResellerOverviewRow, unknown>[] = [
     cell: ({ row }) => (
       <span>
         {formatUsd(row.original.owed_open_cents / 100)}
-        {row.original.unpriced_open_credits > 0 && (
+        {row.original.unpriced_open_days + row.original.unpriced_open_credits > 0 && (
           <span className="ml-1 text-xs text-destructive">
-            + {formatNumber(row.original.unpriced_open_credits)} unpriced
+            + {formatSold(row.original.unpriced_open_days, row.original.unpriced_open_credits)} unpriced
           </span>
         )}
       </span>
@@ -95,7 +95,7 @@ export function ResellersView({ rows, days }: { rows: ResellerOverviewRow[]; day
         emptyMessage="Give an account the Reseller role from Access, and it will appear here."
       />
       <p className="mt-2 text-xs text-muted-foreground">
-        Customers and credits cover the last {days} days. Last sale and Owed now are not limited to
+        Customers and what was sold cover the last {days} days. Last sale and Owed now are not limited to
         the window: the first is the most recent sale ever, the second is every open settlement.
       </p>
 

@@ -27,7 +27,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { formatDate, formatUsd, titleCase } from "@/lib/format";
+import { formatDate, formatGrant, formatUsd, titleCase } from "@/lib/format";
 import {
   PAYMENT_STATUSES,
   type PaymentPatch,
@@ -104,7 +104,10 @@ function PaymentEditForm({ payment, onClose }: { payment: PaymentRow; onClose: (
               </div>
               <InfoRow label="Plan" value={titleCase(payment.plan)} />
               <InfoRow label="Amount" value={formatUsd(payment.price_amount)} />
-              <InfoRow label="Credits" value={String(payment.credits_amount)} />
+              <InfoRow
+                label="Grants"
+                value={formatGrant(payment.days_granted ?? payment.days_amount, payment.credits_amount)}
+              />
               <InfoRow label="Created" value={formatDate(payment.created_at)} />
               <InfoRow label="Updated" value={formatDate(payment.updated_at)} />
             </div>
@@ -161,12 +164,12 @@ function PaymentEditForm({ payment, onClose }: { payment: PaymentRow; onClose: (
                 )}
               />
               <FieldLabel htmlFor="credits_applied" className="font-normal">
-                Credits applied to user balance
+                Applied to the user&apos;s account
               </FieldLabel>
             </Field>
             <FieldDescription>
-              Toggling this does not itself credit or debit the user - it only records whether it
-              happened.
+              Toggling this does not itself grant or remove anything - it only records whether
+              backend applied the order.
             </FieldDescription>
           </FieldGroup>
           </fieldset>

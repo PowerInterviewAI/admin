@@ -176,11 +176,11 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
           hint="Lifetime, across paying accounts"
         />
         <StatCard
-          label="Credits Outstanding"
-          href={link("/users?role=user&min_credits=1&sort_by=credits")}
-          value={formatNumber(data.credits_outstanding)}
+          label="Active Subscribers"
+          href={link("/users?subscribed=yes&sort_by=subscription_expires_at")}
+          value={formatNumber(data.active_subscribers)}
           icon={Coins}
-          hint="Sum across all users"
+          hint={`${formatPercent(data.users.total > 0 ? data.active_subscribers / data.users.total : 0)} of all accounts`}
         />
       </div>
 

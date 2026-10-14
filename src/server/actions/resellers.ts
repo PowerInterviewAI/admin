@@ -8,7 +8,7 @@ import {
   saleResolutionSchema,
   settlementStatusUpdateSchema,
 } from "@/lib/schemas/reseller";
-import { issueApiKey, revokeApiKey, setCreditRate } from "@/server/auth/api-keys";
+import { issueApiKey, revokeApiKey, setSubscriptionRate } from "@/server/auth/api-keys";
 import { denyUnless } from "@/server/auth/guard";
 import { getCurrentAccount } from "@/server/auth/session";
 import { COLLECTIONS, currentTimestampMs, getCollection, toObjectId } from "@/server/db";
@@ -83,7 +83,7 @@ export async function revokeResellerApiKey(accountId: string): Promise<ActionRes
 }
 
 /**
- * Sets what a reseller owes per interview hour. Backend snapshots the rate onto each sale as it
+ * Sets what a reseller owes per 30 days of subscription. Backend snapshots the rate onto each sale as it
  * commits, so a change prices what they sell from now on and never re-prices what they already
  * sold - or a day already settled.
  */
@@ -96,9 +96,9 @@ export async function setResellerRate(accountId: string, input: unknown): Promis
     return failed(parsed.error.issues[0]?.message ?? "That is not a valid rate");
   }
 
-  const { usd_per_hour: usd } = parsed.data;
+  const { usd_per_month: usd } = parsed.data;
   try {
-    await setCreditRate(accountId, usd === null ? null : Math.round(usd * 100));
+    await setSubscriptionRate(accountId, usd === null ? null : Math.round(usd * 100));
   } catch (error) {
     return describe(error, "Could not save this rate");
   }
@@ -142,9 +142,9 @@ export async function setSettlementStatus(settlementId: string, input: unknown):
 }
 
 /**
- * Decides a grant backend parked as `unresolved`: its credit write may or may not have landed
+ * Decides a grant backend parked as `unresolved`: its extension may or may not have landed
  * before the request died, and there is no record to say which. The admin compares the customer's
- * balance with the sale and answers - `committed` bills the reseller for it, `void` drops it.
+ * subscription end date with the sale and answers - `committed` bills the reseller for it, `void` drops it.
  *
  * The filter on `state: "unresolved"` is what makes this safe to call twice or from two tabs: the
  * second call matches nothing and says so, rather than re-stamping a row already decided.

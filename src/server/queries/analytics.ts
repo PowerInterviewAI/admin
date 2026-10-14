@@ -12,7 +12,13 @@ import type {
 import { auditLogSchema } from "@/lib/schemas/audit-log";
 import type { InterviewKind } from "@/lib/schemas/interview";
 import type { AnalyticsRange } from "@/lib/search-params";
-import { COLLECTIONS, type CollectionName, type Document, getCollection } from "@/server/db";
+import {
+  COLLECTIONS,
+  type CollectionName,
+  type Document,
+  currentTimestampMs,
+  getCollection,
+} from "@/server/db";
 import { getLiveState, getRunningInterviews } from "@/server/queries/live";
 import { reportingTimeZone } from "@/server/queries/time";
 import { countBy, findMany } from "@/server/repository";
@@ -325,18 +331,6 @@ export async function getAnalyticsOverview(days: AnalyticsRange): Promise<Analyt
   // its root is still `partially_paid` and it now contributes nothing rather than the remainder it
   // used to. Bounded, historical, and in the honest direction for a revenue number.)
   const finishedOrders = { ...finished, root_payment_id: null };
-  // `credits_outstanding` reads next to `revenue.total_usd` on the same KPI row, which frames it
-  // as a liability against money received. Summed over every user it is not that: a 600-credit
-  // trial grant never had a payment behind it, and neither does the balance on a staff account.
-  // Excluding both roles is what keeps the figure answering the question its position on the
-  // dashboard implies.
-  //
-  // It excludes accounts, not adjustments - a balance an admin hand-set through the edit sheet on
-  // an ordinary `user` account is still counted here, because nothing on the user document says
-  // where its credits came from. Netting those out would mean replaying the `credits_adjusted`
-  // audit rows `updateUser` now writes, which is a different (and much heavier) query than this
-  // one; the trail those rows leave is what that question gets answered from for now.
-  const excludingTrialAndAdmin = { role: { $nin: ["trial_user", "admin"] } };
   const cutoff = windowCutoff(days);
 
   // Independent aggregations, all awaited together: the dashboard costs the slowest of them rather
@@ -353,7 +347,7 @@ export async function getAnalyticsOverview(days: AnalyticsRange): Promise<Analyt
     revenueByPlan,
     payingUsers,
     totalPayments,
-    creditsOutstanding,
+    activeSubscribers,
     loginsPerDay,
     auditSignupsPerDay,
     asrSessionsPerDay,
@@ -375,7 +369,9 @@ export async function getAnalyticsOverview(days: AnalyticsRange): Promise<Analyt
     sumBy(COLLECTIONS.payments, finishedOrders, "plan", "price_amount"),
     countDistinct(COLLECTIONS.payments, finished, "user_id"),
     getCollection(COLLECTIONS.payments).countDocuments({}),
-    sumField(COLLECTIONS.users, excludingTrialAndAdmin, "credits"),
+    getCollection(COLLECTIONS.users).countDocuments({
+      subscription_expires_at: { $gt: currentTimestampMs() },
+    }),
     dailyCounts(COLLECTIONS.auditLogs, { event_type: "login" }, "created_at", days),
     dailyCounts(COLLECTIONS.auditLogs, { event_type: "signup" }, "created_at", days),
     dailyCounts(COLLECTIONS.auditLogs, { event_type: "asr_start" }, "created_at", days),
@@ -431,7 +427,7 @@ export async function getAnalyticsOverview(days: AnalyticsRange): Promise<Analyt
       mock_in_window: total(interviewsPerDay.mock),
     },
     now,
-    credits_outstanding: Math.round(creditsOutstanding),
+    active_subscribers: activeSubscribers,
     activity: {
       logins_per_day: loginsPerDay,
       signups_per_day: auditSignupsPerDay,

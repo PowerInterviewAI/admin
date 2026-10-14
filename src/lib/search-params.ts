@@ -89,9 +89,13 @@ export const usersSearchParamsSchema = z.object({
   configured: yesNoSchema,
   /** Whether the account has a client app signed in right now. */
   online: yesNoSchema,
+  /** Whether the account's subscription is active right now. */
+  subscribed: yesNoSchema,
   // An allowlist, not a raw Mongo field name: sorting on a field the collection does not index
   // just produces a confusingly ordered result set.
-  sort_by: z.enum(["created_at", "updated_at", "credits", "username", "email"]).catch("created_at"),
+  sort_by: z
+    .enum(["created_at", "updated_at", "credits", "subscription_expires_at", "username", "email"])
+    .catch("created_at"),
   sort_dir: sortDirSchema.catch("desc"),
   page: pageSchema,
   per_page: perPageSchema(PAGE_SIZE),
@@ -113,7 +117,7 @@ export const paymentsSearchParamsSchema = z.object({
   max_amount: amountSchema,
   applied: yesNoSchema,
   sort_by: z
-    .enum(["created_at", "updated_at", "price_amount", "credits_amount", "status"])
+    .enum(["created_at", "updated_at", "price_amount", "status"])
     .catch("created_at"),
   sort_dir: sortDirSchema.catch("desc"),
   page: pageSchema,
@@ -204,7 +208,7 @@ export const resellerSalesSearchParamsSchema = z.object({
   state: z.enum(["unresolved"]).optional().catch(undefined),
   from: dateSchema,
   to: dateSchema,
-  sort_by: z.enum(["committed_at", "credits", "price_amount"]).catch("committed_at"),
+  sort_by: z.enum(["committed_at", "days", "price_amount"]).catch("committed_at"),
   sort_dir: sortDirSchema.catch("desc"),
   page: pageSchema,
   per_page: perPageSchema(PAGE_SIZE),
@@ -216,7 +220,7 @@ export const resellerSettlementsSearchParamsSchema = z.object({
   status: settlementStatusSchema.optional().catch(undefined),
   from: dateSchema,
   to: dateSchema,
-  sort_by: z.enum(["day", "amount_owed_cents", "credits"]).catch("day"),
+  sort_by: z.enum(["day", "amount_owed_cents", "days"]).catch("day"),
   sort_dir: sortDirSchema.catch("desc"),
   page: pageSchema,
   per_page: perPageSchema(PAGE_SIZE),

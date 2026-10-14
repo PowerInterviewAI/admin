@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 import { ListSummary } from "@/components/list-summary";
 import { PageHeader } from "@/components/page-header";
-import { formatNumber, formatRate, formatUsd } from "@/lib/format";
+import { formatNumber, formatRate, formatSold, formatUsd } from "@/lib/format";
 import {
   parseSearchParams,
   resellerPortalSearchParamsSchema,
@@ -63,7 +63,7 @@ export default async function ResellerPortalPage({ searchParams }: PageProps<"/r
       params.view === "settlements" ? listResellerSettlements(settlementParams, resellerId) : null,
     ]);
 
-  const rate = info[0]?.rate_cents_per_hour ?? null;
+  const rate = info[0]?.rate_cents_per_month ?? null;
 
   return (
     <div className="flex flex-col">
@@ -75,8 +75,8 @@ export default async function ResellerPortalPage({ searchParams }: PageProps<"/r
       <ListSummary
         stats={[
           { label: "Customers", value: formatNumber(customerCount) },
-          { label: "Credits sold", value: formatNumber(salesSummary.credits), hint: "All time" },
-          { label: "Sales", value: formatNumber(salesSummary.total), hint: "Creates and top-ups" },
+          { label: "Sold", value: formatSold(salesSummary.days, salesSummary.credits), hint: "All time" },
+          { label: "Sales", value: formatNumber(salesSummary.total), hint: "Creates and extensions" },
           { label: "Your rate", value: formatRate(rate), hint: "Set by Power Interview AI" },
           {
             label: "Open balance",
@@ -96,7 +96,7 @@ export default async function ResellerPortalPage({ searchParams }: PageProps<"/r
         counts={{
           customers: customerCount,
           sales: salesSummary.total,
-          settlements: settlementsSummary.days,
+          settlements: settlementsSummary.rows,
         }}
         customers={customers}
         sales={sales}

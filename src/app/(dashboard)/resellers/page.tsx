@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 import { ListSummary } from "@/components/list-summary";
 import { PageHeader } from "@/components/page-header";
-import { formatNumber, formatUsd } from "@/lib/format";
+import { formatNumber, formatSold, formatUsd } from "@/lib/format";
 import { dashboardSearchParamsSchema, parseSearchParams } from "@/lib/search-params";
 import { countUnresolvedSales, getResellerOverview } from "@/server/queries/resellers";
 
@@ -16,7 +16,9 @@ export default async function ResellersPage({ searchParams }: PageProps<"/resell
   const [rows, unresolved] = await Promise.all([getResellerOverview(days), countUnresolvedSales()]);
 
   const owed = rows.reduce((sum, row) => sum + row.owed_open_cents, 0);
-  const unpriced = rows.reduce((sum, row) => sum + row.unpriced_open_credits, 0);
+  const unpricedDays = rows.reduce((sum, row) => sum + row.unpriced_open_days, 0);
+  const unpricedCredits = rows.reduce((sum, row) => sum + row.unpriced_open_credits, 0);
+  const unpriced = unpricedDays + unpricedCredits;
 
   return (
     <div className="flex flex-col">
@@ -40,14 +42,20 @@ export default async function ResellersPage({ searchParams }: PageProps<"/resell
             hint: `Last ${days} days`,
           },
           {
-            label: "Credits sold",
-            value: formatNumber(rows.reduce((sum, row) => sum + row.credits, 0)),
+            label: "Sold",
+            value: formatSold(
+              rows.reduce((sum, row) => sum + row.days, 0),
+              rows.reduce((sum, row) => sum + row.credits, 0),
+            ),
             hint: `Last ${days} days`,
           },
           {
             label: "Owed now",
             value: formatUsd(owed / 100),
-            hint: unpriced > 0 ? `Plus ${formatNumber(unpriced)} unpriced credits` : "Open settlements",
+            hint:
+              unpriced > 0
+                ? `Plus ${formatSold(unpricedDays, unpricedCredits)} unpriced`
+                : "Open settlements",
             alert: unpriced > 0,
           },
           // Only when there is something to decide: a permanent zero would be one more number to
@@ -57,7 +65,7 @@ export default async function ResellersPage({ searchParams }: PageProps<"/resell
                 {
                   label: "Needs review",
                   value: formatNumber(unresolved),
-                  hint: "Top-ups backend could not confirm. See Sales history",
+                  hint: "Extensions backend could not confirm. See Sales history",
                   alert: true,
                 },
               ]

@@ -59,7 +59,7 @@ export function ResellerSheet({
 function ResellerDetail({ reseller }: { reseller: ResellerOverviewRow }) {
   const canManage = useCan("resellers:manage");
   const [rate, setRate] = useState(
-    reseller.rate_cents_per_hour === null ? "" : (reseller.rate_cents_per_hour / 100).toFixed(2),
+    reseller.rate_cents_per_month === null ? "" : (reseller.rate_cents_per_month / 100).toFixed(2),
   );
   const [isSaving, startSaving] = useTransition();
   const [isRevoking, startRevoking] = useTransition();
@@ -74,7 +74,7 @@ function ResellerDetail({ reseller }: { reseller: ResellerOverviewRow }) {
       return;
     }
     startSaving(async () => {
-      const result = await setResellerRate(reseller.id, { usd_per_hour: value });
+      const result = await setResellerRate(reseller.id, { usd_per_month: value });
       if (!result.ok) {
         toast.error(result.error);
         return;
@@ -111,7 +111,7 @@ function ResellerDetail({ reseller }: { reseller: ResellerOverviewRow }) {
         <form onSubmit={onSaveRate}>
           <fieldset disabled={!canManage || isSaving}>
             <Field>
-              <FieldLabel htmlFor="reseller-rate">Rate (USD per interview hour)</FieldLabel>
+              <FieldLabel htmlFor="reseller-rate">Rate (USD per 30 days of subscription)</FieldLabel>
               <div className="flex gap-2">
                 <Input
                   id="reseller-rate"
@@ -123,9 +123,10 @@ function ResellerDetail({ reseller }: { reseller: ResellerOverviewRow }) {
                 <Button type="submit">{isSaving ? "Saving..." : "Save"}</Button>
               </div>
               <FieldDescription>
-                Currently {formatRate(reseller.rate_cents_per_hour).toLowerCase()}. One hour is 600
-                credits. A change prices sales from now on; past sales keep the rate they were sold
-                at. Left empty, sales are recorded as unpriced and their days show no amount.
+                Currently {formatRate(reseller.rate_cents_per_month).toLowerCase()}. A year is
+                billed at 365 / 30 of this. A change prices sales from now on; past sales keep the
+                rate they were sold at. Left empty, sales are recorded as unpriced and their days show
+                no amount.
               </FieldDescription>
             </Field>
           </fieldset>

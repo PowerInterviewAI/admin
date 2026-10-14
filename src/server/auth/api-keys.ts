@@ -212,12 +212,15 @@ export async function readApiKeyStatus(accountId: string): Promise<ApiKeyStatus>
   };
 }
 
-/** What a reseller owes per interview hour, in integer cents. `null` leaves future sales unpriced. */
-export async function setCreditRate(accountId: string, centsPerHour: number | null): Promise<void> {
+/**
+ * What a reseller owes per 30 days of subscription, in integer cents. `null` leaves future sales
+ * unpriced. The per-hour credit rate it replaced is left on older accounts and is no longer read.
+ */
+export async function setSubscriptionRate(accountId: string, centsPerMonth: number | null): Promise<void> {
   try {
     const result = await getCollection(COLLECTIONS.adminAccounts).updateOne(
       { _id: toObjectId(accountId), role: "reseller" },
-      { $set: { credit_rate_cents_per_hour: centsPerHour, updated_at: currentTimestampMs() } },
+      { $set: { subscription_rate_cents_per_month: centsPerMonth, updated_at: currentTimestampMs() } },
     );
     if (result.matchedCount === 0) {
       throw new AppError("not_found", "That account is not a reseller");
@@ -233,7 +236,7 @@ export interface ResellerAccountInfo {
   email: string;
   status: string;
   key: ApiKeyStatus;
-  rate_cents_per_hour: number | null;
+  rate_cents_per_month: number | null;
 }
 
 /**
@@ -256,7 +259,7 @@ export async function listResellerAccounts(filter: { ids?: string[] } = {}): Pro
         status: 1,
         api_key_prefix: 1,
         api_key_created_at: 1,
-        credit_rate_cents_per_hour: 1,
+        subscription_rate_cents_per_month: 1,
       },
       sort: { name: 1, email: 1 },
     })
@@ -271,7 +274,9 @@ export async function listResellerAccounts(filter: { ids?: string[] } = {}): Pro
       prefix: typeof doc.api_key_prefix === "string" ? doc.api_key_prefix : null,
       created_at: typeof doc.api_key_created_at === "number" ? doc.api_key_created_at : null,
     },
-    rate_cents_per_hour:
-      typeof doc.credit_rate_cents_per_hour === "number" ? doc.credit_rate_cents_per_hour : null,
+    rate_cents_per_month:
+      typeof doc.subscription_rate_cents_per_month === "number"
+        ? doc.subscription_rate_cents_per_month
+        : null,
   }));
 }
