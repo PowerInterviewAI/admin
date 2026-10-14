@@ -203,10 +203,12 @@ function UserEditForm({ user, onClose }: { user: UserRow; onClose: () => void })
 
   const onSubmit = handleSubmit((values) => {
     startSaving(async () => {
-      // Free credits and the end date are sent only when they were edited here; see `userPatchSchema`.
-      const { credits, subscription_expires_at: expiresAt, ...rest } = values;
+      // Role, free credits and the end date are sent only when they were edited here; see
+      // `userPatchSchema`.
+      const { role, credits, subscription_expires_at: expiresAt, ...rest } = values;
       const patch = {
         ...rest,
+        ...(dirtyFields.role ? { role } : {}),
         ...(dirtyFields.credits ? { credits } : {}),
         ...(dirtyFields.subscription_expires_at ? { subscription_expires_at: expiresAt } : {}),
       };

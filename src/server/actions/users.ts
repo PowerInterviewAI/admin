@@ -53,12 +53,18 @@ export async function updateUser(userId: string, input: unknown): Promise<Action
     // `$set` replaces `interview_config` wholesale rather than merging into it, which is why the
     // edit sheet always submits all three inner fields.
     //
-    // `credits` and `subscription_expires_at` are written only when the sheet sent them, which it
-    // does only when the admin changed them. Backend moves both itself, so a save that changed a
-    // name must not put back the values the sheet happened to open with. Dropped rather than left
-    // `undefined`, which the driver would store as null.
-    const { credits: nextCredits, subscription_expires_at: nextExpiresAt, ...fields } = parsed.data;
+    // `role`, `credits` and `subscription_expires_at` are written only when the sheet sent them,
+    // which it does only when the admin changed them. Backend moves all three itself, so a save
+    // that changed a name must not put back the values the sheet happened to open with. Dropped
+    // rather than left `undefined`, which the driver would store as null.
+    const {
+      role: nextRole,
+      credits: nextCredits,
+      subscription_expires_at: nextExpiresAt,
+      ...fields
+    } = parsed.data;
     const patch: Record<string, unknown> = { ...fields };
+    if (nextRole !== undefined) patch.role = nextRole;
     if (nextCredits !== undefined) patch.credits = nextCredits;
     if (nextExpiresAt !== undefined) patch.subscription_expires_at = nextExpiresAt;
     await updateById(COLLECTIONS.users, userId, patch, "user");

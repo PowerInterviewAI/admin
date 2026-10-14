@@ -97,12 +97,13 @@ export type UserRow = z.infer<typeof userRowSchema>;
 export const userPatchSchema = z.object({
   username: z.string().min(1, "Username is required"),
   email: z.email("Enter a valid email"),
-  role: userRoleSchema,
   status: userStatusSchema,
-  // Both optional, and left out unless the admin changed them: backend moves each on its own (the
-  // meter spends free credits during an interview; a payment or reseller grant extends the
-  // subscription), so writing back the value the sheet opened with would undo whatever landed in
-  // between. `null` removes the subscription.
+  // These three are optional, and left out unless the admin changed them: backend moves each on
+  // its own (a payment or the free hour running out promotes a trial user; the meter spends free
+  // credits during an interview; a payment or reseller grant extends the subscription), so writing
+  // back the value the sheet opened with would undo whatever landed in between. `null` removes the
+  // subscription.
+  role: userRoleSchema.optional(),
   credits: z.number().int().min(0, "Credits cannot be negative").optional(),
   subscription_expires_at: z.number().int().nullable().optional(),
   interview_config: interviewConfigSchema,
