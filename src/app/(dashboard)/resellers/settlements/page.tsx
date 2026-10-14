@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 import { ListSummary } from "@/components/list-summary";
 import { PageHeader } from "@/components/page-header";
-import { formatNumber, formatUsd } from "@/lib/format";
+import { formatNumber, formatSold, formatUsd } from "@/lib/format";
 import {
   countActiveFilters,
   parseSearchParams,
@@ -47,7 +47,7 @@ export default async function ResellerSettlementsPage({
       <ListSummary
         stats={[
           { label: filtered ? "Matching days" : "Days", value: formatNumber(summary.rows) },
-          { label: "Subscription days sold", value: formatNumber(summary.days_sold) },
+          { label: "Sold", value: formatSold(summary.days_sold, summary.credits_sold) },
           {
             label: "Open",
             value: formatUsd(summary.open_cents / 100),

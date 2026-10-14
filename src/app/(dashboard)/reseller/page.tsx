@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 import { ListSummary } from "@/components/list-summary";
 import { PageHeader } from "@/components/page-header";
-import { formatNumber, formatRate, formatUsd } from "@/lib/format";
+import { formatNumber, formatRate, formatSold, formatUsd } from "@/lib/format";
 import {
   parseSearchParams,
   resellerPortalSearchParamsSchema,
@@ -75,7 +75,7 @@ export default async function ResellerPortalPage({ searchParams }: PageProps<"/r
       <ListSummary
         stats={[
           { label: "Customers", value: formatNumber(customerCount) },
-          { label: "Days sold", value: formatNumber(salesSummary.days), hint: "All time" },
+          { label: "Sold", value: formatSold(salesSummary.days, salesSummary.credits), hint: "All time" },
           { label: "Sales", value: formatNumber(salesSummary.total), hint: "Creates and extensions" },
           { label: "Your rate", value: formatRate(rate), hint: "Set by Power Interview AI" },
           {

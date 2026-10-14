@@ -42,8 +42,11 @@ export default async function ResellersPage({ searchParams }: PageProps<"/resell
             hint: `Last ${days} days`,
           },
           {
-            label: "Days sold",
-            value: formatNumber(rows.reduce((sum, row) => sum + row.days, 0)),
+            label: "Sold",
+            value: formatSold(
+              rows.reduce((sum, row) => sum + row.days, 0),
+              rows.reduce((sum, row) => sum + row.credits, 0),
+            ),
             hint: `Last ${days} days`,
           },
           {

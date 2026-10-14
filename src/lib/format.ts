@@ -37,7 +37,7 @@ export function formatDuration(ms: number): string {
 export function formatGrant(days: number | null | undefined, credits: number | null | undefined): string {
   if (days) return `${formatNumber(days)} day${days === 1 ? "" : "s"}`;
   if (credits) return `${formatNumber(credits)} credits`;
-  return "—";
+  return "-";
 }
 
 /**
@@ -48,7 +48,7 @@ export function formatSold(days: number, credits: number): string {
   const parts: string[] = [];
   if (days) parts.push(`${formatNumber(days)} day${days === 1 ? "" : "s"}`);
   if (credits) parts.push(`${formatNumber(credits)} credits`);
-  return parts.join(" + ") || "—";
+  return parts.join(" + ") || "-";
 }
 
 export function titleCase(value: string | null | undefined): string {

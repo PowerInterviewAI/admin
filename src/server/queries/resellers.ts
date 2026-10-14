@@ -219,6 +219,8 @@ export interface ResellerSettlementsSummary {
   rows: number;
   /** Subscription days sold across those rows. */
   days_sold: number;
+  /** Legacy credits sold across those rows, from days before subscriptions. */
+  credits_sold: number;
   open_cents: number;
   paid_cents: number;
   /** Rows whose amount is unknown because something that day was sold without a rate. */
@@ -236,11 +238,12 @@ export async function getResellerSettlementsSummary(
     group: {
       rows: { $sum: 1 },
       days_sold: { $sum: { $ifNull: ["$days", 0] } },
+      credits_sold: { $sum: { $ifNull: ["$credits", 0] } },
       open_cents: { $sum: { $cond: [{ $eq: ["$status", "open"] }, amount, 0] } },
       paid_cents: { $sum: { $cond: [{ $eq: ["$status", "paid"] }, amount, 0] } },
       unpriced_rows: countWhere({ $eq: [{ $ifNull: ["$amount_owed_cents", null] }, null] }),
     },
-    empty: { rows: 0, days_sold: 0, open_cents: 0, paid_cents: 0, unpriced_rows: 0 },
+    empty: { rows: 0, days_sold: 0, credits_sold: 0, open_cents: 0, paid_cents: 0, unpriced_rows: 0 },
   });
 }
 
@@ -267,13 +270,14 @@ export async function getResellerOverview(days: AnalyticsRange): Promise<Reselle
   const [accounts, sales, lastSales, open] = await Promise.all([
     listResellerAccounts(),
     getCollection(COLLECTIONS.resellerLedger)
-      .aggregate<{ _id: unknown; customers: number; days: number }>([
+      .aggregate<{ _id: unknown; customers: number; days: number; credits: number }>([
         { $match: { ...COMMITTED, committed_at: { $gte: cutoff } } },
         {
           $group: {
             _id: "$reseller_id",
             customers: countWhere({ $eq: ["$kind", "user_created"] }),
             days: { $sum: { $ifNull: ["$days", 0] } },
+            credits: { $sum: { $ifNull: ["$credits", 0] } },
           },
         },
       ])
@@ -309,6 +313,7 @@ export async function getResellerOverview(days: AnalyticsRange): Promise<Reselle
     ...account,
     customers: salesBy.get(account.id)?.customers ?? 0,
     days: salesBy.get(account.id)?.days ?? 0,
+    credits: salesBy.get(account.id)?.credits ?? 0,
     last_sale_at: lastSaleBy.get(account.id) ?? null,
     owed_open_cents: openBy.get(account.id)?.owed ?? 0,
     unpriced_open_days: openBy.get(account.id)?.unpriced_days ?? 0,

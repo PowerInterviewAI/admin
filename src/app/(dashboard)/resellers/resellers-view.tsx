@@ -56,8 +56,8 @@ const columns: ColumnDef<ResellerOverviewRow, unknown>[] = [
   },
   {
     accessorKey: "days",
-    header: "Days sold",
-    cell: ({ row }) => formatNumber(row.original.days),
+    header: "Sold",
+    cell: ({ row }) => formatSold(row.original.days, row.original.credits),
   },
   {
     id: "owed",
@@ -95,7 +95,7 @@ export function ResellersView({ rows, days }: { rows: ResellerOverviewRow[]; day
         emptyMessage="Give an account the Reseller role from Access, and it will appear here."
       />
       <p className="mt-2 text-xs text-muted-foreground">
-        Customers and days sold cover the last {days} days. Last sale and Owed now are not limited to
+        Customers and what was sold cover the last {days} days. Last sale and Owed now are not limited to
         the window: the first is the most recent sale ever, the second is every open settlement.
       </p>
 

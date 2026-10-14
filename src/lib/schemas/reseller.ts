@@ -135,6 +135,8 @@ export interface ResellerOverviewRow {
   /** Within the selected window. */
   customers: number;
   days: number;
+  /** Legacy credits sold in the window, from before subscriptions. */
+  credits: number;
   last_sale_at: number | null;
   /** Across every open settlement, regardless of the window: what is owed now. */
   owed_open_cents: number;
