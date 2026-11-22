@@ -97,7 +97,7 @@ function fromDateInput(value: string): number | null {
 
 /** In the same terms as the date field beside it: the last UTC day covered. */
 function describeSubscription(user: UserRow): string {
-  if (user.subscription_expires_at === null) return "Never subscribed.";
+  if (user.subscription_expires_at === null) return "No subscription.";
   const through = toDateInput(user.subscription_expires_at);
   return user.subscribed ? `Active through ${through} (UTC).` : `Ended after ${through} (UTC).`;
 }

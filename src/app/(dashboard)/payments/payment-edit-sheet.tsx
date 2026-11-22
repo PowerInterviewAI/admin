@@ -154,8 +154,9 @@ function PaymentEditForm({ payment, onClose }: { payment: PaymentRow; onClose: (
                 )}
               />
               <FieldDescription>
-                Refunds are manual: send the money back to the customer, clear or shorten their
-                subscription on the Users page, then set this status to Refunded.
+                {payment.root_payment_id
+                  ? "This is a follow-up payment. Record a refund on the original order, which is what the customer and revenue read."
+                  : "Refunds are manual: send the money back to the customer, end or shorten their subscription on the Users page, then set this status to Refunded."}
               </FieldDescription>
             </Field>
 

@@ -27,9 +27,9 @@ const KNOWN_EVENT_TYPES = [
   "payment_error",
   "credits_applied",
   "credits_consumed",
-  // The two later movements on the same balance, neither a purchase nor a spend: a refund
-  // clawing a grant back, and an admin dashboard edit. Added together with backend's enum in the
-  // same change - see the note on `auditEventTypeSchema` below for why that pairing matters.
+  // The two later movements on the same balance, neither a purchase nor a spend: an automatic
+  // refund on older rows (refunds are manual now), and an admin dashboard edit. Declared with
+  // backend's enum - see the note on `auditEventTypeSchema` below for why that pairing matters.
   "credits_reversed",
   "credits_adjusted",
   "asr_start",
@@ -83,7 +83,7 @@ const PAYMENT_EVENTS = [
   // spent. Grouped with payments rather than under `auth`, because the question an admin opens
   // this tab to answer - where did this account's credits go - is answered by the two together.
   "credits_consumed",
-  // The other two movements on the same balance: a refund reversing a grant, and an admin
+  // The other two movements on the same balance: an older automatic refund, and an admin
   // dashboard edit. Both belong on the same "where did this account's credits go" question.
   "credits_reversed",
   "credits_adjusted",

@@ -67,6 +67,8 @@ export async function updateUser(userId: string, input: unknown): Promise<Action
     if (nextRole !== undefined) patch.role = nextRole;
     if (nextCredits !== undefined) patch.credits = nextCredits;
     if (nextExpiresAt !== undefined) patch.subscription_expires_at = nextExpiresAt;
+    // The plan names the pass being held, so a later hand-set date must not bring it back.
+    if (nextExpiresAt === null) patch.subscription_plan = null;
     await updateById(COLLECTIONS.users, userId, patch, "user");
 
     if (previous && nextCredits !== undefined && previous.credits !== nextCredits) {
