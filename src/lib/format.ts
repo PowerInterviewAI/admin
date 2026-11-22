@@ -51,6 +51,16 @@ export function formatSold(days: number, credits: number): string {
   return parts.join(" + ") || "-";
 }
 
+/** What an order bought: calendar months for a pass, otherwise its days or legacy credits. */
+export function formatPurchase(
+  months: number,
+  days: number | null | undefined,
+  credits: number | null | undefined,
+): string {
+  if (months) return `${formatNumber(months)} month${months === 1 ? "" : "s"}`;
+  return formatGrant(days, credits);
+}
+
 /** The plan id `yearly` is sold as Annual. */
 export function planLabel(plan: string | null | undefined): string {
   return plan === "yearly" ? "Annual" : titleCase(plan);

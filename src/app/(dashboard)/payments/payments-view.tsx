@@ -17,7 +17,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { UserCell } from "@/components/user-cell";
 import { useListParams } from "@/hooks/use-list-params";
-import { formatDate, formatGrant, formatUsd, planLabel, titleCase } from "@/lib/format";
+import { formatDate, formatPurchase, formatUsd, planLabel, titleCase } from "@/lib/format";
 import { PAYMENTS_TABS, type ListTabCounts } from "@/lib/list-tabs";
 import type { Page } from "@/lib/schemas/common";
 import {
@@ -87,7 +87,11 @@ const columns: ColumnDef<PaymentRow, unknown>[] = [
     id: "grant",
     header: "Grants",
     cell: ({ row }) =>
-      formatGrant(row.original.days_granted ?? row.original.days_amount, row.original.credits_amount),
+      formatPurchase(
+        row.original.months_amount,
+        row.original.days_granted ?? row.original.days_amount,
+        row.original.credits_amount,
+      ),
   },
   {
     accessorKey: "credits_applied",

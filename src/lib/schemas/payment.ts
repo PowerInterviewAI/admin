@@ -74,6 +74,8 @@ export const paymentSchema = timestampsSchema.extend({
   credits_amount: z.number().int().default(0),
   /** Days of subscription a pass buys; 0 on a credit pack. */
   days_amount: z.number().int().default(0),
+  /** Calendar months a pass buys; 0 on an order priced in days or credits. */
+  months_amount: z.number().int().default(0),
   credits_applied: z.boolean().default(false),
   /**
    * What the order actually granted once applied, overpay bonus included. Every order backend

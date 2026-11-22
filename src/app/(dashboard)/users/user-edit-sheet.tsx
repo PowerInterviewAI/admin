@@ -61,7 +61,16 @@ import { deleteUser, updateUser } from "@/server/actions/users";
 
 import { SetPasswordDialog } from "./set-password-dialog";
 
-const DAY_MS = 24 * 60 * 60 * 1000;
+/** Calendar months in UTC, as backend grants a pass: a day the target month lacks lands on its last. */
+function addCalendarMonths(ms: number, months: number): number {
+  const date = new Date(ms);
+  const day = date.getUTCDate();
+  date.setUTCDate(1);
+  date.setUTCMonth(date.getUTCMonth() + months);
+  const lastDay = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0)).getUTCDate();
+  date.setUTCDate(Math.min(day, lastDay));
+  return date.getTime();
+}
 
 /** The last UTC day an expiry covers: it is exclusive, so one at midnight ends the day before. */
 function toDateInput(ms: number | null): string {
@@ -101,7 +110,8 @@ function SubscriptionInput({
   onChange: (value: number | null) => void;
 }) {
   // Read in the handlers, not during render: the clock is not something a render may depend on.
-  const extend = (days: number) => onChange(Math.max(Date.now(), value ?? 0) + days * DAY_MS);
+  const extend = (months: number) =>
+    onChange(addCalendarMonths(Math.max(Date.now(), value ?? 0), months));
 
   // What the field shows is held here, because a date input passes through states that are not a
   // date (a cleared segment, a half-typed year). Only a complete date reaches the form; removing
@@ -126,14 +136,14 @@ function SubscriptionInput({
         }}
       />
       <div className="flex flex-wrap gap-2">
-        <Button type="button" variant="outline" size="sm" onClick={() => extend(30)}>
-          +30 days
+        <Button type="button" variant="outline" size="sm" onClick={() => extend(1)}>
+          +1 month
         </Button>
-        <Button type="button" variant="outline" size="sm" onClick={() => extend(90)}>
-          +90 days
+        <Button type="button" variant="outline" size="sm" onClick={() => extend(3)}>
+          +3 months
         </Button>
-        <Button type="button" variant="outline" size="sm" onClick={() => extend(365)}>
-          +365 days
+        <Button type="button" variant="outline" size="sm" onClick={() => extend(12)}>
+          +1 year
         </Button>
         <Button type="button" variant="outline" size="sm" onClick={() => onChange(Date.now())}>
           End now
