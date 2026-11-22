@@ -129,6 +129,9 @@ function SubscriptionInput({
         <Button type="button" variant="outline" size="sm" onClick={() => extend(30)}>
           +30 days
         </Button>
+        <Button type="button" variant="outline" size="sm" onClick={() => extend(90)}>
+          +90 days
+        </Button>
         <Button type="button" variant="outline" size="sm" onClick={() => extend(365)}>
           +365 days
         </Button>
