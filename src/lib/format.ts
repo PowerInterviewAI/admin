@@ -6,6 +6,15 @@ export function formatDate(ms: number | null | undefined): string {
   });
 }
 
+/**
+ * A moment in UTC, as `2026-12-22 10:30 UTC`. For subscription end dates: backend grants passes as
+ * UTC calendar months and the edit sheet picks dates in UTC, so the list must not show them in the
+ * browser's zone, where an end near midnight lands on a different day than the sheet says.
+ */
+export function formatUtc(ms: number): string {
+  return `${new Date(ms).toISOString().slice(0, 16).replace("T", " ")} UTC`;
+}
+
 export function formatUsd(amount: number): string {
   return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" }).format(amount);
 }

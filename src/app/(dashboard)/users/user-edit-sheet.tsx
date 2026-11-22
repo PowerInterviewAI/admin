@@ -48,7 +48,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
-import { formatDate, formatNumber, titleCase } from "@/lib/format";
+import { formatDate, formatNumber, formatUtc, titleCase } from "@/lib/format";
 import {
   EMPTY_INTERVIEW_CONFIG,
   USER_ROLES,
@@ -98,7 +98,7 @@ function fromDateInput(value: string): number | null {
 /** The exact moment it ends, since a pass bought mid-day ends mid-day. */
 function describeSubscription(user: UserRow): string {
   if (user.subscription_expires_at === null) return "No subscription.";
-  const at = `${new Date(user.subscription_expires_at).toISOString().slice(0, 16).replace("T", " ")} UTC`;
+  const at = formatUtc(user.subscription_expires_at);
   return user.subscribed ? `Active until ${at}.` : `Ended at ${at}.`;
 }
 
