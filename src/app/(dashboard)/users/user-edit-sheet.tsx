@@ -349,7 +349,7 @@ function UserEditForm({ user, onClose }: { user: UserRow; onClose: () => void })
               />
               <FieldDescription>
                 {describeSubscription(user)} Subscribers get unlimited interviews on the paid model.
-                Adding days extends from the current end date while it is still ahead.
+                Adding time extends from the current end date while it is still ahead.
               </FieldDescription>
             </Field>
 
