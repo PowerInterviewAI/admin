@@ -153,6 +153,10 @@ function PaymentEditForm({ payment, onClose }: { payment: PaymentRow; onClose: (
                   </Select>
                 )}
               />
+              <FieldDescription>
+                Refunds are manual: send the money back to the customer, clear or shorten their
+                subscription on the Users page, then set this status to Refunded.
+              </FieldDescription>
             </Field>
 
             <Field orientation="horizontal">
