@@ -105,7 +105,7 @@ export const paymentsSearchParamsSchema = z.object({
   status: paymentStatusSchema.optional().catch(undefined),
   /**
    * The quick-filter tabs' dimension. Kept separate from `status` rather than overloading it: three
-   * of the four buckets are several statuses, and one of them is not a status at all.
+   * of the five buckets are several statuses, and two of them are not statuses at all.
    */
   bucket: paymentBucketSchema.optional().catch(undefined),
   plan: paymentPlanSchema.optional().catch(undefined),
