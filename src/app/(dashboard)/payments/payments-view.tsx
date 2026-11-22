@@ -72,9 +72,12 @@ const columns: ColumnDef<PaymentRow, unknown>[] = [
     header: "Status",
     enableSorting: true,
     cell: ({ row }) => (
-      <Badge variant={STATUS_BADGE_VARIANT[row.original.status]}>
-        {titleCase(row.original.status)}
-      </Badge>
+      <div className="flex flex-wrap items-center gap-1">
+        <Badge variant={STATUS_BADGE_VARIANT[row.original.status]}>
+          {titleCase(row.original.status)}
+        </Badge>
+        {row.original.review_reason && <Badge variant="destructive">Needs review</Badge>}
+      </div>
     ),
   },
   {

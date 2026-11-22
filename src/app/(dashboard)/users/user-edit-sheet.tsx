@@ -95,11 +95,11 @@ function fromDateInput(value: string): number | null {
   return Number.isFinite(ms) ? ms : null;
 }
 
-/** In the same terms as the date field beside it: the last UTC day covered. */
+/** The exact moment it ends, since a pass bought mid-day ends mid-day. */
 function describeSubscription(user: UserRow): string {
   if (user.subscription_expires_at === null) return "No subscription.";
-  const through = toDateInput(user.subscription_expires_at);
-  return user.subscribed ? `Active through ${through} (UTC).` : `Ended after ${through} (UTC).`;
+  const at = `${new Date(user.subscription_expires_at).toISOString().slice(0, 16).replace("T", " ")} UTC`;
+  return user.subscribed ? `Active until ${at}.` : `Ended at ${at}.`;
 }
 
 function SubscriptionInput({
@@ -195,6 +195,8 @@ function UserEditForm({ user, onClose }: { user: UserRow; onClose: () => void })
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [isSaving, startSaving] = useTransition();
   const [isDeleting, startDeleting] = useTransition();
+  // Held from mount: a refresh can replace the `user` prop while this form keeps its values.
+  const [openedExpiresAt] = useState(user.subscription_expires_at);
 
   const {
     register,
@@ -225,7 +227,7 @@ function UserEditForm({ user, onClose }: { user: UserRow; onClose: () => void })
         ...(dirtyFields.credits ? { credits } : {}),
         ...(dirtyFields.subscription_expires_at ? { subscription_expires_at: expiresAt } : {}),
       };
-      const result = await updateUser(user._id, patch);
+      const result = await updateUser(user._id, patch, openedExpiresAt);
       if (!result.ok) {
         toast.error(result.error);
         return;
@@ -348,8 +350,9 @@ function UserEditForm({ user, onClose }: { user: UserRow; onClose: () => void })
                 )}
               />
               <FieldDescription>
-                {describeSubscription(user)} Subscribers get unlimited interviews on the paid model.
-                Adding time extends from the current end date while it is still ahead.
+                {describeSubscription(user)} A picked date runs to the end of that day, UTC.
+                Subscribers get unlimited interviews on the paid model. Adding time extends from the
+                current end date while it is still ahead.
               </FieldDescription>
             </Field>
 

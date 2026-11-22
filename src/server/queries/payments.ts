@@ -59,6 +59,7 @@ function bucketClause(bucket: PaymentBucket): Document {
       root_payment_id: null,
     };
   }
+  if (bucket === "needs_review") return { review_reason: { $type: "string" } };
   return { status: { $in: PAYMENT_STATUS_BUCKETS[bucket] } };
 }
 

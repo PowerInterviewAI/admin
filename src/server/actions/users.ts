@@ -8,7 +8,14 @@ import { type User, userPasswordSchema, userPatchSchema, userSchema } from "@/li
 import { denyUnless } from "@/server/auth/guard";
 import { COLLECTIONS, toObjectId } from "@/server/db";
 import { AppError, notFound } from "@/server/errors";
-import { deleteById, deleteMany, findOne, insertDocument, updateById } from "@/server/repository";
+import {
+  deleteById,
+  deleteMany,
+  findOne,
+  insertDocument,
+  updateById,
+  updateByIdIf,
+} from "@/server/repository";
 import { hashPassword } from "@/server/password";
 
 /**
@@ -38,7 +45,17 @@ async function readPrevious(userId: string): Promise<AuditedFields | null> {
   }
 }
 
-export async function updateUser(userId: string, input: unknown): Promise<ActionResult> {
+const expectedExpirySchema = z.number().int().nullable().optional();
+
+/**
+ * `expectedExpiresAt` is the end date the sheet opened with. A new end date is written only if
+ * that is still the stored one, or a pass that landed meanwhile would be erased.
+ */
+export async function updateUser(
+  userId: string,
+  input: unknown,
+  expectedExpiresAt?: unknown,
+): Promise<ActionResult> {
   const denied = await denyUnless("users:write");
   if (denied) return denied;
 
@@ -46,6 +63,8 @@ export async function updateUser(userId: string, input: unknown): Promise<Action
   if (!parsed.success) {
     return failed(parsed.error.issues[0]?.message ?? "The submitted values are not valid");
   }
+  const expected = expectedExpirySchema.safeParse(expectedExpiresAt);
+  if (!expected.success) return failed("The submitted values are not valid");
 
   try {
     const previous = await readPrevious(userId);
@@ -69,7 +88,23 @@ export async function updateUser(userId: string, input: unknown): Promise<Action
     if (nextExpiresAt !== undefined) patch.subscription_expires_at = nextExpiresAt;
     // The plan names the pass being held, so a later hand-set date must not bring it back.
     if (nextExpiresAt === null) patch.subscription_plan = null;
-    await updateById(COLLECTIONS.users, userId, patch, "user");
+    if (nextExpiresAt !== undefined && expected.data !== undefined) {
+      const written = await updateByIdIf(
+        COLLECTIONS.users,
+        userId,
+        { subscription_expires_at: expected.data },
+        patch,
+        "user",
+      );
+      if (!written) {
+        if (!previous) throw notFound("user");
+        return failed(
+          "This subscription changed while the sheet was open. Nothing was saved: reopen the user and try again.",
+        );
+      }
+    } else {
+      await updateById(COLLECTIONS.users, userId, patch, "user");
+    }
 
     if (previous && nextCredits !== undefined && previous.credits !== nextCredits) {
       await recordCreditsAdjusted(userId, parsed.data.email, previous.credits, nextCredits);

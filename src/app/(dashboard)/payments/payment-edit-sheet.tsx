@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
 
@@ -66,15 +66,30 @@ function PaymentEditForm({ payment, onClose }: { payment: PaymentRow; onClose: (
   const canWrite = useCan("payments:write");
   const canSeeAuditLog = useCanAccess("/audit-logs");
   const [isSaving, startSaving] = useTransition();
+  // Held from mount: a refresh can replace the `payment` prop while this form keeps its values.
+  const [openedReason] = useState(payment.review_reason);
 
   const { control, handleSubmit, formState } = useForm<PaymentPatch>({
     resolver: zodResolver(paymentPatchSchema),
-    defaultValues: { status: payment.status, credits_applied: payment.credits_applied },
+    defaultValues: {
+      status: payment.status,
+      credits_applied: payment.credits_applied,
+      review_resolved: false,
+    },
   });
 
   const onSubmit = handleSubmit((values) => {
     startSaving(async () => {
-      const result = await updatePayment(payment._id, values);
+      const result = await updatePayment(
+        payment._id,
+        {
+          ...(formState.dirtyFields.status ? { status: values.status } : {}),
+          ...(formState.dirtyFields.credits_applied
+            ? { credits_applied: values.credits_applied }
+            : {}),
+        },
+        values.review_resolved ? openedReason : null,
+      );
       if (!result.ok) {
         toast.error(result.error);
         return;
@@ -130,6 +145,29 @@ function PaymentEditForm({ payment, onClose }: { payment: PaymentRow; onClose: (
                 {canSeeAuditLog && (
                   <RelatedLink href={`/audit-logs?user_id=${payment.user_id}`} label="Audit log" />
                 )}
+              </div>
+            )}
+
+            {openedReason && (
+              <div className="flex flex-col gap-2 rounded-md border border-destructive/40 p-3">
+                <p className="text-sm font-medium">Needs review</p>
+                <p className="text-sm text-muted-foreground">{openedReason}</p>
+                <Field orientation="horizontal">
+                  <Controller
+                    control={control}
+                    name="review_resolved"
+                    render={({ field }) => (
+                      <Checkbox
+                        id="review_resolved"
+                        checked={field.value}
+                        onCheckedChange={(checked) => field.onChange(checked === true)}
+                      />
+                    )}
+                  />
+                  <FieldLabel htmlFor="review_resolved" className="font-normal">
+                    Resolved
+                  </FieldLabel>
+                </Field>
               </div>
             )}
 

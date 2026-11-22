@@ -35,8 +35,15 @@ export const PAYMENT_STATUSES = paymentStatusSchema.options;
  * finished *order* whose credits were never granted, which is a job rather than a state. An order
  * rather than a payment document, because a follow-up leg is credited against its root and never
  * carries `credits_applied` itself; see `bucketClause` in `server/queries/payments.ts`.
+ * `needs_review` is the same kind of job: an order backend flagged for a person to resolve.
  */
-export const paymentBucketSchema = z.enum(["in_flight", "finished", "failed", "unapplied"]);
+export const paymentBucketSchema = z.enum([
+  "in_flight",
+  "finished",
+  "failed",
+  "unapplied",
+  "needs_review",
+]);
 export type PaymentBucket = z.infer<typeof paymentBucketSchema>;
 
 const FINISHED_STATUSES = ["finished"] as const;
@@ -48,7 +55,7 @@ const FAILED_STATUSES = ["failed", "refunded", "expired"] as const;
  * than a terminal one, and the cost of guessing wrong is a payment reported as money that failed.
  */
 export const PAYMENT_STATUS_BUCKETS: Record<
-  Exclude<PaymentBucket, "unapplied">,
+  Exclude<PaymentBucket, "unapplied" | "needs_review">,
   readonly PaymentStatus[]
 > = {
   in_flight: PAYMENT_STATUSES.filter(
@@ -82,6 +89,8 @@ export const paymentSchema = timestampsSchema.extend({
   days_granted: z.number().int().nullish().default(null),
   purchase_id: z.string().nullish().default(null),
   root_payment_id: objectIdSchema.nullish().default(null),
+  /** Why backend wants a person to look at this order; null once resolved. */
+  review_reason: z.string().nullish().default(null),
 });
 
 export type Payment = z.infer<typeof paymentSchema>;
@@ -96,6 +105,16 @@ export type PaymentRow = z.infer<typeof paymentRowSchema>;
 export const paymentPatchSchema = z.object({
   status: paymentStatusSchema,
   credits_applied: z.boolean(),
+  review_resolved: z.boolean(),
 });
 
 export type PaymentPatch = z.infer<typeof paymentPatchSchema>;
+
+/**
+ * What the sheet sends: only what the admin changed. Backend moves both fields itself, so writing
+ * back the values the sheet opened with would undo a webhook that landed in between.
+ */
+export const paymentSaveSchema = z.object({
+  status: paymentStatusSchema.optional(),
+  credits_applied: z.boolean().optional(),
+});
