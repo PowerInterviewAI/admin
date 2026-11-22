@@ -247,7 +247,7 @@ export async function deleteAdminAccount(accountId: string): Promise<ActionResul
 
 /* -------------------------------------------------------------------------------------------- */
 /* Your own account. These are the account page, and they are guarded by `denySelfService`      */
-/* rather than a permission: they act only on the caller, so a guest changing their */
+/* rather than a permission: they act only on the caller, so a guest changing their              */
 /* own password is not a write to anything they are forbidden from - it is the one thing every   */
 /* signed-in account must be able to do regardless of role.                                       */
 /* -------------------------------------------------------------------------------------------- */
