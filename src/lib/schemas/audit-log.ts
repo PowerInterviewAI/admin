@@ -34,9 +34,7 @@ const KNOWN_EVENT_TYPES = [
   "credits_adjusted",
   "asr_start",
   "asr_stop",
-  // A reseller's API key being issued (a rotation replaces one) or ended. Written by this app, which
-  // owns keys, and declared in backend's enum too. They fall under `auth` ("accounts") by the
-  // complement rule below: a key is part of an account's access, and nothing here is a payment.
+  // From the removed reseller feature. Kept so rows already in the log still parse.
   "reseller_key_issued",
   "reseller_key_revoked",
 ] as const;

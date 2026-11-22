@@ -1,10 +1,10 @@
 # SPEC.md
 
-Project specification for the Power Interview AI admin dashboard - a production-quality admin panel for analytics, user/payment/session management, audit log review, and bulk email marketing, behind an email/password sign-in with role-based access control (admin, guest, reseller).
+Project specification for the Power Interview AI admin dashboard - a production-quality admin panel for analytics, user/payment/session management, audit log review, and bulk email marketing, behind an email/password sign-in with role-based access control (admin, guest).
 
 ## Overview
 
-`admin` is a single Next.js application that reads and writes the same MongoDB database `../backend` uses for the Power Interview AI product. It does not call backend's API - it talks to MongoDB directly, since backend exposes no admin-facing endpoints today. It is meant to run on a single machine, opened in a browser. Access is gated by its own email/password sign-in, kept in a separate database from the product's own users: a built-in admin comes from the environment, everyone else signs up and waits for an admin to approve them, and an approved account is an `admin` (everything), a `guest` (reads the dashboard, users, interviews and payments - sessions, audit logs, email, resellers and the access panel are admins only), or a `reseller` (a guest's reads plus their own reseller portal). Roles map to permissions in `src/lib/rbac.ts`, and every check asks for a permission.
+`admin` is a single Next.js application that reads and writes the same MongoDB database `../backend` uses for the Power Interview AI product. It does not call backend's API - it talks to MongoDB directly, since backend exposes no admin-facing endpoints today. It is meant to run on a single machine, opened in a browser. Access is gated by its own email/password sign-in, kept in a separate database from the product's own users: a built-in admin comes from the environment, everyone else signs up and waits for an admin to approve them, and an approved account is an `admin` (everything) or a `guest` (reads the dashboard's aggregate figures only). Roles map to permissions in `src/lib/rbac.ts`, and every check asks for a permission.
 
 It also sends mail. `/emails` replaces `../../power-interview-email`, a one-shot Python CLI whose campaign lived in a gitignored `content.py` and whose only record of a send was a log file.
 
@@ -33,24 +33,17 @@ Five MongoDB collections owned by `../backend`, read/written here without any sc
 | Collection    | Key fields                                                                                          | Notes |
 | ------------- | ----------------------------------------------------------------------------------------------------- | ----- |
 | `users`       | `username`, `email`, `role` (`user`/`trial_user`/`admin`), `status` (`active`/`inactive`), `credits` (free-tier time left), `subscription_expires_at`, `subscription_plan`, `interview_config` (`full_name`, `profile_data`, `context`) | `password_hash` has no field in the schema, so it is stripped on read and never reaches a client. It is write-only here: the set-password action is the one thing that touches it |
-| `payments`    | `user_id`, `plan` (`monthly`/`quarterly`/`yearly`, and the legacy `starter`/`pro`/`enterprise`), `status` (10-value enum), `price_amount`, `months_amount`, `days_amount`, `days_granted`, `credits_amount`, `credits_applied` | Status/`credits_applied` are manually editable here - editing does **not** call NOWPayments or replay webhook logic |
+| `payments`    | `user_id`, `plan` (`monthly`/`quarterly`/`yearly`, and the legacy `starter`/`pro`/`enterprise`), `status` (10-value enum), `price_amount`, `months_amount`, `days_granted`, `credits_amount`, `credits_applied` | Status/`credits_applied` are manually editable here - editing does **not** call NOWPayments or replay webhook logic |
 | `sessions`    | `token`, `user_id`, `device_info` (`ip_address`, `user_agent`)                                        | Deleting one force-logs-out that device. `token` has no field in the schema - it is a live bearer credential |
 | `audit_logs`  | `event_type` (25-value enum, plus an `unknown` fallback this app adds for a value it does not yet recognize), `user_id`, `email`, `status`, `metadata` (free-form dict) | Read-only in the UI. The entries this app writes are `password_change` (its own password overwrites), `credits_adjusted` (its own credit and subscription edits; a subscription edit carries `credits_amount: 0` and the old and new `subscription_expires_at`), and `reseller_key_issued` / `reseller_key_revoked` (a reseller's API key being created, rotated or ended: who did it, by which route, and the key's display prefix, never the key) |
 | `global_state`| `active_sessions`, `booted_at`                                                                         | Only `booted_at` is read, to drop ASR starts from before the last backend restart out of "running now". `active_sessions` is **not used anywhere in this app** - it's a simulated `random.gauss(260, 10)` value in backend, not real data |
 | `email_campaigns` | `subject`, `template`, `body`, `audience`, `status`, `total`, `sent_count`, `failed_count`, `recipients[]` | **Owned by this app**, not backend. Written by the email marketing page; nothing else reads it. `recipients[]` is the per-address delivery log |
 
-Two more collections belong to the reseller feature and live in the product database. **Backend writes both** (`app/models/reseller.py` is the authority; `src/lib/schemas/reseller.ts` is the copy kept in step):
-
-| Collection              | Key fields | Notes |
-| ----------------------- | ---------- | ----- |
-| `reseller_ledger`       | `reseller_id`, `user_id`, `customer_email`, `kind` (`user_created`/`subscription_granted`, and the legacy `credits_granted`), `days` with `rate_cents_per_month` (snapshot), or on legacy rows `credits` with `rate_cents_per_hour`, `reference`, `price_amount`, `price_currency`, `note`, `state` (`pending`/`committed`/`unresolved`/`void`), `created_at`, `committed_at` | One row per sale, reserved `pending` before the customer or days exist and `committed` after. Only `committed` rows are sales; `unresolved` is the review queue. `users.reseller_id` marks which customers a reseller created |
-| `reseller_settlements`  | `reseller_id`, `day` (UTC date), `days`, `credits` (legacy), `users_created`, `amount_owed_cents` (null when unpriced), `unpriced_days`, `unpriced_credits`, `status` (`open`/`paid`), `paid_at`, `paid_by` | One row per reseller per complete UTC day, insert-only. This app writes only `status` and `paid_*` |
-
 Two more collections are owned by this app and live in a **separate database** (`ADMIN_MONGO_DB`, default `pia_admin`), because they describe operators of the dashboard rather than customers of the product:
 
 | Collection        | Key fields                                                        | Notes |
 | ----------------- | ----------------------------------------------------------------- | ----- |
-| `admin_accounts`  | `email` (unique), `name`, `role` (`admin`/`guest`/`reseller`), `status` (`pending`/`approved`/`rejected`), `is_bootstrap`, `last_login_at`, and for a reseller `api_key_hash` (SHA-256), `api_key_prefix`, `api_key_created_at`, `subscription_rate_cents_per_month` | Who can sign in to the dashboard. Unrelated to `users` - the two never join, and a product user with `role: "admin"` grants nothing here. `status` gates signing in at all; `role` gates writing once in. `is_bootstrap` marks the account named by `ADMIN_EMAIL`. `password_hash` has no field in the schema, same rule as `users` |
+| `admin_accounts`  | `email` (unique), `name`, `role` (`admin`/`guest`), `status` (`pending`/`approved`/`rejected`), `is_bootstrap`, `last_login_at` | Who can sign in to the dashboard. Unrelated to `users` - the two never join, and a product user with `role: "admin"` grants nothing here. `status` gates signing in at all; `role` gates writing once in. `is_bootstrap` marks the account named by `ADMIN_EMAIL`. `password_hash` has no field in the schema, same rule as `users` |
 | `admin_sessions`  | `account_id`, `token_hash` (unique), `expires_at`                  | One row per live sign-in. Stores the SHA-256 of the cookie's token, never the token itself |
 
 ## Features
@@ -62,7 +55,7 @@ All computed server-side from real documents (`src/server/queries/analytics.ts`)
 - Right now: apps online (backend login sessions refreshed in the last 30s; a signed-in client pings every 5s) with the distinct users behind them, and interviews running, live against mock (an ASR socket with a start and no stop since backend's `booted_at`, for a user with an app online, grouped by user and `client_session_id`)
 - Interviews in the window, live and mock: one per user and `client_session_id` on `asr_start` rows, however many sockets it opened, with its kind taken from its earliest start
 - KPI cards: total users (+ new in window), lifetime revenue from `finished` orders (+ revenue in window) - root payments only, since a partially-paid order is completed by a follow-up leg priced at the remainder and both documents end up `finished`, so counting every one of them would bill the remainder twice, active subscribers (accounts whose `subscription_expires_at` is still ahead), active users (distinct accounts with any audit event in the window), paying users (+ conversion), revenue per paying user, and payment success rate
-- Every stat card links to the list behind its number, already filtered: apps online to `/users?online=yes`, interviews running to `/interviews?state=running`, live and mock interviews to `/interviews` by kind from the window's first day (so the list total equals the card), paying users and revenue to finished payments, active subscribers to `/users?subscribed=yes`. Active users links to the audit log from the window's first day for admins only, and a card is only a link for a role that may open the list behind it (for a guest or a reseller, every card is just a number)
+- Every stat card links to the list behind its number, already filtered: apps online to `/users?online=yes`, interviews running to `/interviews?state=running`, live and mock interviews to `/interviews` by kind from the window's first day (so the list total equals the card), paying users and revenue to finished payments, active subscribers to `/users?subscribed=yes`. Active users links to the audit log from the window's first day for admins only, and a card is only a link for a role that may open the list behind it (for a guest, every card is just a number)
 - Trends over the window: signups per day, cumulative user total, revenue per day, live and mock interviews per day, and a three-series activity chart (logins, signups, ASR sessions - sockets, not interviews)
 - Sign-in outcomes per day, stacked success against failure - the only place `status: "failure"` is visible in aggregate
 - Usage by hour of day, which the daily series structurally cannot answer
@@ -124,18 +117,6 @@ Tabs grouping twenty-five event types into three families - accounts, payments, 
 
 The three groups are exhaustive by construction: payments and ASR are named explicitly and "accounts" is everything else, so an event type backend adds later shows up under a tab rather than disappearing from all of them.
 
-### Resellers (`/resellers`, `/resellers/history`, `/resellers/settlements`)
-
-Needs `resellers:read` (admins). A reseller is an outside partner who sells access through their own app, which calls backend's `/api/reseller` with an API key to create customers and sell them subscription days, reporting each sale (order reference, price, currency, note). Three pages share one section nav:
-
-- **Overview** (`/resellers`): one row per reseller account with access status, key prefix, rate, customers and days sold over a selectable window (7/30/90/180 days), their last sale ever, and what they owe now (every open settlement, whatever the window). A row opens a sheet to set the rate (USD per 30 days of subscription, stored as integer cents; changing it prices later sales only) and to revoke the key. A "Needs review" figure appears when backend has parked any extension it could not confirm.
-- **Sales history** (`/resellers/history`): every committed sale across all resellers. Tabs: all, new customers, extensions, legacy credit top-ups, and **needs review** (grants whose extension backend cannot confirm; unbilled, with the order reference still taken). Filters: reseller, kind, date range, and a search on order reference or customer email. A row in the review queue takes one of two decisions, each confirmed: *applied* (billed from now) or *not applied* (voided). Exports to CSV.
-- **Settlements** (`/resellers/settlements`): one row per reseller per complete UTC day, written by backend's hourly worker an hour after the day ends: days sold (and legacy credits), customers created, and what is owed (`round_half_up((sum(credits x rate_per_hour) + sum(days x rate_per_month) x 20) / 600)`, using the rate each sale was made at). A day containing anything sold without a rate shows "Unpriced" instead of a total. Tabs: open, paid, all. Mark a day paid or reopen it; exports to CSV. Nothing is sent anywhere: payment is collected by hand.
-
-### Reseller portal (`/reseller`)
-
-Needs `reseller:portal` (resellers only; an admin has no key to manage). Everything on it is scoped to the signed-in account's own id, never to anything in the URL. A key card to generate, rotate or revoke the API key (shown once; only its SHA-256 is stored, on the reseller's own `admin_accounts` row), a strip of totals, a short "Connecting your app" card whose button opens the backend's API reference (ReDoc) at its Reseller section, and three tables: their customers, their sales, and their daily totals. A reseller also reads everything a guest can; this page is what is theirs.
-
 ### Dashboard access (`/access`)
 
 The admin user management panel. A summary strip (waiting for approval, approved, admins, live sessions, last sign-in) over a table of every account, sorted so the ones waiting on a decision come first. Pending rows carry **Approve** and **Reject** buttons inline; the sidebar shows a badge with the pending count, since a sign-up is the one thing here that blocks a person on a human.
@@ -168,8 +149,7 @@ There is always one way in: `ADMIN_EMAIL`/`ADMIN_PASSWORD` name a built-in admin
 - Every table distinguishes "no rows matched" from "the database could not be reached", the latter with a retry that re-runs the server render
 - Destructive actions (delete user, revoke session) and every campaign send go through a confirmation dialog
 - Every mutation reports success or failure as a toast, driven by the action's return value rather than a thrown error
-- A guest sees the dashboard's aggregate figures and nothing underneath them. `/users`, `/interviews`, `/payments`, `/sessions`, `/audit-logs`, `/emails`, `/resellers` and `/access` are admins only: the sidebar drops them, and the segment's layout renders a "Not available to your account" panel instead of the page, so the page's queries never run
-- A reseller sees what a guest sees plus `/reseller` (their portal); `/resellers` and every admin-only page are refused
+- A guest sees the dashboard's aggregate figures and nothing underneath them. `/users`, `/interviews`, `/payments`, `/sessions`, `/audit-logs`, `/emails` and `/access` are admins only: the sidebar drops them, and the segment's layout renders a "Not available to your account" panel instead of the page, so the page's queries never run
 - Every server action re-checks the permission before doing anything, so the disabled controls and hidden links are an explanation rather than the enforcement
 
 ## Out of Scope
@@ -180,8 +160,7 @@ There is always one way in: `ADMIN_EMAIL`/`ADMIN_PASSWORD` name a built-in admin
 - No user creation from the admin panel (only editing existing users). Creating a *dashboard* account is supported, from `/access`
 - No payment creation - payments only originate from the real NOWPayments flow in backend
 - `global_state.active_sessions` is excluded everywhere as simulated, non-real data
-- No code shared with `../backend` - the two are coupled only by the database. The one runtime dependency in the other direction is the reseller API: backend reads `admin_accounts` (read only) to authenticate a reseller's API key, and this app reads the ledger and settlements backend writes
-- No reseller billing beyond recording it: no invoices, no payment collection, no notification channel. Settlements are listed, exported, and marked paid by hand
+- No code shared with `../backend` - the two are coupled only by the database.
 
 ## Project Structure
 

@@ -89,7 +89,7 @@ const columns: ColumnDef<PaymentRow, unknown>[] = [
     cell: ({ row }) =>
       formatPurchase(
         row.original.months_amount,
-        row.original.days_granted ?? row.original.days_amount,
+        row.original.days_granted,
         row.original.credits_amount,
       ),
   },

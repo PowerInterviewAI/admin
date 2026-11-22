@@ -72,9 +72,7 @@ export const paymentSchema = timestampsSchema.extend({
   pay_currency: z.string().nullish().default(null),
   price_amount: z.number().default(0),
   credits_amount: z.number().int().default(0),
-  /** Days an order priced in days buys; 0 on a calendar pass or a credit pack. */
-  days_amount: z.number().int().default(0),
-  /** Calendar months a pass buys; 0 on an order priced in days or credits. */
+  /** Calendar months a pass buys; 0 on a legacy credit pack. */
   months_amount: z.number().int().default(0),
   credits_applied: z.boolean().default(false),
   /**

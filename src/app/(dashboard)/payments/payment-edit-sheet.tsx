@@ -108,7 +108,7 @@ function PaymentEditForm({ payment, onClose }: { payment: PaymentRow; onClose: (
                 label="Grants"
                 value={formatPurchase(
                   payment.months_amount,
-                  payment.days_granted ?? payment.days_amount,
+                  payment.days_granted,
                   payment.credits_amount,
                 )}
               />

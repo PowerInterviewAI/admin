@@ -40,18 +40,7 @@ export function formatGrant(days: number | null | undefined, credits: number | n
   return "-";
 }
 
-/**
- * A total across several sales, which unlike one sale can hold both units at once (a day that
- * mixes legacy credit sales with subscription sales), so both are shown rather than one winning.
- */
-export function formatSold(days: number, credits: number): string {
-  const parts: string[] = [];
-  if (days) parts.push(`${formatNumber(days)} day${days === 1 ? "" : "s"}`);
-  if (credits) parts.push(`${formatNumber(credits)} credits`);
-  return parts.join(" + ") || "-";
-}
-
-/** What an order bought: calendar months for a pass, otherwise its days or legacy credits. */
+/** What an order bought: calendar months for a pass, otherwise its legacy grant. */
 export function formatPurchase(
   months: number,
   days: number | null | undefined,
@@ -74,10 +63,3 @@ export function titleCase(value: string | null | undefined): string {
     .join(" ");
 }
 
-/**
- * A reseller's rate in integer cents: per 30 days of subscription, or per interview hour (600
- * credits) on a sale from before subscriptions.
- */
-export function formatRate(cents: number | null, per: "month" | "hour" = "month"): string {
-  return cents === null ? "Not set" : `${formatUsd(cents / 100)} / ${per === "month" ? "30 days" : "hour"}`;
-}

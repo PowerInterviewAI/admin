@@ -7,8 +7,6 @@ import {
   LayoutDashboard,
   Users,
   CreditCard,
-  Handshake,
-  KeyRound,
   Mail,
   Mic,
   Monitor,
@@ -48,7 +46,6 @@ const NAV_ITEMS: NavEntry[] = [
   { href: "/sessions", label: "Sessions", icon: Monitor },
   { href: "/emails", label: "Email", icon: Mail },
   { href: "/audit-logs", label: "Audit Logs", icon: ScrollText },
-  { href: "/resellers", label: "Resellers", icon: Handshake },
 ];
 
 /**
@@ -56,7 +53,6 @@ const NAV_ITEMS: NavEntry[] = [
  * product: every item above reads backend's data, and these two read who is allowed to.
  */
 const ADMIN_NAV_ITEMS: NavEntry[] = [
-  { href: "/reseller", label: "Reseller API", icon: KeyRound },
   { href: "/access", label: "Access", icon: ShieldCheck },
   { href: "/account", label: "Your account", icon: UserRound },
 ];

@@ -30,8 +30,7 @@ const LABELS: Record<AnalyticsRange, string> = {
  * of the numbers is linkable. Writing through `startTransition` keeps the current charts on screen
  * while the next set of aggregations runs, instead of dropping to the loading skeleton.
  */
-/** `path` is the page the window belongs to: the dashboard, or the reseller overview. */
-export function RangeSelect({ value, path = "/" }: { value: AnalyticsRange; path?: string }) {
+export function RangeSelect({ value }: { value: AnalyticsRange }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   usePendingNavigation(isPending);
@@ -42,7 +41,7 @@ export function RangeSelect({ value, path = "/" }: { value: AnalyticsRange; path
       onValueChange={(next: string | null) => {
         if (!next) return;
         const days = Number(next) as AnalyticsRange;
-        const href = `${path}${buildQueryString(dashboardSearchParamsSchema, { days })}`;
+        const href = `/${buildQueryString(dashboardSearchParamsSchema, { days })}`;
         startTransition(() => router.push(href, { scroll: false }));
       }}
     >

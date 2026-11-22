@@ -2,7 +2,7 @@
 
 Admin dashboard for Power Interview AI: analytics, CRUD over users, payments, sessions, and audit logs, and bulk email marketing. A single Next.js app that reads and writes the same MongoDB database `../backend` uses - it does not call backend's API.
 
-It has its own email/password sign-in. A built-in admin comes from the environment; everybody else requests access and an admin approves them. Approved accounts are an **admin** (does everything), a **guest** (reads the dashboard's figures only), or a **reseller** (a guest's reads, plus their own reseller portal).
+It has its own email/password sign-in. A built-in admin comes from the environment; everybody else requests access and an admin approves them. Approved accounts are an **admin** (does everything) or a **guest** (reads the dashboard's figures only).
 
 See [SPEC.md](SPEC.md) for the feature list and data model, and [CLAUDE.md](CLAUDE.md) for architecture, conventions, and known gotchas.
 
@@ -58,7 +58,7 @@ access, or deletes it. An admin can also create an account outright, approved on
 
 What each role may do is a table of permissions in `src/lib/rbac.ts`. A guest sees the dashboard's
 aggregate figures and nothing underneath them. Users, interviews, payments, sessions, audit logs,
-email, resellers and Access are admin-only, and a guest or reseller who types one of those URLs gets
+email and Access are admin-only, and a guest who types one of those URLs gets
 a refusal rather than the page. Every server action re-checks the permission before doing anything,
 so hidden links are the explanation rather than the enforcement.
 `pnpm check:rbac` asserts which pages each role can reach.
@@ -66,24 +66,6 @@ so hidden links are the explanation rather than the enforcement.
 You cannot demote, revoke, sign out, or delete your own account, and neither can anyone do it to
 the built-in admin: between them that is what makes locking the last admin out impossible.
 Changing your own password is the exception, and it keeps the tab you changed it in.
-
-## Resellers
-
-A reseller is an outside partner who sells access through their own app. Give an account the
-**Reseller** role from Access and they get a **Reseller API** page: they issue, rotate and revoke
-their own API key there (shown once; only its hash is stored), and see the customers and sales
-their app has created. Their app sends the key to the backend's `/api/reseller` endpoints to create
-customers and sell them subscription days, so the backend has to be running a version that has them, with read
-access to this dashboard's `ADMIN_MONGO_DB`.
-
-Admins manage resellers under **Resellers**: set each one's rate (USD per 30 days of
-subscription), revoke a key, browse every sale, and see what each reseller owes per day. Payment is
-collected by hand: mark a day paid on the **Settlements** page, which also exports to CSV. Extensions
-the backend could not confirm appear under **Sales history > Needs review** for an admin to decide.
-
-`RESELLER_API_BASE_URL` (optional, default `https://api.powerinterviewai.com/api`) is the backend's
-public address. The reseller's page links to the API reference the backend serves at
-`<origin>/redoc`, which is where the endpoints, fields and examples live. It is display only.
 
 ## Mock data
 
@@ -98,12 +80,6 @@ pnpm seed
 It refuses to run against anything but a local `MONGO_URL`, keeps the admin account already in the
 database, and replaces everything else it wrote before, so re-running it is safe. Seeded accounts
 all share the password `Interview!2026`.
-
-`pnpm seed:resellers` adds fixtures for the reseller pages: four resellers (steady, partly
-unpriced, brand new, rejected), a guest account, their customers, sales, daily settlements and one
-extension awaiting review. Its accounts all use the password `Fixture!2026`, and it prints a fresh API
-key for each reseller that has one. Run it against a local database only (it refuses anything else),
-and re-run it any time: it replaces just its own fixtures.
 
 It writes `users` in the product database and never touches `pia_admin`, so it cannot create or
 disturb the account you sign in to the dashboard with.

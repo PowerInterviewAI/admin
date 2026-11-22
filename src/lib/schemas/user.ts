@@ -100,7 +100,7 @@ export const userPatchSchema = z.object({
   status: userStatusSchema,
   // These three are optional, and left out unless the admin changed them: backend moves each on
   // its own (a payment or the free hour running out promotes a trial user; the meter spends free
-  // credits during an interview; a payment or reseller grant extends the subscription), so writing
+  // credits during an interview; a payment extends the subscription), so writing
   // back the value the sheet opened with would undo whatever landed in between. `null` removes the
   // subscription.
   role: userRoleSchema.optional(),
