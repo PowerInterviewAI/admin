@@ -51,6 +51,11 @@ export function formatSold(days: number, credits: number): string {
   return parts.join(" + ") || "-";
 }
 
+/** The plan id `yearly` is sold as Annual. */
+export function planLabel(plan: string | null | undefined): string {
+  return plan === "yearly" ? "Annual" : titleCase(plan);
+}
+
 export function titleCase(value: string | null | undefined): string {
   if (!value) return "";
   return value

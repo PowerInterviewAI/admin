@@ -27,7 +27,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { formatDate, formatGrant, formatUsd, titleCase } from "@/lib/format";
+import { formatDate, formatGrant, formatUsd, planLabel, titleCase } from "@/lib/format";
 import {
   PAYMENT_STATUSES,
   type PaymentPatch,
@@ -102,7 +102,7 @@ function PaymentEditForm({ payment, onClose }: { payment: PaymentRow; onClose: (
               <div className="col-span-2">
                 <InfoRow label="Order ID" value={payment.order_id} mono />
               </div>
-              <InfoRow label="Plan" value={titleCase(payment.plan)} />
+              <InfoRow label="Plan" value={planLabel(payment.plan)} />
               <InfoRow label="Amount" value={formatUsd(payment.price_amount)} />
               <InfoRow
                 label="Grants"

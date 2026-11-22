@@ -18,7 +18,7 @@ import { LiveDot } from "@/components/live-dot";
 import { LinkPending } from "@/components/navigation-progress";
 import { Badge } from "@/components/ui/badge";
 import { useListParams } from "@/hooks/use-list-params";
-import { formatDate, formatNumber, titleCase } from "@/lib/format";
+import { formatDate, formatNumber, planLabel, titleCase } from "@/lib/format";
 import { USERS_TABS, type ListTabCounts } from "@/lib/list-tabs";
 import type { Page } from "@/lib/schemas/common";
 import { USER_ROLES, USER_STATUSES, type UserRole, type UserRow } from "@/lib/schemas/user";
@@ -86,7 +86,7 @@ function SubscriptionCell({ user }: { user: UserRow }) {
   return (
     <div className="flex flex-col items-start gap-0.5">
       <Badge variant={user.subscribed ? "secondary" : "outline"}>
-        {user.subscribed ? titleCase(user.subscription_plan ?? "subscribed") : "Expired"}
+        {user.subscribed ? planLabel(user.subscription_plan ?? "subscribed") : "Expired"}
       </Badge>
       <span className="text-xs text-muted-foreground">
         {user.subscribed ? "until" : "ended"} {formatDate(user.subscription_expires_at)}

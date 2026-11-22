@@ -17,7 +17,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { UserCell } from "@/components/user-cell";
 import { useListParams } from "@/hooks/use-list-params";
-import { formatDate, formatGrant, formatUsd, titleCase } from "@/lib/format";
+import { formatDate, formatGrant, formatUsd, planLabel, titleCase } from "@/lib/format";
 import { PAYMENTS_TABS, type ListTabCounts } from "@/lib/list-tabs";
 import type { Page } from "@/lib/schemas/common";
 import {
@@ -65,7 +65,7 @@ const columns: ColumnDef<PaymentRow, unknown>[] = [
   {
     accessorKey: "plan",
     header: "Plan",
-    cell: ({ row }) => titleCase(row.original.plan),
+    cell: ({ row }) => planLabel(row.original.plan),
   },
   {
     accessorKey: "status",
@@ -202,6 +202,7 @@ export function PaymentsView({
           allLabel="All plans"
           value={params.plan}
           options={PAYMENT_PLANS}
+          formatOption={planLabel}
           onChange={(plan) => setParams({ plan })}
           className="w-40"
         />
