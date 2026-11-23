@@ -8,11 +8,9 @@ import {
   type EmailCampaign,
   type EmailCampaignProgress,
   type RecipientOption,
-  canRetryCampaign,
   emailCampaignInputSchema,
   emailTestSchema,
   isCampaignInterrupted,
-  isCampaignLive,
 } from "@/lib/schemas/email";
 import {
   COLLECTIONS,
@@ -22,6 +20,7 @@ import {
   toObjectId,
 } from "@/server/db";
 import { denyUnless } from "@/server/auth/guard";
+import { retryCampaign } from "@/server/email/campaign-retry";
 import { startCampaign } from "@/server/email/campaign-runner";
 import {
   type EmailConfig,
@@ -238,19 +237,7 @@ async function createCampaign(
   }
 }
 
-/**
- * Re-runs every row of a finished or interrupted campaign that was not delivered: failed rows and,
- * for a run that died, rows still `pending`. Rows already sent are never touched, so retrying twice
- * cannot mail anybody twice.
- *
- * The targeted rows are reset to `pending` and `failed_count` drops by the failures being retried
- * before the run starts, so the progress bar and the counters read the retry as the same campaign
- * resuming rather than as a second total stacked on the first.
- *
- * The claim is conditional on `updated_at` still holding the value read here. Every runner write
- * touches it, so two admins pressing Retry at once (or a run that turned out to be alive after
- * all) lose the race cleanly instead of starting a second loop over the same rows.
- */
+/** See `retryCampaign` for what a retry sends and how concurrent retries are kept apart. */
 export async function retryEmailCampaign(
   campaignId: string,
 ): Promise<ActionData<EmailCampaignProgress>> {
@@ -259,93 +246,10 @@ export async function retryEmailCampaign(
 
   const configResult = readEmailConfig();
   if (!configResult.ok) return failed(configResult.error);
-  const { config } = configResult;
 
-  let found: EmailCampaign | null;
-  try {
-    found = await getEmailCampaign(campaignId);
-  } catch (error) {
-    return failed(error instanceof AppError ? error.message : "Could not read this campaign");
-  }
-  if (!found) return failed("This campaign no longer exists");
-  const campaign = found;
-
-  const timeoutMs = heartbeatTimeoutMs();
-  const interrupted = isCampaignInterrupted(campaign, timeoutMs);
-  if (!canRetryCampaign({ ...campaign, interrupted })) {
-    return failed(
-      isCampaignLive({ status: campaign.status, interrupted })
-        ? "This campaign is still sending"
-        : "Every recipient of this campaign was already reached",
-    );
-  }
-
-  const targets = campaign.recipients.flatMap((recipient, index) =>
-    recipient.status === "sent" || !recipient.email
-      ? []
-      : [{ index, email: recipient.email, name: recipient.name }],
-  );
-  if (targets.length === 0) {
-    return failed("Every recipient of this campaign was already reached");
-  }
-
-  const retriedFailures = targets.filter(
-    (target) => campaign.recipients[target.index]?.status === "failed",
-  ).length;
-  const initialFailed = Math.max(0, campaign.failed_count - retriedFailures);
-
-  try {
-    await verifyTransport(config);
-  } catch (error) {
-    return failed(describeSmtpError(error));
-  }
-
-  const now = currentTimestampMs();
-  const reset: Document = {
-    status: "sending",
-    error: null,
-    finished_at: null,
-    failed_count: initialFailed,
-    retry_count: campaign.retry_count + 1,
-    updated_at: now,
-  };
-  for (const { index } of targets) {
-    reset[`recipients.${index}.status`] = "pending";
-    reset[`recipients.${index}.error`] = null;
-  }
-
-  try {
-    const claim = await getCollection(COLLECTIONS.emailCampaigns).updateOne(
-      { _id: toObjectId(campaignId), updated_at: campaign.updated_at },
-      { $set: reset },
-    );
-    if (claim.matchedCount === 0) {
-      return failed("This campaign changed while you were looking at it. Reopen it and try again.");
-    }
-  } catch (error) {
-    return failed(describeWriteError(error, "campaign").message);
-  }
-
-  startCampaign({
-    campaignId,
-    message: { subject: campaign.subject, body: campaign.body, template: campaign.template },
-    targets,
-    config,
-    initialSent: campaign.sent_count,
-    initialFailed,
-  });
-
-  refresh();
-  return succeeded({
-    id: campaignId,
-    status: "sending",
-    interrupted: false,
-    total: campaign.total,
-    sent_count: campaign.sent_count,
-    failed_count: initialFailed,
-    error: null,
-    updated_at: now,
-  });
+  const result = await retryCampaign(campaignId, configResult.config);
+  if (result.ok) refresh();
+  return result;
 }
 
 /** Counters and heartbeat only. The delivery log is the bulk of the document and no poller reads it. */
