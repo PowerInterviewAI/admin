@@ -182,6 +182,16 @@ export function getTransporter(config: EmailConfig): Transporter {
   return transporter;
 }
 
+/**
+ * Drops the cached transporter so the next send opens a fresh connection. Used when an attempt
+ * hits the runner's hard timeout: the pool has one connection, and it is the stuck one.
+ */
+export function resetTransporter(): void {
+  const cached = globalThis.__adminMailTransport;
+  globalThis.__adminMailTransport = undefined;
+  cached?.transporter.close();
+}
+
 export interface SendEmailArgs {
   config: EmailConfig;
   toEmail: string;
@@ -235,6 +245,8 @@ const TRANSIENT_ERROR_CODES = new Set([
   "EMAXLIMIT",
 ]);
 
+const POOL_CLOSED_MESSAGE = "Connection pool was closed";
+
 /**
  * Whether sending the same message again a few seconds later could plausibly succeed.
  *
@@ -250,6 +262,10 @@ export function isTransientSmtpError(error: unknown): boolean {
   if (typeof responseCode === "number" && responseCode > 0) {
     return responseCode >= 400 && responseCode < 500;
   }
+  // nodemailer fails every message still queued in a pool when the pool is closed, with no code.
+  // Those messages were never attempted, and `resetTransporter` closing the pool under a concurrent
+  // campaign must not record its next recipient as a permanent failure.
+  if (smtp?.message === POOL_CLOSED_MESSAGE) return true;
   return typeof smtp?.code === "string" && TRANSIENT_ERROR_CODES.has(smtp.code);
 }
 

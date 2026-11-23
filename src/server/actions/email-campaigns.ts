@@ -1,6 +1,7 @@
 "use server";
 
 import { refresh } from "next/cache";
+import { after } from "next/server";
 
 import { type ActionData, type ActionResult, failed, ok, succeeded } from "@/lib/action-result";
 import { greetingName, renderEmailHtml } from "@/lib/email/template";
@@ -27,7 +28,7 @@ import {
   retryCampaign,
   stopCampaign,
 } from "@/server/email/campaign-control";
-import { newRunId, startCampaign } from "@/server/email/campaign-runner";
+import { type CampaignScheduler, newRunId, startCampaign } from "@/server/email/campaign-runner";
 import {
   type EmailConfig,
   describeSmtpError,
@@ -193,6 +194,7 @@ export async function startEmailCampaign(
     initialSent: 0,
     initialFailed: 0,
     runId,
+    schedule: after,
   });
 
   refresh();
@@ -256,6 +258,7 @@ async function createCampaign(
 type CampaignOperation = (
   campaignId: string,
   config: EmailConfig,
+  schedule: CampaignScheduler,
 ) => Promise<ActionData<EmailCampaignProgress>>;
 
 /**
@@ -276,7 +279,7 @@ async function runOperation(
   const configResult = readEmailConfig();
   if (!configResult.ok) return failed(configResult.error);
 
-  const result = await operation(campaignId, configResult.config);
+  const result = await operation(campaignId, configResult.config, after);
   if (result.ok) refresh();
   return result;
 }

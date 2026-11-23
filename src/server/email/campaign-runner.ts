@@ -9,6 +9,7 @@ import {
   type EmailConfig,
   describeSmtpError,
   isTransientSmtpError,
+  resetTransporter,
   sendEmail,
 } from "@/server/email/transport";
 
@@ -16,9 +17,16 @@ import {
  * Walks a campaign's recipient list in the background.
  *
  * The action that starts a run returns as soon as the campaign document exists, and this keeps
- * going in the same Node process afterwards. A server action cannot hold a request open for the
- * minutes a few hundred recipients take at one per second, and a progress bar an admin can watch
- * beats a spinner that eventually times out.
+ * going afterwards. A server action cannot hold a request open for the minutes a few hundred
+ * recipients take at one per second, and a progress bar an admin can watch beats a spinner that
+ * eventually times out.
+ *
+ * "Afterwards" has to be scheduled, not merely left running. A serverless host (Vercel) freezes an
+ * invocation once its response is sent, so a bare unawaited promise sits suspended until some
+ * other request happens to thaw the instance - a healthy run that reads as interrupted for minutes
+ * at a time. The actions therefore pass `after` as the `schedule`, which hands the run to the
+ * platform's `waitUntil` and keeps it alive up to the emails page's `maxDuration`. That is also a
+ * ceiling: a run longer than it is cut off, shows as interrupted, and Retry sends the rest.
  *
  * The cost of that choice is honest and visible: if the process restarts mid-run, nothing resumes.
  * Every recipient is written to the document before the first send and flipped in place as the run
@@ -36,6 +44,20 @@ export const SEND_MAX_ATTEMPTS = 3;
  * pass, short enough that one bad recipient does not stall the run for a minute.
  */
 const RETRY_BACKOFF_MS = [2_000, 8_000] as const;
+
+/**
+ * Hard ceiling on one send attempt. nodemailer's connection, greeting and socket timeouts are each
+ * 30s and apply in sequence, so a stalled attempt could otherwise outlast the 60s heartbeat
+ * threshold on its own. The worst gap between two heartbeats is this plus the longest backoff.
+ */
+export const SEND_ATTEMPT_TIMEOUT_MS = 40_000;
+
+/** Runs a campaign after the current response: `after` in an action, plain fire-and-forget in a script. */
+export type CampaignScheduler = (task: () => Promise<void>) => void;
+
+const detach: CampaignScheduler = (task) => {
+  void task();
+};
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -63,6 +85,10 @@ export interface RunCampaignArgs {
    * beside the new one.
    */
   runId: string;
+  /** Defaults to fire-and-forget, which only a long-running Node process keeps alive. */
+  schedule?: CampaignScheduler;
+  /** Overridable so the check script does not have to wait out the real ceiling. */
+  attemptTimeoutMs?: number;
 }
 
 /** A fresh `run_id` for a campaign about to be (re)started. */
@@ -85,17 +111,19 @@ class ControlRequested extends Error {
   }
 }
 
-export function startCampaign(args: RunCampaignArgs): void {
+export function startCampaign({ schedule = detach, ...args }: RunCampaignArgs): void {
   // Nothing awaits this, so an unhandled rejection here would take down the process rather than
   // fail the campaign. `runCampaign` already catches per recipient; this is the last resort.
-  void runCampaign(args).catch((error: unknown) => {
-    if (error instanceof SupersededRun) {
-      console.warn(`Campaign ${args.campaignId}: run ${args.runId} was superseded by a retry`);
-      return;
-    }
-    console.error(`Campaign ${args.campaignId} stopped unexpectedly`, error);
-    void finish(args.campaignId, args.runId, "failed", describeSmtpError(error));
-  });
+  schedule(() =>
+    runCampaign(args).catch(async (error: unknown) => {
+      if (error instanceof SupersededRun) {
+        console.warn(`Campaign ${args.campaignId}: run ${args.runId} was superseded by a retry`);
+        return;
+      }
+      console.error(`Campaign ${args.campaignId} stopped unexpectedly`, error);
+      await finish(args.campaignId, args.runId, "failed", describeSmtpError(error));
+    }),
+  );
 }
 
 async function runCampaign({
@@ -106,7 +134,8 @@ async function runCampaign({
   initialSent,
   initialFailed,
   runId,
-}: RunCampaignArgs): Promise<void> {
+  attemptTimeoutMs = SEND_ATTEMPT_TIMEOUT_MS,
+}: Omit<RunCampaignArgs, "schedule">): Promise<void> {
   const collection = getCollection(COLLECTIONS.emailCampaigns);
   const owned = { _id: toObjectId(campaignId), run_id: runId };
 
@@ -182,6 +211,7 @@ async function runCampaign({
             html,
           }),
         checkIn,
+        attemptTimeoutMs,
       );
 
       if (outcome.ok) {
@@ -236,6 +266,7 @@ type SendOutcome = { ok: true; attempts: number } | { ok: false; attempts: numbe
 async function sendWithRetry(
   send: () => Promise<void>,
   heartbeat: () => Promise<unknown>,
+  timeoutMs: number,
 ): Promise<SendOutcome> {
   for (let attempt = 1; ; attempt += 1) {
     if (attempt > 1) {
@@ -249,13 +280,33 @@ async function sendWithRetry(
       }
     });
     try {
-      await send();
+      await withTimeout(send(), timeoutMs);
       return { ok: true, attempts: attempt };
     } catch (error) {
       if (attempt >= SEND_MAX_ATTEMPTS || !isTransientSmtpError(error)) {
         return { ok: false, attempts: attempt, error };
       }
     }
+  }
+}
+
+/**
+ * Rejects with an `ETIMEDOUT`-coded error, which `isTransientSmtpError` retries and
+ * `describeSmtpError` words as a timeout. The cached transporter is dropped too: its one pooled
+ * connection is the stuck one, and the next attempt would otherwise queue behind it.
+ */
+async function withTimeout(sending: Promise<void>, timeoutMs: number): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      resetTransporter();
+      reject(Object.assign(new Error(`SMTP send timed out after ${timeoutMs}ms`), { code: "ETIMEDOUT" }));
+    }, timeoutMs);
+  });
+  try {
+    await Promise.race([sending, timeout]);
+  } finally {
+    clearTimeout(timer);
   }
 }
 
