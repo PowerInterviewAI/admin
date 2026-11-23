@@ -10,7 +10,8 @@
     "lint": "eslint",
     "seed": "node scripts/seed-mock-data.mjs",
     "typecheck": "tsc --noEmit",
-    "check:rbac": "tsx scripts/check-rbac.ts"
+    "check:rbac": "tsx scripts/check-rbac.ts",
+    "check:email-retry": "tsx --conditions=react-server scripts/check-email-retry.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
