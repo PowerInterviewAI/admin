@@ -245,6 +245,8 @@ const TRANSIENT_ERROR_CODES = new Set([
   "EMAXLIMIT",
 ]);
 
+const POOL_CLOSED_MESSAGE = "Connection pool was closed";
+
 /**
  * Whether sending the same message again a few seconds later could plausibly succeed.
  *
@@ -260,6 +262,10 @@ export function isTransientSmtpError(error: unknown): boolean {
   if (typeof responseCode === "number" && responseCode > 0) {
     return responseCode >= 400 && responseCode < 500;
   }
+  // nodemailer fails every message still queued in a pool when the pool is closed, with no code.
+  // Those messages were never attempted, and `resetTransporter` closing the pool under a concurrent
+  // campaign must not record its next recipient as a permanent failure.
+  if (smtp?.message === POOL_CLOSED_MESSAGE) return true;
   return typeof smtp?.code === "string" && TRANSIENT_ERROR_CODES.has(smtp.code);
 }
 

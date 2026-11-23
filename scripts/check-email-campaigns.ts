@@ -19,7 +19,7 @@ import {
   stopCampaign,
 } from "../src/server/email/campaign-control";
 import { newRunId, startCampaign } from "../src/server/email/campaign-runner";
-import type { EmailConfig } from "../src/server/email/transport";
+import { type EmailConfig, isTransientSmtpError } from "../src/server/email/transport";
 
 // ---- fake SMTP server -------------------------------------------------------------------------
 // Each address maps to a list of RCPT replies consumed one per attempt; the last one repeats.
@@ -388,6 +388,11 @@ async function main() {
   doc = await waitDone(stallId);
   check("rows", rowsOf(doc), ["stall:sent:2", "after-stall:sent:1"]);
   check("deliveries", stallEmails.map((e) => delivered.get(e) ?? 0), [1, 1]);
+  check(
+    "a message failed by a closed pool is retried, not recorded as refused",
+    isTransientSmtpError(new Error("Connection pool was closed")),
+    true,
+  );
 
   console.log(`\n${failures === 0 ? "ALL PASSED" : `${failures} FAILED`}`);
 }
