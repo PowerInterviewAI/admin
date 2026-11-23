@@ -5,7 +5,6 @@ import {
   CircleCheck,
   CircleX,
   FileCode2,
-  RotateCcw,
   Send,
   TriangleAlert,
   Users,
@@ -55,7 +54,6 @@ import {
   type EmailMessage,
   type EmailTemplate,
   type RecipientOption,
-  campaignUnsentCount,
   canRetryCampaign,
   emailMessageSchema,
 } from "@/lib/schemas/email";
@@ -70,6 +68,7 @@ import type { EmailSetup } from "@/server/email/transport";
 import { EmailPreview } from "./email-preview";
 import { HtmlEditor, type HtmlEditorHandle } from "./html-editor";
 import { RecipientPicker } from "./recipient-picker";
+import { RetryCampaignButton } from "./retry-campaign-button";
 import { SendConfirmDialog } from "./send-confirm-dialog";
 
 const AUDIENCES: EmailAudience[] = ["one", "selected", "all"];
@@ -178,13 +177,19 @@ export function EmailComposer({
           return;
         }
 
+        // The counters are the campaign's, not this run's, so after a retry they include everyone
+        // an earlier run reached - worded as the campaign's state rather than as what was just sent.
         if (result.data.failed_count === 0) {
-          toast.success(`Sent to ${formatNumber(result.data.sent_count)} recipients`);
+          toast.success(
+            result.data.sent_count === 1
+              ? "Campaign delivered to its recipient"
+              : `Campaign delivered to all ${formatNumber(result.data.sent_count)} recipients`,
+          );
         } else {
           toast.warning(
-            `${formatNumber(result.data.sent_count)} sent, ${formatNumber(
-              result.data.failed_count,
-            )} failed`,
+            `${formatNumber(result.data.sent_count)} of ${formatNumber(
+              result.data.total,
+            )} delivered, ${formatNumber(result.data.failed_count)} failed`,
           );
         }
         // Brings the recent-sends list on this page up to date without losing what is typed.
@@ -240,18 +245,17 @@ export function EmailComposer({
     });
   };
 
-  const onRetry = () => {
-    if (!progress) return;
+  const onRetry = async (): Promise<boolean> => {
+    if (!progress) return false;
     const campaignId = progress.id;
-    startSending(async () => {
-      const result = await retryEmailCampaign(campaignId);
-      if (!result.ok) {
-        toast.error(result.error);
-        return;
-      }
-      setProgress(result.data);
-      poll(campaignId);
-    });
+    const result = await retryEmailCampaign(campaignId);
+    if (!result.ok) {
+      toast.error(result.error);
+      return false;
+    }
+    setProgress(result.data);
+    poll(campaignId);
+    return true;
   };
 
   return (
@@ -455,7 +459,6 @@ export function EmailComposer({
           {progress ? (
             <CampaignProgressCard
               progress={progress}
-              isRetrying={isStarting}
               onRetry={onRetry}
               onDismiss={() => setProgress(null)}
             />
@@ -647,13 +650,11 @@ function TemplateOption({ template }: { template: EmailTemplate }) {
 
 function CampaignProgressCard({
   progress,
-  isRetrying,
   onRetry,
   onDismiss,
 }: {
   progress: EmailCampaignProgress;
-  isRetrying: boolean;
-  onRetry: () => void;
+  onRetry: () => Promise<boolean>;
   onDismiss: () => void;
 }) {
   const done = progress.sent_count + progress.failed_count;
@@ -721,10 +722,7 @@ function CampaignProgressCard({
         {!isRunning && (
           <div className="flex justify-end gap-2">
             {canRetryCampaign(progress) && (
-              <Button variant="outline" size="sm" disabled={isRetrying} onClick={onRetry}>
-                <RotateCcw className={isRetrying ? "animate-spin" : undefined} />
-                Retry {formatNumber(campaignUnsentCount(progress))} unsent
-              </Button>
+              <RetryCampaignButton campaign={progress} onConfirm={onRetry} />
             )}
             <Button variant="outline" size="sm" onClick={onDismiss}>
               Compose another

@@ -1,10 +1,8 @@
 "use client";
 
-import { RotateCcw } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -21,12 +19,12 @@ import {
   type EmailCampaign,
   type EmailCampaignRow,
   type EmailDelivery,
-  campaignUnsentCount,
   canRetryCampaign,
 } from "@/lib/schemas/email";
 
 import { CampaignStatusBadge } from "../campaign-status-badge";
 import { PreviewFrame } from "../email-preview";
+import { RetryCampaignButton } from "../retry-campaign-button";
 
 type DeliveryFilter = "all" | "failed";
 
@@ -40,8 +38,8 @@ interface CampaignDetailDialogProps {
   appName: string;
   /** Footer year for a campaign with no recorded send date. Read on the server, never here. */
   year: number;
-  isRetrying: boolean;
-  onRetry: () => void;
+  /** Resolves whether the retry started. */
+  onRetry: () => Promise<boolean>;
   onClose: () => void;
 }
 
@@ -51,7 +49,6 @@ export function CampaignDetailDialog({
   isLoading,
   appName,
   year,
-  isRetrying,
   onRetry,
   onClose,
 }: CampaignDetailDialogProps) {
@@ -75,6 +72,17 @@ export function CampaignDetailDialog({
               {campaign.failed_count > 0 && (
                 <Badge variant="destructive">{formatNumber(campaign.failed_count)} failed</Badge>
               )}
+              {campaign.retry_count > 0 && (
+                <Badge variant="outline">
+                  Retried {formatNumber(campaign.retry_count)}{" "}
+                  {campaign.retry_count === 1 ? "time" : "times"}
+                </Badge>
+              )}
+              {canRetryCampaign(campaign) && (
+                <div className="ml-auto">
+                  <RetryCampaignButton campaign={campaign} onConfirm={onRetry} />
+                </div>
+              )}
             </div>
 
             {campaign.interrupted && (
@@ -86,19 +94,6 @@ export function CampaignDetailDialog({
             )}
 
             {campaign.error && <p className="text-sm text-destructive">{campaign.error}</p>}
-
-            {canRetryCampaign(campaign) && (
-              <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-3">
-                <p className="text-sm text-muted-foreground">
-                  Sends to the {formatNumber(campaignUnsentCount(campaign))} recipients not yet
-                  reached. Anyone already sent to is skipped.
-                </p>
-                <Button size="sm" variant="outline" disabled={isRetrying} onClick={onRetry}>
-                  <RotateCcw className={isRetrying ? "animate-spin" : undefined} />
-                  Retry {formatNumber(campaignUnsentCount(campaign))} unsent
-                </Button>
-              </div>
-            )}
 
             {/* Keyed by campaign so switching rows resets the tab and the filter. */}
             <CampaignBody

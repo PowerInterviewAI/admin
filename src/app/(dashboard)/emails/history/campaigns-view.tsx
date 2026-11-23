@@ -143,25 +143,21 @@ export function CampaignsView({
     if (result.ok) setDetail(result.data);
   }, [selectedRow]);
 
-  const [isRetrying, startRetrying] = useTransition();
-
   // The action's own `refresh()` brings the row back as live, which is what restarts both the
   // table's poll and the delivery-log poll below.
-  const retryCampaign = () => {
-    if (!selectedRow) return;
+  const retryCampaign = async (): Promise<boolean> => {
+    if (!selectedRow) return false;
     const id = selectedRow._id;
-    startRetrying(async () => {
-      const result = await retryEmailCampaign(id);
-      if (!result.ok) {
-        toast.error(result.error);
-        return;
-      }
-      toast.success(
-        `Retrying ${formatNumber(result.data.total - result.data.sent_count)} recipients`,
-      );
-      const reloaded = await loadEmailCampaign(id);
-      if (reloaded.ok) setDetail(reloaded.data);
-    });
+    const result = await retryEmailCampaign(id);
+    if (!result.ok) {
+      toast.error(result.error);
+      return false;
+    }
+    const count = result.data.total - result.data.sent_count;
+    toast.success(`Retrying ${formatNumber(count)} ${count === 1 ? "recipient" : "recipients"}`);
+    const reloaded = await loadEmailCampaign(id);
+    if (reloaded.ok) setDetail(reloaded.data);
+    return true;
   };
 
   usePoll(
@@ -228,7 +224,6 @@ export function CampaignsView({
         isLoading={isLoadingDetail}
         appName={appName}
         year={year}
-        isRetrying={isRetrying}
         onRetry={retryCampaign}
         onClose={closeCampaign}
       />
