@@ -182,6 +182,16 @@ export function getTransporter(config: EmailConfig): Transporter {
   return transporter;
 }
 
+/**
+ * Drops the cached transporter so the next send opens a fresh connection. Used when an attempt
+ * hits the runner's hard timeout: the pool has one connection, and it is the stuck one.
+ */
+export function resetTransporter(): void {
+  const cached = globalThis.__adminMailTransport;
+  globalThis.__adminMailTransport = undefined;
+  cached?.transporter.close();
+}
+
 export interface SendEmailArgs {
   config: EmailConfig;
   toEmail: string;

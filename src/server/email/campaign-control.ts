@@ -13,7 +13,12 @@ import {
   isCampaignLive,
 } from "@/lib/schemas/email";
 import { COLLECTIONS, type Document, currentTimestampMs, getCollection, toObjectId } from "@/server/db";
-import { type CampaignTarget, newRunId, startCampaign } from "@/server/email/campaign-runner";
+import {
+  type CampaignScheduler,
+  type CampaignTarget,
+  newRunId,
+  startCampaign,
+} from "@/server/email/campaign-runner";
 import { type EmailConfig, describeSmtpError, verifyTransport } from "@/server/email/transport";
 import { AppError, describeWriteError } from "@/server/errors";
 import { getEmailCampaign } from "@/server/queries/email-campaigns";
@@ -90,12 +95,14 @@ async function claimAndStart({
   initialFailed,
   extra,
   config,
+  schedule,
 }: {
   campaign: EmailCampaign;
   targets: CampaignTarget[];
   initialFailed: number;
   extra: Document;
   config: EmailConfig;
+  schedule: CampaignScheduler | undefined;
 }): Promise<ActionData<EmailCampaignProgress>> {
   try {
     await verifyTransport(config);
@@ -138,6 +145,7 @@ async function claimAndStart({
     initialSent: campaign.sent_count,
     initialFailed,
     runId,
+    schedule,
   });
 
   return succeeded({
@@ -176,6 +184,7 @@ function targetsWhere(
 export async function retryCampaign(
   campaignId: string,
   config: EmailConfig,
+  schedule?: CampaignScheduler,
 ): Promise<ActionData<EmailCampaignProgress>> {
   const loaded = await load(campaignId, config);
   if (!loaded.ok) return failed(loaded.error);
@@ -202,6 +211,7 @@ export async function retryCampaign(
     initialFailed: Math.max(0, campaign.failed_count - retriedFailures),
     extra: { retry_count: campaign.retry_count + 1 },
     config,
+    schedule,
   });
 }
 
@@ -212,6 +222,7 @@ export async function retryCampaign(
 export async function resumeCampaign(
   campaignId: string,
   config: EmailConfig,
+  schedule?: CampaignScheduler,
 ): Promise<ActionData<EmailCampaignProgress>> {
   const loaded = await load(campaignId, config);
   if (!loaded.ok) return failed(loaded.error);
@@ -243,6 +254,7 @@ export async function resumeCampaign(
     initialFailed: campaign.failed_count,
     extra: {},
     config,
+    schedule,
   });
 }
 

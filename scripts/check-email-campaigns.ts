@@ -6,7 +6,7 @@
  *
  * Needs a reachable MongoDB (`MONGO_URL`, default `mongodb://127.0.0.1:27017`). It always works in
  * its own database, whatever `MONGO_DB` says, and drops that database when it finishes. Takes about
- * 45 seconds, most of it the real retry backoff and send pacing. Run with
+ * 50 seconds, most of it the real retry backoff and send pacing. Run with
  * `pnpm check:email-campaigns`.
  */
 import net from "node:net";
@@ -23,6 +23,7 @@ import type { EmailConfig } from "../src/server/email/transport";
 
 // ---- fake SMTP server -------------------------------------------------------------------------
 // Each address maps to a list of RCPT replies consumed one per attempt; the last one repeats.
+// A reply of 0 never answers, which is how a stalled SMTP server looks to the client.
 const script = new Map<string, number[]>();
 const rcptAttempts = new Map<string, number>();
 const delivered = new Map<string, number>();
@@ -67,6 +68,7 @@ const server = net.createServer((sock) => {
       } else if (cmd === "RCPT") {
         const addr = /<([^>]+)>/.exec(line)?.[1] ?? "";
         const code = rcptReply(addr);
+        if (code === 0) continue;
         if (code === 250) {
           rcpts.push(addr);
           say("250 ok");
@@ -366,6 +368,26 @@ async function main() {
   check("an interrupted run cannot be paused", pauseDead.ok ? "ok" : pauseDead.error, "This run is no longer running. Stop it or retry it instead.");
   const stopDead = await stopCampaign(deadId, paced);
   check("stopping an interrupted run closes it out", stopDead.ok ? [stopDead.data.status, stopDead.data.interrupted] : stopDead.error, ["stopped", false]);
+
+  console.log("\n== 10. a stalled send times out and is retried ==");
+  script.set("stall@t.test", [0, 250]);
+  rcptAttempts.clear();
+  const stallRun = newRunId();
+  const stallEmails = ["stall@t.test", "after-stall@t.test"];
+  const stallId = await insertCampaign(stallEmails.map((email) => ({ email })), { run_id: stallRun });
+  startCampaign({
+    campaignId: stallId,
+    message: { subject: "Selftest", body: "<p>hi</p>", template: "info" },
+    targets: stallEmails.map((email, index) => ({ index, email, name: email.split("@")[0]! })),
+    config,
+    initialSent: 0,
+    initialFailed: 0,
+    runId: stallRun,
+    attemptTimeoutMs: 1000,
+  });
+  doc = await waitDone(stallId);
+  check("rows", rowsOf(doc), ["stall:sent:2", "after-stall:sent:1"]);
+  check("deliveries", stallEmails.map((e) => delivered.get(e) ?? 0), [1, 1]);
 
   console.log(`\n${failures === 0 ? "ALL PASSED" : `${failures} FAILED`}`);
 }
