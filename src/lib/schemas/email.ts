@@ -76,6 +76,8 @@ export const emailDeliverySchema = z.object({
   status: emailDeliveryStatusSchema.catch("pending"),
   error: z.string().nullish().default(null),
   sent_at: z.number().int().nullish().default(null),
+  /** SMTP attempts the last run made for this row. 0 for a row no run has reached yet. */
+  attempts: z.number().int().default(0),
 });
 
 export type EmailDelivery = z.infer<typeof emailDeliverySchema>;
@@ -104,6 +106,8 @@ export const emailCampaignSchema = timestampsSchema.extend({
   from_name: z.string().default(""),
   finished_at: z.number().int().nullish().default(null),
   error: z.string().nullish().default(null),
+  /** How many times an admin re-ran the unsent rows. */
+  retry_count: z.number().int().default(0),
   recipients: z.array(emailDeliverySchema).default([]),
 });
 
@@ -124,6 +128,11 @@ export interface EmailCampaignProgress {
   sent_count: number;
   failed_count: number;
   error: string | null;
+  /**
+   * The heartbeat this reading was taken at. A retry turns a finished campaign back into a live
+   * one, so a list holding an older poll result has to be able to tell it is older than the row.
+   */
+  updated_at: number | null;
 }
 
 /** A user the recipient picker can offer. Kept minimal - it crosses to the client on every search. */
@@ -172,6 +181,24 @@ export function isCampaignLive(campaign: {
   interrupted: boolean;
 }): boolean {
   return campaign.status === "sending" && !campaign.interrupted;
+}
+
+/**
+ * Rows a retry would send to: everything not yet delivered. Failed rows are the obvious half; a
+ * row still `pending` on a campaign that is no longer live belongs to an interrupted run and was
+ * never contacted at all.
+ */
+export function campaignUnsentCount(campaign: { total: number; sent_count: number }): number {
+  return Math.max(0, campaign.total - campaign.sent_count);
+}
+
+export function canRetryCampaign(campaign: {
+  status: EmailCampaignStatus;
+  interrupted: boolean;
+  total: number;
+  sent_count: number;
+}): boolean {
+  return !isCampaignLive(campaign) && campaignUnsentCount(campaign) > 0;
 }
 
 /**
