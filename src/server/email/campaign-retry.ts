@@ -10,7 +10,7 @@ import {
   isCampaignLive,
 } from "@/lib/schemas/email";
 import { COLLECTIONS, type Document, currentTimestampMs, getCollection, toObjectId } from "@/server/db";
-import { startCampaign } from "@/server/email/campaign-runner";
+import { newRunId, startCampaign } from "@/server/email/campaign-runner";
 import { type EmailConfig, describeSmtpError, verifyTransport } from "@/server/email/transport";
 import { AppError, describeWriteError } from "@/server/errors";
 import { getEmailCampaign } from "@/server/queries/email-campaigns";
@@ -24,9 +24,11 @@ import { getEmailCampaign } from "@/server/queries/email-campaigns";
  * before the run starts, so the progress bar and the counters read the retry as the same campaign
  * resuming rather than as a second total stacked on the first.
  *
- * The claim is conditional on `updated_at` still holding the value read here. Every runner write
- * touches it, so two admins pressing Retry at once (or a run that turned out to be alive after
- * all) lose the race cleanly instead of starting a second loop over the same rows.
+ * The claim is conditional on `updated_at` still holding the value read here, so two admins
+ * pressing Retry at once start one run, not two. It also writes a new `run_id`: an "interrupted"
+ * run is only one whose heartbeat went stale, and a run stuck in a long SMTP call can still wake up
+ * afterwards. The runner checks that id on every write and stops once it no longer owns the
+ * campaign, so at most the one message it was in the middle of goes out twice.
  *
  * Kept out of the action so it carries no session check and no `refresh()`: those are the action's
  * half, and without them this can be driven against a real database and SMTP server from a script.
@@ -74,7 +76,9 @@ export async function retryCampaign(
   }
 
   const now = currentTimestampMs();
+  const runId = newRunId();
   const reset: Document = {
+    run_id: runId,
     status: "sending",
     error: null,
     finished_at: null,
@@ -106,6 +110,7 @@ export async function retryCampaign(
     config,
     initialSent: campaign.sent_count,
     initialFailed,
+    runId,
   });
 
   return succeeded({

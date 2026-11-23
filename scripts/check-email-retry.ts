@@ -12,7 +12,7 @@ import net from "node:net";
 
 import { COLLECTIONS, currentTimestampMs, getCollection, getDb, toObjectId } from "../src/server/db";
 import { retryCampaign } from "../src/server/email/campaign-retry";
-import { startCampaign } from "../src/server/email/campaign-runner";
+import { newRunId, startCampaign } from "../src/server/email/campaign-runner";
 import type { EmailConfig } from "../src/server/email/transport";
 
 // ---- fake SMTP server -------------------------------------------------------------------------
@@ -169,7 +169,8 @@ async function main() {
   script.set("bounce@t.test", [550]);
   script.set("down@t.test", [451]);
   const emails = ["ok@t.test", "flaky@t.test", "bounce@t.test", "down@t.test"];
-  const id = await insertCampaign(emails.map((email) => ({ email })));
+  const runId = newRunId();
+  const id = await insertCampaign(emails.map((email) => ({ email })), { run_id: runId });
   const started = Date.now();
   startCampaign({
     campaignId: id,
@@ -178,6 +179,7 @@ async function main() {
     config,
     initialSent: 0,
     initialFailed: 0,
+    runId,
   });
   let doc = await waitDone(id);
   console.log(`   (run took ${((Date.now() - started) / 1000).toFixed(1)}s)`);
@@ -240,6 +242,33 @@ async function main() {
   const liveId = await insertCampaign([{ email: "x@t.test", status: "failed" }, { email: "y@t.test" }]);
   const liveRetry = await retryCampaign(liveId, config);
   check("retry while still sending is refused", liveRetry.ok ? "ok" : liveRetry.error, "This campaign is still sending");
+
+  console.log("\n== 5. a run superseded by a retry stops ==");
+  const oldRun = newRunId();
+  const slow = ["s1@t.test", "s2@t.test", "s3@t.test"];
+  const supId = await insertCampaign(slow.map((email) => ({ email })), { run_id: oldRun });
+  startCampaign({
+    campaignId: supId,
+    message: { subject: "Selftest", body: "<p>hi</p>", template: "info" },
+    targets: slow.map((email, index) => ({ index, email, name: email.split("@")[0]! })),
+    config: { ...config, delayMs: 1500 },
+    initialSent: 0,
+    initialFailed: 0,
+    runId: oldRun,
+  });
+  // Wait for the first send, then take the campaign over the way a retry claim does.
+  for (let i = 0; i < 40 && !delivered.get("s1@t.test"); i += 1) {
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  await collection().updateOne({ _id: toObjectId(supId) }, { $set: { run_id: newRunId() } });
+  await new Promise((r) => setTimeout(r, 4000));
+  doc = (await collection().findOne({ _id: toObjectId(supId) }))!;
+  check(
+    "old run sent nothing after losing the campaign",
+    slow.map((e) => delivered.get(e) ?? 0),
+    [1, 0, 0],
+  );
+  check("old run did not close the campaign out", doc.status, "sending");
 
   console.log(`\n${failures === 0 ? "ALL PASSED" : `${failures} FAILED`}`);
 }

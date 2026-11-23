@@ -1,5 +1,7 @@
 import "server-only";
 
+import { randomUUID } from "node:crypto";
+
 import type { EmailMessage } from "@/lib/schemas/email";
 import { renderEmailHtml } from "@/lib/email/template";
 import { COLLECTIONS, type Document, currentTimestampMs, getCollection, toObjectId } from "@/server/db";
@@ -54,14 +56,37 @@ export interface RunCampaignArgs {
   /** Counters as the document holds them when the run starts: zero for a new campaign, not for a retry. */
   initialSent: number;
   initialFailed: number;
+  /**
+   * The `run_id` this run was started under. Every write is conditional on the document still
+   * holding it, so a run that a retry has superseded stops at its next write instead of carrying on
+   * beside the new one.
+   */
+  runId: string;
 }
+
+/** A fresh `run_id` for a campaign about to be (re)started. */
+export function newRunId(): string {
+  return randomUUID();
+}
+
+/**
+ * Thrown when the document no longer carries this run's id. A retry only claims a campaign whose
+ * heartbeat looked stale, and a run stuck in one long SMTP call looks exactly like that while still
+ * being alive - without this it would wake up and keep sending, mailing the rows the retry is also
+ * walking and overwriting its counters.
+ */
+class SupersededRun extends Error {}
 
 export function startCampaign(args: RunCampaignArgs): void {
   // Nothing awaits this, so an unhandled rejection here would take down the process rather than
   // fail the campaign. `runCampaign` already catches per recipient; this is the last resort.
   void runCampaign(args).catch((error: unknown) => {
+    if (error instanceof SupersededRun) {
+      console.warn(`Campaign ${args.campaignId}: run ${args.runId} was superseded by a retry`);
+      return;
+    }
     console.error(`Campaign ${args.campaignId} stopped unexpectedly`, error);
-    void finish(args.campaignId, "failed", describeSmtpError(error));
+    void finish(args.campaignId, args.runId, "failed", describeSmtpError(error));
   });
 }
 
@@ -72,9 +97,15 @@ async function runCampaign({
   config,
   initialSent,
   initialFailed,
+  runId,
 }: RunCampaignArgs): Promise<void> {
   const collection = getCollection(COLLECTIONS.emailCampaigns);
-  const _id = toObjectId(campaignId);
+  const owned = { _id: toObjectId(campaignId), run_id: runId };
+
+  const write = async (update: Document) => {
+    const result = await collection.updateOne(owned, { $set: update });
+    if (result.matchedCount === 0) throw new SupersededRun();
+  };
   const year = new Date().getFullYear();
 
   // Counted here and written as absolute values rather than `$inc`ed. This loop is the only writer
@@ -106,9 +137,7 @@ async function runCampaign({
           subject: message.subject,
           html,
         }),
-      // A backoff plus up to three 30s socket timeouts would outlast the heartbeat threshold, and
-      // a healthy run would read as interrupted while it waits out a flaky provider.
-      () => collection.updateOne({ _id }, { $set: { updated_at: currentTimestampMs() } }),
+      () => write({ updated_at: currentTimestampMs() }),
     );
 
     if (outcome.ok) {
@@ -124,7 +153,7 @@ async function runCampaign({
         sent_count: sent,
         updated_at: currentTimestampMs(),
       };
-      await collection.updateOne({ _id }, { $set: update });
+      await write(update);
     } else {
       failed += 1;
 
@@ -135,7 +164,7 @@ async function runCampaign({
         failed_count: failed,
         updated_at: currentTimestampMs(),
       };
-      await collection.updateOne({ _id }, { $set: update });
+      await write(update);
     }
 
     // Paces the run under the provider's rate limit, the same way the Python sender's `sleep(1)`
@@ -147,7 +176,7 @@ async function runCampaign({
 
   // A run where every single recipient failed is a configuration problem, not a campaign that went
   // out with some bounces, and the history table should not show it as completed.
-  await finish(campaignId, sent === 0 ? "failed" : "completed", null);
+  await finish(campaignId, runId, sent === 0 ? "failed" : "completed", null);
 }
 
 type SendOutcome = { ok: true; attempts: number } | { ok: false; attempts: number; error: unknown };
@@ -156,12 +185,26 @@ type SendOutcome = { ok: true; attempts: number } | { ok: false; attempts: numbe
  * Retries only what `isTransientSmtpError` says could succeed on a second try. A 5xx rejection or
  * a bad credential is recorded on the first attempt: repeating it would only slow the run down and
  * hit the provider with the same refused message.
+ *
+ * `heartbeat` runs before every attempt, the first included, and doubles as the ownership check.
+ * Checking only when a result is written would let a superseded run send its next recipient first -
+ * a recipient the retry that superseded it is about to send to as well. It also keeps the heartbeat
+ * fresh across backoffs and up to three 30s socket timeouts, which would otherwise outlast the
+ * interrupted threshold and make a healthy run look dead.
  */
 async function sendWithRetry(
   send: () => Promise<void>,
   heartbeat: () => Promise<unknown>,
 ): Promise<SendOutcome> {
   for (let attempt = 1; ; attempt += 1) {
+    if (attempt > 1) {
+      await sleep(RETRY_BACKOFF_MS[attempt - 2] ?? RETRY_BACKOFF_MS[RETRY_BACKOFF_MS.length - 1]);
+    }
+    // A failed heartbeat write is not worth failing the recipient over; being superseded is the
+    // one failure that must stop the run before it sends again.
+    await heartbeat().catch((heartbeatError: unknown) => {
+      if (heartbeatError instanceof SupersededRun) throw heartbeatError;
+    });
     try {
       await send();
       return { ok: true, attempts: attempt };
@@ -169,20 +212,19 @@ async function sendWithRetry(
       if (attempt >= SEND_MAX_ATTEMPTS || !isTransientSmtpError(error)) {
         return { ok: false, attempts: attempt, error };
       }
-      await heartbeat().catch(() => undefined);
-      await sleep(RETRY_BACKOFF_MS[attempt - 1] ?? RETRY_BACKOFF_MS[RETRY_BACKOFF_MS.length - 1]);
     }
   }
 }
 
 async function finish(
   campaignId: string,
+  runId: string,
   status: "completed" | "failed",
   error: string | null,
 ): Promise<void> {
   try {
     await getCollection(COLLECTIONS.emailCampaigns).updateOne(
-      { _id: toObjectId(campaignId) },
+      { _id: toObjectId(campaignId), run_id: runId },
       {
         $set: {
           status,

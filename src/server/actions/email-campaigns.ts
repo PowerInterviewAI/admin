@@ -21,7 +21,7 @@ import {
 } from "@/server/db";
 import { denyUnless } from "@/server/auth/guard";
 import { retryCampaign } from "@/server/email/campaign-retry";
-import { startCampaign } from "@/server/email/campaign-runner";
+import { newRunId, startCampaign } from "@/server/email/campaign-runner";
 import {
   type EmailConfig,
   describeSmtpError,
@@ -162,9 +162,15 @@ export async function startEmailCampaign(
     return failed(describeSmtpError(error));
   }
 
+  const runId = newRunId();
   let campaignId: string;
   try {
-    campaignId = await createCampaign({ audience, subject, body, template }, recipients, config);
+    campaignId = await createCampaign(
+      { audience, subject, body, template },
+      recipients,
+      config,
+      runId,
+    );
   } catch (error) {
     return failed(error instanceof AppError ? error.message : "Could not record this campaign");
   }
@@ -180,6 +186,7 @@ export async function startEmailCampaign(
     config,
     initialSent: 0,
     initialFailed: 0,
+    runId,
   });
 
   refresh();
@@ -204,6 +211,7 @@ async function createCampaign(
   campaign: { audience: string; subject: string; body: string; template: string },
   recipients: EmailRecipient[],
   config: EmailConfig,
+  runId: string,
 ): Promise<string> {
   try {
     const result = await getCollection(COLLECTIONS.emailCampaigns).insertOne({
@@ -226,6 +234,7 @@ async function createCampaign(
         attempts: 0,
       })),
       retry_count: 0,
+      run_id: runId,
       created_at: currentTimestampMs(),
       // Doubles as the run's heartbeat: the runner touches it on every recipient, and a stale
       // value on a campaign still marked `sending` is how the UI spots an interrupted run.
