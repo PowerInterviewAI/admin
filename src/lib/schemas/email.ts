@@ -82,8 +82,27 @@ export const emailDeliverySchema = z.object({
 
 export type EmailDelivery = z.infer<typeof emailDeliverySchema>;
 
-export const emailCampaignStatusSchema = z.enum(["sending", "completed", "failed"]);
+/**
+ * `paused` and `stopped` are both set by an admin. Paused keeps its unsent rows for Resume; stopped
+ * is terminal like completed, and its unsent rows are what Retry would send to.
+ */
+export const emailCampaignStatusSchema = z.enum([
+  "sending",
+  "paused",
+  "completed",
+  "stopped",
+  "failed",
+]);
 export type EmailCampaignStatus = z.infer<typeof emailCampaignStatusSchema>;
+
+/**
+ * A pause or stop an admin asked for that the running loop has not acted on yet. The loop is the
+ * only thing that knows whether a message is mid-flight, so it is the one that records the final
+ * state - flipping `status` from the action would orphan the result of the send in progress, and
+ * Resume would then send that message again.
+ */
+export const emailCampaignControlSchema = z.enum(["pause", "stop"]);
+export type EmailCampaignControl = z.infer<typeof emailCampaignControlSchema>;
 
 /**
  * A campaign document in `email_campaigns`.
@@ -108,6 +127,7 @@ export const emailCampaignSchema = timestampsSchema.extend({
   error: z.string().nullish().default(null),
   /** How many times an admin re-ran the unsent rows. */
   retry_count: z.number().int().default(0),
+  control: emailCampaignControlSchema.nullish().catch(null).default(null),
   recipients: z.array(emailDeliverySchema).default([]),
 });
 
@@ -133,6 +153,8 @@ export interface EmailCampaignProgress {
    * one, so a list holding an older poll result has to be able to tell it is older than the row.
    */
   updated_at: number | null;
+  /** A pause or stop requested and not yet acted on, so the UI can say "Pausing..." meanwhile. */
+  control: EmailCampaignControl | null;
 }
 
 /** A user the recipient picker can offer. Kept minimal - it crosses to the client on every search. */
@@ -192,13 +214,45 @@ export function campaignUnsentCount(campaign: { total: number; sent_count: numbe
   return Math.max(0, campaign.total - campaign.sent_count);
 }
 
+/** A paused campaign offers Resume instead, which continues the run rather than re-sending failures. */
 export function canRetryCampaign(campaign: {
   status: EmailCampaignStatus;
   interrupted: boolean;
   total: number;
   sent_count: number;
 }): boolean {
-  return !isCampaignLive(campaign) && campaignUnsentCount(campaign) > 0;
+  return (
+    !isCampaignLive(campaign) && campaign.status !== "paused" && campaignUnsentCount(campaign) > 0
+  );
+}
+
+/** Pause is offered only to a run that is actually moving and has not been asked to stop already. */
+export function canPauseCampaign(campaign: {
+  status: EmailCampaignStatus;
+  interrupted: boolean;
+  control: EmailCampaignControl | null;
+}): boolean {
+  return isCampaignLive(campaign) && campaign.control === null;
+}
+
+export function canResumeCampaign(campaign: { status: EmailCampaignStatus }): boolean {
+  return campaign.status === "paused";
+}
+
+/**
+ * A live run, a paused one, or an interrupted one can be stopped. Stopping an interrupted run just
+ * closes it out: its process is gone, and otherwise it would sit as "Interrupted" for good.
+ */
+export function canStopCampaign(campaign: {
+  status: EmailCampaignStatus;
+  interrupted: boolean;
+  control: EmailCampaignControl | null;
+}): boolean {
+  if (campaign.status === "paused") return true;
+  if (campaign.status !== "sending") return false;
+  // A stop already requested is pending on the loop - unless the loop is gone, when nothing will
+  // ever act on it and the admin needs a way to close the campaign out.
+  return campaign.control !== "stop" || campaign.interrupted;
 }
 
 /**

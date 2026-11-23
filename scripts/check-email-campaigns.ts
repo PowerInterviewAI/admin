@@ -1,17 +1,23 @@
 /**
- * Drives the campaign runner and `retryCampaign` against a fake SMTP server and a real MongoDB, and
- * checks both retry layers: the runner's automatic retry of transient failures (and not of
- * permanent ones), and the manual retry of a finished or interrupted campaign - including that a
- * row already sent is never sent again and that two concurrent retries start one run.
+ * Drives the campaign runner and `campaign-control.ts` against a fake SMTP server and a real
+ * MongoDB. Covers the runner's automatic retry of transient failures (and not of permanent ones),
+ * the manual retry of a finished, stopped, or interrupted campaign, a run superseded by a retry,
+ * and pause, resume and stop - throughout, that a row already sent is never sent again.
  *
  * Needs a reachable MongoDB (`MONGO_URL`, default `mongodb://127.0.0.1:27017`). It always works in
  * its own database, whatever `MONGO_DB` says, and drops that database when it finishes. Takes about
- * 25 seconds, most of it the real retry backoff. Run with `pnpm check:email-retry`.
+ * 45 seconds, most of it the real retry backoff and send pacing. Run with
+ * `pnpm check:email-campaigns`.
  */
 import net from "node:net";
 
 import { COLLECTIONS, currentTimestampMs, getCollection, getDb, toObjectId } from "../src/server/db";
-import { retryCampaign } from "../src/server/email/campaign-retry";
+import {
+  pauseCampaign,
+  resumeCampaign,
+  retryCampaign,
+  stopCampaign,
+} from "../src/server/email/campaign-control";
 import { newRunId, startCampaign } from "../src/server/email/campaign-runner";
 import type { EmailConfig } from "../src/server/email/transport";
 
@@ -144,8 +150,8 @@ const rowsOf = (doc: Record<string, unknown>) =>
 
 // Set before anything reads them: `getDb` resolves the name per call, and this script drops it.
 process.env.MONGO_URL ??= "mongodb://127.0.0.1:27017";
-process.env.MONGO_DB = "pia_email_retry_check";
-process.env.ADMIN_MONGO_DB = "pia_email_retry_check_admin";
+process.env.MONGO_DB = "pia_email_campaigns_check";
+process.env.ADMIN_MONGO_DB = "pia_email_campaigns_check_admin";
 
 // ---- run --------------------------------------------------------------------------------------
 async function main() {
@@ -269,6 +275,97 @@ async function main() {
     [1, 0, 0],
   );
   check("old run did not close the campaign out", doc.status, "sending");
+
+  // Paced slowly enough that a pause or stop always lands with recipients still to go.
+  const paced = { ...config, delayMs: 700 };
+  const statuses = (doc: Record<string, unknown>) =>
+    (doc.recipients as { status: string }[]).map((r) => r.status);
+  const sleepMs = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const waitFor = async (id: string, status: string) => {
+    for (let i = 0; i < 200; i += 1) {
+      const current = await collection().findOne({ _id: toObjectId(id) });
+      if (current?.status === status) return current;
+      await sleepMs(100);
+    }
+    throw new Error(`campaign ${id} never reached ${status}`);
+  };
+  const startFresh = async (emails: string[]) => {
+    const run = newRunId();
+    const campaignId = await insertCampaign(emails.map((email) => ({ email })), { run_id: run });
+    startCampaign({
+      campaignId,
+      message: { subject: "Selftest", body: "<p>hi</p>", template: "info" },
+      targets: emails.map((email, index) => ({ index, email, name: email.split("@")[0]! })),
+      config: paced,
+      initialSent: 0,
+      initialFailed: 0,
+      runId: run,
+    });
+    // Let the first recipient go out before anyone touches the controls.
+    for (let i = 0; i < 60 && !delivered.get(emails[0]!); i += 1) await sleepMs(50);
+    return campaignId;
+  };
+
+  console.log("\n== 6. pause, then resume ==");
+  const pauseEmails = ["p1@t.test", "p2@t.test", "p3@t.test", "p4@t.test"];
+  const pauseId = await startFresh(pauseEmails);
+  const pauseReq = await pauseCampaign(pauseId, paced);
+  check("pause is accepted as a request", pauseReq.ok ? [pauseReq.data.status, pauseReq.data.control] : pauseReq.error, ["sending", "pause"]);
+  const pauseAgain = await pauseCampaign(pauseId, paced);
+  check("a second pause is refused", pauseAgain.ok ? "ok" : pauseAgain.error, "This campaign is already pausing");
+  doc = await waitFor(pauseId, "paused");
+  const sentAtPause = pauseEmails.filter((e) => delivered.get(e)).length;
+  check("loop acknowledged: paused, request cleared", [doc.status, doc.control ?? null], ["paused", null]);
+  check("stopped short of the end", sentAtPause > 0 && sentAtPause < pauseEmails.length, true);
+  check("rows match deliveries", statuses(doc).filter((x) => x === "sent").length, sentAtPause);
+  await sleepMs(1500);
+  check("nothing sent while paused", pauseEmails.filter((e) => delivered.get(e)).length, sentAtPause);
+  const retryWhilePaused = await retryCampaign(pauseId, paced);
+  check("retry is refused while paused", retryWhilePaused.ok ? "ok" : retryWhilePaused.error, "This campaign is paused. Resume it instead.");
+  const resumed = await resumeCampaign(pauseId, paced);
+  check("resume starts a run", resumed.ok ? resumed.data.status : resumed.error, "sending");
+  doc = await waitDone(pauseId);
+  check("resume finished the campaign", [doc.status, doc.sent_count, doc.failed_count], ["completed", 4, 0]);
+  check("each recipient got exactly one email", pauseEmails.map((e) => delivered.get(e) ?? 0), [1, 1, 1, 1]);
+
+  console.log("\n== 7. stop a live run, then retry the rest ==");
+  const stopEmails = ["x1@t.test", "x2@t.test", "x3@t.test", "x4@t.test"];
+  const stopId = await startFresh(stopEmails);
+  const stopReq = await stopCampaign(stopId, paced);
+  check("stop is accepted as a request", stopReq.ok ? stopReq.data.control : stopReq.error, "stop");
+  const pauseAfterStop = await pauseCampaign(stopId, paced);
+  check("a pause cannot overwrite a stop", pauseAfterStop.ok ? "ok" : pauseAfterStop.error, "This campaign is already stopping");
+  doc = await waitFor(stopId, "stopped");
+  const sentAtStop = stopEmails.filter((e) => delivered.get(e)).length;
+  check("loop acknowledged: stopped with a finish time", [doc.status, doc.control ?? null, typeof doc.finished_at], ["stopped", null, "number"]);
+  check("stopped short of the end", sentAtStop > 0 && sentAtStop < stopEmails.length, true);
+  await sleepMs(1500);
+  check("nothing sent after stopping", stopEmails.filter((e) => delivered.get(e)).length, sentAtStop);
+  const resumeStopped = await resumeCampaign(stopId, paced);
+  check("a stopped campaign cannot be resumed", resumeStopped.ok ? "ok" : resumeStopped.error, "Only a paused campaign can be resumed");
+  const retryStopped = await retryCampaign(stopId, paced);
+  check("retry of a stopped campaign is accepted", retryStopped.ok, true);
+  doc = await waitDone(stopId);
+  check("retry sent the rest", [doc.status, doc.sent_count], ["completed", 4]);
+  check("each recipient got exactly one email", stopEmails.map((e) => delivered.get(e) ?? 0), [1, 1, 1, 1]);
+
+  console.log("\n== 8. stop a paused campaign ==");
+  const pausedStopEmails = ["ps1@t.test", "ps2@t.test", "ps3@t.test"];
+  const pausedStopId = await startFresh(pausedStopEmails);
+  await pauseCampaign(pausedStopId, paced);
+  await waitFor(pausedStopId, "paused");
+  const stopPaused = await stopCampaign(pausedStopId, paced);
+  check("stopping a paused campaign closes it at once", stopPaused.ok ? stopPaused.data.status : stopPaused.error, "stopped");
+
+  console.log("\n== 9. stop an interrupted campaign ==");
+  const deadId = await insertCampaign([{ email: "d1@t.test", status: "sent" }, { email: "d2@t.test" }], {
+    updated_at: currentTimestampMs() - 10 * 60_000,
+    run_id: newRunId(),
+  });
+  const pauseDead = await pauseCampaign(deadId, paced);
+  check("an interrupted run cannot be paused", pauseDead.ok ? "ok" : pauseDead.error, "This run is no longer running. Stop it or retry it instead.");
+  const stopDead = await stopCampaign(deadId, paced);
+  check("stopping an interrupted run closes it out", stopDead.ok ? [stopDead.data.status, stopDead.data.interrupted] : stopDead.error, ["stopped", false]);
 
   console.log(`\n${failures === 0 ? "ALL PASSED" : `${failures} FAILED`}`);
 }

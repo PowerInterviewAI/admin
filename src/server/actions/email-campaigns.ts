@@ -9,6 +9,7 @@ import {
   type EmailCampaignProgress,
   type RecipientOption,
   emailCampaignInputSchema,
+  emailCampaignStatusSchema,
   emailTestSchema,
   isCampaignInterrupted,
 } from "@/lib/schemas/email";
@@ -20,7 +21,12 @@ import {
   toObjectId,
 } from "@/server/db";
 import { denyUnless } from "@/server/auth/guard";
-import { retryCampaign } from "@/server/email/campaign-retry";
+import {
+  pauseCampaign,
+  resumeCampaign,
+  retryCampaign,
+  stopCampaign,
+} from "@/server/email/campaign-control";
 import { newRunId, startCampaign } from "@/server/email/campaign-runner";
 import {
   type EmailConfig,
@@ -199,6 +205,7 @@ export async function startEmailCampaign(
     failed_count: 0,
     error: null,
     updated_at: currentTimestampMs(),
+    control: null,
   });
 }
 
@@ -246,9 +253,22 @@ async function createCampaign(
   }
 }
 
-/** See `retryCampaign` for what a retry sends and how concurrent retries are kept apart. */
-export async function retryEmailCampaign(
+type CampaignOperation = (
   campaignId: string,
+  config: EmailConfig,
+) => Promise<ActionData<EmailCampaignProgress>>;
+
+/**
+ * The actions' half of every campaign control: the permission, the config, and the refresh. What
+ * each operation does lives in `campaign-control.ts`.
+ *
+ * Pause and stop need the config only for its pace (the interrupted threshold), but they still
+ * refuse on a missing SMTP setup: nothing can be running without one, and an admin looking at a
+ * read-only `/emails` should not be offered half the controls.
+ */
+async function runOperation(
+  campaignId: string,
+  operation: CampaignOperation,
 ): Promise<ActionData<EmailCampaignProgress>> {
   const denied = await denyUnless("emails:send");
   if (denied) return denied;
@@ -256,9 +276,37 @@ export async function retryEmailCampaign(
   const configResult = readEmailConfig();
   if (!configResult.ok) return failed(configResult.error);
 
-  const result = await retryCampaign(campaignId, configResult.config);
+  const result = await operation(campaignId, configResult.config);
   if (result.ok) refresh();
   return result;
+}
+
+/** Re-sends to every row not yet delivered on a campaign that is no longer running. */
+export async function retryEmailCampaign(
+  campaignId: string,
+): Promise<ActionData<EmailCampaignProgress>> {
+  return runOperation(campaignId, retryCampaign);
+}
+
+/** Asks a running campaign to pause after the message it is sending. */
+export async function pauseEmailCampaign(
+  campaignId: string,
+): Promise<ActionData<EmailCampaignProgress>> {
+  return runOperation(campaignId, pauseCampaign);
+}
+
+/** Continues a paused campaign with the recipients it has not reached yet. */
+export async function resumeEmailCampaign(
+  campaignId: string,
+): Promise<ActionData<EmailCampaignProgress>> {
+  return runOperation(campaignId, resumeCampaign);
+}
+
+/** Ends a running, paused, or interrupted campaign without sending to anyone else. */
+export async function stopEmailCampaign(
+  campaignId: string,
+): Promise<ActionData<EmailCampaignProgress>> {
+  return runOperation(campaignId, stopCampaign);
 }
 
 /** Counters and heartbeat only. The delivery log is the bulk of the document and no poller reads it. */
@@ -269,10 +317,12 @@ const PROGRESS_PROJECTION = {
   failed_count: 1,
   error: 1,
   updated_at: 1,
+  control: 1,
 } as const;
 
 function toProgress(doc: Document, timeoutMs: number): EmailCampaignProgress {
-  const status = doc.status === "sending" || doc.status === "failed" ? doc.status : "completed";
+  const parsedStatus = emailCampaignStatusSchema.safeParse(doc.status);
+  const status = parsedStatus.success ? parsedStatus.data : "completed";
 
   return {
     id: String(doc._id),
@@ -289,6 +339,7 @@ function toProgress(doc: Document, timeoutMs: number): EmailCampaignProgress {
     failed_count: Number(doc.failed_count ?? 0),
     error: typeof doc.error === "string" ? doc.error : null,
     updated_at: typeof doc.updated_at === "number" ? doc.updated_at : null,
+    control: doc.control === "pause" || doc.control === "stop" ? doc.control : null,
   };
 }
 

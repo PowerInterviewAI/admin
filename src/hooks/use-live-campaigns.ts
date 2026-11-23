@@ -51,6 +51,7 @@ export function useLiveCampaigns(campaigns: EmailCampaignRow[]): EmailCampaignRo
           sent_count: live.sent_count,
           failed_count: live.failed_count,
           error: live.error,
+          control: live.control,
         };
       }),
     [campaigns, progress],
@@ -80,7 +81,8 @@ export function useLiveCampaigns(campaigns: EmailCampaignRow[]): EmailCampaignRo
           previous.sent_count === item.sent_count &&
           previous.failed_count === item.failed_count &&
           previous.error === item.error &&
-          previous.updated_at === item.updated_at
+          previous.updated_at === item.updated_at &&
+          previous.control === item.control
         ) {
           continue;
         }
