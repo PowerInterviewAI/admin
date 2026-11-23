@@ -2,8 +2,7 @@
  * Pins the role table in `src/lib/rbac.ts` against the access each role is meant to have.
  *
  * There is no test runner in this app, and the failure this guards against is silent: a permission
- * dropped from `guest` hides a page nobody notices is gone, and a write or `resellers:*` added to
- * `reseller` hands an outside partner control of the product or the other partners' balances. Run with `pnpm check:rbac`; exits non-zero on drift.
+ * dropped from `guest` hides a page nobody notices is gone. Run with `pnpm check:rbac`; exits non-zero on drift.
  */
 import assert from "node:assert/strict";
 
@@ -27,19 +26,13 @@ const ROUTES = [
   "/audit-logs",
   "/access",
   "/account",
-  "/resellers",
-  "/resellers/history",
-  "/resellers/settlements",
-  "/reseller",
 ] as const;
 
 const EXPECTED: Record<AccountRole, readonly string[]> = {
-  admin: ROUTES.filter((route) => route !== "/reseller"),
+  admin: ROUTES,
   // The dashboard's aggregate figures and the caller's own account. Users, interviews and payments
-  // are admin-only, like sessions, audit logs, email, access and the reseller pages.
+  // are admin-only, like sessions, audit logs, email, and access.
   guest: ["/", "/account"],
-  // A guest's pages plus their own portal; never the other partners' `/resellers`.
-  reseller: ["/", "/account", "/reseller"],
 };
 
 let failures = 0;
@@ -81,32 +74,12 @@ check("users, interviews and payments belong to admins alone", () => {
   }
 });
 
-check("a reseller reaches every page a guest can", () => {
-  for (const route of ROUTES) {
-    if (canAccessPath("guest", route)) assert.ok(canAccessPath("reseller", route), route);
-  }
-});
-
-check("a reseller holds no write and nothing admin-only", () => {
-  for (const permission of ROLE_PERMISSIONS.reseller) {
-    assert.ok(!/:(write|manage|send)$|^(sessions|audit_logs|access|resellers):/.test(permission), permission);
-  }
-});
-
 check("every route rule names a real permission", () => {
   for (const rule of ROUTE_PERMISSIONS) assert.ok(PERMISSIONS.includes(rule.permission), rule.path);
 });
 
-check("/reseller and /resellers are different segments", () => {
-  assert.equal(canAccessPath("reseller", "/resellers"), false);
-  assert.equal(canAccessPath("reseller", "/resellers/history"), false);
-  assert.equal(canAccessPath("admin", "/reseller"), false);
-  assert.equal(canAccessPath("reseller", "/reseller?page=2"), true);
-});
-
 check("/ is matched exactly, not as a prefix of everything", () => {
   assert.equal(canAccessPath("guest", "/"), true);
-  assert.equal(canAccessPath("guest", "/reseller"), false);
   assert.equal(canAccessPath("guest", "/sessions"), false);
 });
 

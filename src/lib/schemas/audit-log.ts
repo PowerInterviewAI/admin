@@ -27,16 +27,14 @@ const KNOWN_EVENT_TYPES = [
   "payment_error",
   "credits_applied",
   "credits_consumed",
-  // The two later movements on the same balance, neither a purchase nor a spend: a refund
-  // clawing a grant back, and an admin dashboard edit. Added together with backend's enum in the
-  // same change - see the note on `auditEventTypeSchema` below for why that pairing matters.
+  // The two later movements on the same balance, neither a purchase nor a spend: an automatic
+  // refund on older rows (refunds are manual now), and an admin dashboard edit. Declared with
+  // backend's enum - see the note on `auditEventTypeSchema` below for why that pairing matters.
   "credits_reversed",
   "credits_adjusted",
   "asr_start",
   "asr_stop",
-  // A reseller's API key being issued (a rotation replaces one) or ended. Written by this app, which
-  // owns keys, and declared in backend's enum too. They fall under `auth` ("accounts") by the
-  // complement rule below: a key is part of an account's access, and nothing here is a payment.
+  // From the removed reseller feature. Kept so rows already in the log still parse.
   "reseller_key_issued",
   "reseller_key_revoked",
 ] as const;
@@ -85,7 +83,7 @@ const PAYMENT_EVENTS = [
   // spent. Grouped with payments rather than under `auth`, because the question an admin opens
   // this tab to answer - where did this account's credits go - is answered by the two together.
   "credits_consumed",
-  // The other two movements on the same balance: a refund reversing a grant, and an admin
+  // The other two movements on the same balance: an older automatic refund, and an admin
   // dashboard edit. Both belong on the same "where did this account's credits go" question.
   "credits_reversed",
   "credits_adjusted",

@@ -24,7 +24,7 @@ import { PageHeader } from "@/components/page-header";
 import { StatCard } from "@/components/stat-card";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
-import { formatNumber, formatUsd } from "@/lib/format";
+import { formatNumber, formatUsd, planLabel } from "@/lib/format";
 import { dashboardSearchParamsSchema, parseSearchParams } from "@/lib/search-params";
 import { canAccessPath, hasPermission, homePathFor } from "@/lib/rbac";
 import { requireAccount } from "@/server/auth/guard";
@@ -176,11 +176,11 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
           hint="Lifetime, across paying accounts"
         />
         <StatCard
-          label="Credits Outstanding"
-          href={link("/users?role=user&min_credits=1&sort_by=credits")}
-          value={formatNumber(data.credits_outstanding)}
+          label="Active Subscribers"
+          href={link("/users?subscribed=yes&sort_by=subscription_expires_at")}
+          value={formatNumber(data.active_subscribers)}
           icon={Coins}
-          hint="Sum across all users"
+          hint={`${formatPercent(data.users.total > 0 ? data.active_subscribers / data.users.total : 0)} of all accounts`}
         />
       </div>
 
@@ -289,7 +289,12 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
           description="All-time, finished payments only"
           isEmpty={Object.keys(data.revenue.by_plan_usd).length === 0}
         >
-          <DistributionChart data={data.revenue.by_plan_usd} format="usd" />
+          <DistributionChart
+            data={Object.fromEntries(
+              Object.entries(data.revenue.by_plan_usd).map(([plan, usd]) => [planLabel(plan), usd]),
+            )}
+            format="usd"
+          />
         </ChartCard>
       </div>
 

@@ -159,6 +159,25 @@ export async function updateById(
   }
 }
 
+/** `updateById`, applied only while `guard` still holds. False when nothing matched. */
+export async function updateByIdIf(
+  collection: CollectionName,
+  id: string,
+  guard: Document,
+  patch: Document,
+  what: string,
+): Promise<boolean> {
+  try {
+    const result = await getCollection(collection).updateOne(
+      { ...guard, _id: toObjectId(id) },
+      { $set: { ...patch, updated_at: currentTimestampMs() } },
+    );
+    return result.matchedCount === 1;
+  } catch (error) {
+    throw describeWriteError(error, what);
+  }
+}
+
 export async function deleteById(
   collection: CollectionName,
   id: string,

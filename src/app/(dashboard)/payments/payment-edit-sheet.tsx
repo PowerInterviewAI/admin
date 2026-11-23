@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
 
@@ -27,7 +27,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { formatDate, formatUsd, titleCase } from "@/lib/format";
+import { formatDate, formatPurchase, formatUsd, planLabel, titleCase } from "@/lib/format";
 import {
   PAYMENT_STATUSES,
   type PaymentPatch,
@@ -66,15 +66,30 @@ function PaymentEditForm({ payment, onClose }: { payment: PaymentRow; onClose: (
   const canWrite = useCan("payments:write");
   const canSeeAuditLog = useCanAccess("/audit-logs");
   const [isSaving, startSaving] = useTransition();
+  // Held from mount: a refresh can replace the `payment` prop while this form keeps its values.
+  const [openedReason] = useState(payment.review_reason);
 
   const { control, handleSubmit, formState } = useForm<PaymentPatch>({
     resolver: zodResolver(paymentPatchSchema),
-    defaultValues: { status: payment.status, credits_applied: payment.credits_applied },
+    defaultValues: {
+      status: payment.status,
+      credits_applied: payment.credits_applied,
+      review_resolved: false,
+    },
   });
 
   const onSubmit = handleSubmit((values) => {
     startSaving(async () => {
-      const result = await updatePayment(payment._id, values);
+      const result = await updatePayment(
+        payment._id,
+        {
+          ...(formState.dirtyFields.status ? { status: values.status } : {}),
+          ...(formState.dirtyFields.credits_applied
+            ? { credits_applied: values.credits_applied }
+            : {}),
+        },
+        values.review_resolved ? openedReason : null,
+      );
       if (!result.ok) {
         toast.error(result.error);
         return;
@@ -102,9 +117,16 @@ function PaymentEditForm({ payment, onClose }: { payment: PaymentRow; onClose: (
               <div className="col-span-2">
                 <InfoRow label="Order ID" value={payment.order_id} mono />
               </div>
-              <InfoRow label="Plan" value={titleCase(payment.plan)} />
+              <InfoRow label="Plan" value={planLabel(payment.plan)} />
               <InfoRow label="Amount" value={formatUsd(payment.price_amount)} />
-              <InfoRow label="Credits" value={String(payment.credits_amount)} />
+              <InfoRow
+                label="Grants"
+                value={formatPurchase(
+                  payment.months_amount,
+                  payment.days_granted,
+                  payment.credits_amount,
+                )}
+              />
               <InfoRow label="Created" value={formatDate(payment.created_at)} />
               <InfoRow label="Updated" value={formatDate(payment.updated_at)} />
             </div>
@@ -123,6 +145,29 @@ function PaymentEditForm({ payment, onClose }: { payment: PaymentRow; onClose: (
                 {canSeeAuditLog && (
                   <RelatedLink href={`/audit-logs?user_id=${payment.user_id}`} label="Audit log" />
                 )}
+              </div>
+            )}
+
+            {openedReason && (
+              <div className="flex flex-col gap-2 rounded-md border border-destructive/40 p-3">
+                <p className="text-sm font-medium">Needs review</p>
+                <p className="text-sm text-muted-foreground">{openedReason}</p>
+                <Field orientation="horizontal">
+                  <Controller
+                    control={control}
+                    name="review_resolved"
+                    render={({ field }) => (
+                      <Checkbox
+                        id="review_resolved"
+                        checked={field.value}
+                        onCheckedChange={(checked) => field.onChange(checked === true)}
+                      />
+                    )}
+                  />
+                  <FieldLabel htmlFor="review_resolved" className="font-normal">
+                    Resolved
+                  </FieldLabel>
+                </Field>
               </div>
             )}
 
@@ -146,6 +191,11 @@ function PaymentEditForm({ payment, onClose }: { payment: PaymentRow; onClose: (
                   </Select>
                 )}
               />
+              <FieldDescription>
+                {payment.root_payment_id
+                  ? "This is a follow-up payment. Record a refund on the original order, which is what the customer and revenue read."
+                  : "Refunds are manual: send the money back to the customer, end or shorten their subscription on the Users page, then set this status to Refunded."}
+              </FieldDescription>
             </Field>
 
             <Field orientation="horizontal">
@@ -161,12 +211,12 @@ function PaymentEditForm({ payment, onClose }: { payment: PaymentRow; onClose: (
                 )}
               />
               <FieldLabel htmlFor="credits_applied" className="font-normal">
-                Credits applied to user balance
+                Applied to the user&apos;s account
               </FieldLabel>
             </Field>
             <FieldDescription>
-              Toggling this does not itself credit or debit the user - it only records whether it
-              happened.
+              Toggling this does not itself grant or remove anything - it only records whether
+              backend applied the order.
             </FieldDescription>
           </FieldGroup>
           </fieldset>

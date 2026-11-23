@@ -19,7 +19,6 @@ import {
   setAccountName,
   setAccountPasswordHash,
 } from "@/server/auth/accounts";
-import { revokeApiKey } from "@/server/auth/api-keys";
 import { denySelfService, denyUnless } from "@/server/auth/guard";
 import { getCurrentAccount, revokeAccountSessions } from "@/server/auth/session";
 import { COLLECTIONS, currentTimestampMs, getCollection, toObjectId } from "@/server/db";
@@ -155,13 +154,6 @@ export async function setAccountRole(accountId: string, input: unknown): Promise
       { $set: { role: parsed.data.role, updated_at: currentTimestampMs() } },
     );
     if (result.matchedCount === 0) throw notFound("account");
-
-    // Backend refuses a key whose account is no longer a reseller, so this is not what stops it -
-    // it is what stops a later promotion back to reseller from reviving a key issued years ago.
-    if (parsed.data.role !== "reseller") {
-      const actor = await getCurrentAccount();
-      await revokeApiKey(accountId, { email: actor?.email ?? null, via: "role_change" });
-    }
   } catch (error) {
     return failed(
       error instanceof AppError ? error.message : "Could not change this account's role",
@@ -234,11 +226,6 @@ export async function deleteAdminAccount(accountId: string): Promise<ActionResul
   if (builtIn) return builtIn;
 
   try {
-    // Before the account goes: the key's end is recorded against the reseller's email, which is
-    // gone once the row is. Backend would refuse the key from here on anyway; this is the trail.
-    const actor = await getCurrentAccount();
-    await revokeApiKey(accountId, { email: actor?.email ?? null, via: "account_deleted" });
-
     const result = await getCollection(COLLECTIONS.adminAccounts).deleteOne({
       _id: toObjectId(accountId),
     });
@@ -260,7 +247,7 @@ export async function deleteAdminAccount(accountId: string): Promise<ActionResul
 
 /* -------------------------------------------------------------------------------------------- */
 /* Your own account. These are the account page, and they are guarded by `denySelfService`      */
-/* rather than a permission: they act only on the caller, so a guest or a reseller changing their */
+/* rather than a permission: they act only on the caller, so a guest changing their              */
 /* own password is not a write to anything they are forbidden from - it is the one thing every   */
 /* signed-in account must be able to do regardless of role.                                       */
 /* -------------------------------------------------------------------------------------------- */

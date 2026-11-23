@@ -17,7 +17,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { UserCell } from "@/components/user-cell";
 import { useListParams } from "@/hooks/use-list-params";
-import { formatDate, formatUsd, titleCase } from "@/lib/format";
+import { formatDate, formatPurchase, formatUsd, planLabel, titleCase } from "@/lib/format";
 import { PAYMENTS_TABS, type ListTabCounts } from "@/lib/list-tabs";
 import type { Page } from "@/lib/schemas/common";
 import {
@@ -65,16 +65,19 @@ const columns: ColumnDef<PaymentRow, unknown>[] = [
   {
     accessorKey: "plan",
     header: "Plan",
-    cell: ({ row }) => titleCase(row.original.plan),
+    cell: ({ row }) => planLabel(row.original.plan),
   },
   {
     accessorKey: "status",
     header: "Status",
     enableSorting: true,
     cell: ({ row }) => (
-      <Badge variant={STATUS_BADGE_VARIANT[row.original.status]}>
-        {titleCase(row.original.status)}
-      </Badge>
+      <div className="flex flex-wrap items-center gap-1">
+        <Badge variant={STATUS_BADGE_VARIANT[row.original.status]}>
+          {titleCase(row.original.status)}
+        </Badge>
+        {row.original.review_reason && <Badge variant="destructive">Needs review</Badge>}
+      </div>
     ),
   },
   {
@@ -84,9 +87,14 @@ const columns: ColumnDef<PaymentRow, unknown>[] = [
     cell: ({ row }) => formatUsd(row.original.price_amount),
   },
   {
-    accessorKey: "credits_amount",
-    header: "Credits",
-    enableSorting: true,
+    id: "grant",
+    header: "Grants",
+    cell: ({ row }) =>
+      formatPurchase(
+        row.original.months_amount,
+        row.original.days_granted,
+        row.original.credits_amount,
+      ),
   },
   {
     accessorKey: "credits_applied",
@@ -201,16 +209,17 @@ export function PaymentsView({
           allLabel="All plans"
           value={params.plan}
           options={PAYMENT_PLANS}
+          formatOption={planLabel}
           onChange={(plan) => setParams({ plan })}
           className="w-40"
         />
         <FilterSelect
-          label="Filter by credits applied"
+          label="Filter by applied"
           allLabel="Applied or not"
           value={params.applied}
           options={YES_NO_OPTIONS}
           onChange={(applied) => setParams({ applied })}
-          formatOption={(value) => (value === "yes" ? "Credits applied" : "Not applied")}
+          formatOption={(value) => (value === "yes" ? "Applied" : "Not applied")}
           className="w-44"
         />
         <NumberRangeFilter

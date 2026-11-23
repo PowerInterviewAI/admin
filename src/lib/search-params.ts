@@ -9,7 +9,6 @@ import { objectIdSchema, sortDirSchema } from "@/lib/schemas/common";
 import { emailCampaignStatusSchema } from "@/lib/schemas/email";
 import { INTERVIEW_KINDS, INTERVIEW_STATES } from "@/lib/schemas/interview";
 import { paymentBucketSchema, paymentPlanSchema, paymentStatusSchema } from "@/lib/schemas/payment";
-import { ledgerKindSchema, settlementStatusSchema } from "@/lib/schemas/reseller";
 import { userRoleSchema, userStatusSchema } from "@/lib/schemas/user";
 import { SESSION_ACTIVITIES } from "@/lib/session-activity";
 
@@ -89,9 +88,13 @@ export const usersSearchParamsSchema = z.object({
   configured: yesNoSchema,
   /** Whether the account has a client app signed in right now. */
   online: yesNoSchema,
+  /** Whether the account's subscription is active right now. */
+  subscribed: yesNoSchema,
   // An allowlist, not a raw Mongo field name: sorting on a field the collection does not index
   // just produces a confusingly ordered result set.
-  sort_by: z.enum(["created_at", "updated_at", "credits", "username", "email"]).catch("created_at"),
+  sort_by: z
+    .enum(["created_at", "updated_at", "credits", "subscription_expires_at", "username", "email"])
+    .catch("created_at"),
   sort_dir: sortDirSchema.catch("desc"),
   page: pageSchema,
   per_page: perPageSchema(PAGE_SIZE),
@@ -102,7 +105,7 @@ export const paymentsSearchParamsSchema = z.object({
   status: paymentStatusSchema.optional().catch(undefined),
   /**
    * The quick-filter tabs' dimension. Kept separate from `status` rather than overloading it: three
-   * of the four buckets are several statuses, and one of them is not a status at all.
+   * of the five buckets are several statuses, and two of them are not statuses at all.
    */
   bucket: paymentBucketSchema.optional().catch(undefined),
   plan: paymentPlanSchema.optional().catch(undefined),
@@ -113,7 +116,7 @@ export const paymentsSearchParamsSchema = z.object({
   max_amount: amountSchema,
   applied: yesNoSchema,
   sort_by: z
-    .enum(["created_at", "updated_at", "price_amount", "credits_amount", "status"])
+    .enum(["created_at", "updated_at", "price_amount", "status"])
     .catch("created_at"),
   sort_dir: sortDirSchema.catch("desc"),
   page: pageSchema,
@@ -188,55 +191,6 @@ export const dashboardSearchParamsSchema = z.object({
     .catch(DEFAULT_ANALYTICS_RANGE),
 });
 
-/** Same reasoning as `userIdSchema`: an id from a link degrades rather than throwing. */
-const resellerIdSchema = objectIdSchema.optional().catch(undefined);
-
-/** Every reseller sale, across all resellers: `/resellers/history`. */
-export const resellerSalesSearchParamsSchema = z.object({
-  /** Matches the reseller's order reference or the customer's email. */
-  q: z.string().optional().catch(undefined),
-  reseller_id: resellerIdSchema,
-  kind: ledgerKindSchema.optional().catch(undefined),
-  /**
-   * The review queue. An allowlist of one rather than a free state: `committed` is the default, and
-   * `pending` / `void` rows are not something any page should be asked to list.
-   */
-  state: z.enum(["unresolved"]).optional().catch(undefined),
-  from: dateSchema,
-  to: dateSchema,
-  sort_by: z.enum(["committed_at", "credits", "price_amount"]).catch("committed_at"),
-  sort_dir: sortDirSchema.catch("desc"),
-  page: pageSchema,
-  per_page: perPageSchema(PAGE_SIZE),
-});
-
-/** The daily settlement rows: `/resellers/settlements`. */
-export const resellerSettlementsSearchParamsSchema = z.object({
-  reseller_id: resellerIdSchema,
-  status: settlementStatusSchema.optional().catch(undefined),
-  from: dateSchema,
-  to: dateSchema,
-  sort_by: z.enum(["day", "amount_owed_cents", "credits"]).catch("day"),
-  sort_dir: sortDirSchema.catch("desc"),
-  page: pageSchema,
-  per_page: perPageSchema(PAGE_SIZE),
-});
-
-/**
- * A reseller's own portal. One table at a time, chosen by `view`, which is a layout key rather
- * than a filter: switching what you are looking at is not narrowing it.
- */
-export const RESELLER_PORTAL_VIEWS = ["customers", "sales", "settlements"] as const;
-export const resellerPortalSearchParamsSchema = z.object({
-  view: z.enum(RESELLER_PORTAL_VIEWS).catch("customers"),
-  q: z.string().optional().catch(undefined),
-  page: pageSchema,
-  per_page: perPageSchema(PAGE_SIZE),
-});
-
-export type ResellerSalesSearchParams = z.infer<typeof resellerSalesSearchParamsSchema>;
-export type ResellerSettlementsSearchParams = z.infer<typeof resellerSettlementsSearchParamsSchema>;
-export type ResellerPortalSearchParams = z.infer<typeof resellerPortalSearchParamsSchema>;
 export type EmailCampaignsSearchParams = z.infer<typeof emailCampaignsSearchParamsSchema>;
 export type UsersSearchParams = z.infer<typeof usersSearchParamsSchema>;
 export type PaymentsSearchParams = z.infer<typeof paymentsSearchParamsSchema>;

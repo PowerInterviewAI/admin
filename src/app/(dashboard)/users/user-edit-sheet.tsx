@@ -48,7 +48,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
-import { formatDate, formatNumber, titleCase } from "@/lib/format";
+import { formatDate, formatNumber, formatUtc, titleCase } from "@/lib/format";
 import {
   EMPTY_INTERVIEW_CONFIG,
   USER_ROLES,
@@ -60,6 +60,107 @@ import {
 import { deleteUser, updateUser } from "@/server/actions/users";
 
 import { SetPasswordDialog } from "./set-password-dialog";
+
+/** Calendar months in UTC, as backend grants a pass: a day the target month lacks lands on its last. */
+function addCalendarMonths(ms: number, months: number): number {
+  const date = new Date(ms);
+  const day = date.getUTCDate();
+  date.setUTCDate(1);
+  date.setUTCMonth(date.getUTCMonth() + months);
+  const lastDay = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0)).getUTCDate();
+  date.setUTCDate(Math.min(day, lastDay));
+  return date.getTime();
+}
+
+/** The last UTC day an expiry covers: it is exclusive, so one at midnight ends the day before. */
+function toDateInput(ms: number | null): string {
+  if (ms === null || !Number.isFinite(ms)) return "";
+  return new Date(ms - 1).toISOString().slice(0, 10);
+}
+
+const DATE_INPUT = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/**
+ * A picked date means "through the end of that day, UTC". Anything that is not a complete,
+ * plausible date is null and is ignored by the caller rather than read as "no subscription": a
+ * date input reports "" while a segment is cleared, and a year part-way through being typed
+ * ("0002") that `Date.UTC` would turn into 1902.
+ */
+function fromDateInput(value: string): number | null {
+  const match = DATE_INPUT.exec(value);
+  if (!match) return null;
+  const [year, month, day] = match.slice(1).map(Number);
+  if (year < 2000 || year > 9999) return null;
+  const ms = Date.UTC(year, month - 1, day + 1);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+/** The exact moment it ends, since a pass bought mid-day ends mid-day. */
+function describeSubscription(user: UserRow): string {
+  if (user.subscription_expires_at === null) return "No subscription.";
+  const at = formatUtc(user.subscription_expires_at);
+  return user.subscribed ? `Active until ${at}.` : `Ended at ${at}.`;
+}
+
+function SubscriptionInput({
+  value,
+  onChange,
+}: {
+  value: number | null;
+  onChange: (value: number | null) => void;
+}) {
+  // Read in the handlers, not during render: the clock is not something a render may depend on.
+  const extend = (months: number) =>
+    onChange(addCalendarMonths(Math.max(Date.now(), value ?? 0), months));
+
+  // What the field shows is held here, because a date input passes through states that are not a
+  // date (a cleared segment, a half-typed year). Only a complete date reaches the form; removing
+  // the subscription is the Remove button's job. A new value from the buttons resets the text.
+  const [draft, setDraft] = useState(() => toDateInput(value));
+  const [shownValue, setShownValue] = useState(value);
+  if (value !== shownValue) {
+    setShownValue(value);
+    setDraft(toDateInput(value));
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <Input
+        id="subscription-ends"
+        type="date"
+        value={draft}
+        onChange={(event) => {
+          setDraft(event.target.value);
+          const ms = fromDateInput(event.target.value);
+          if (ms !== null) onChange(ms);
+        }}
+      />
+      <div className="flex flex-wrap gap-2">
+        <Button type="button" variant="outline" size="sm" onClick={() => extend(1)}>
+          +1 month
+        </Button>
+        <Button type="button" variant="outline" size="sm" onClick={() => extend(3)}>
+          +3 months
+        </Button>
+        <Button type="button" variant="outline" size="sm" onClick={() => extend(12)}>
+          +1 year
+        </Button>
+        <Button type="button" variant="outline" size="sm" onClick={() => onChange(Date.now())}>
+          End now
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={value === null}
+          onClick={() => onChange(null)}
+        >
+          Remove
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 interface UserEditSheetProps {
   user: UserRow | null;
@@ -73,7 +174,7 @@ export function UserEditSheet({ user, onClose }: UserEditSheetProps) {
         <SheetHeader>
           <SheetTitle>Edit user</SheetTitle>
           <SheetDescription>
-            Update the account, credit balance, and interview setup.
+            Update the account, subscription, free time, and interview setup.
           </SheetDescription>
         </SheetHeader>
 
@@ -94,12 +195,14 @@ function UserEditForm({ user, onClose }: { user: UserRow; onClose: () => void })
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [isSaving, startSaving] = useTransition();
   const [isDeleting, startDeleting] = useTransition();
+  // Held from mount: a refresh can replace the `user` prop while this form keeps its values.
+  const [openedExpiresAt] = useState(user.subscription_expires_at);
 
   const {
     register,
     control,
     handleSubmit,
-    formState: { errors, isDirty },
+    formState: { errors, isDirty, dirtyFields },
   } = useForm<UserPatch>({
     resolver: zodResolver(userPatchSchema),
     defaultValues: {
@@ -108,13 +211,23 @@ function UserEditForm({ user, onClose }: { user: UserRow; onClose: () => void })
       role: user.role,
       status: user.status,
       credits: user.credits,
+      subscription_expires_at: user.subscription_expires_at,
       interview_config: user.interview_config ?? EMPTY_INTERVIEW_CONFIG,
     },
   });
 
   const onSubmit = handleSubmit((values) => {
     startSaving(async () => {
-      const result = await updateUser(user._id, values);
+      // Role, free credits and the end date are sent only when they were edited here; see
+      // `userPatchSchema`.
+      const { role, credits, subscription_expires_at: expiresAt, ...rest } = values;
+      const patch = {
+        ...rest,
+        ...(dirtyFields.role ? { role } : {}),
+        ...(dirtyFields.credits ? { credits } : {}),
+        ...(dirtyFields.subscription_expires_at ? { subscription_expires_at: expiresAt } : {}),
+      };
+      const result = await updateUser(user._id, patch, openedExpiresAt);
       if (!result.ok) {
         toast.error(result.error);
         return;
@@ -227,8 +340,24 @@ function UserEditForm({ user, onClose }: { user: UserRow; onClose: () => void })
               />
             </Field>
 
+            <Field>
+              <FieldLabel htmlFor="subscription-ends">Subscription ends (UTC)</FieldLabel>
+              <Controller
+                control={control}
+                name="subscription_expires_at"
+                render={({ field }) => (
+                  <SubscriptionInput value={field.value ?? null} onChange={field.onChange} />
+                )}
+              />
+              <FieldDescription>
+                {describeSubscription(user)} A picked date runs to the end of that day, UTC.
+                Subscribers get unlimited interviews on the paid model. Adding time extends from the
+                current end date while it is still ahead.
+              </FieldDescription>
+            </Field>
+
             <Field data-invalid={!!errors.credits}>
-              <FieldLabel htmlFor="credits">Credits</FieldLabel>
+              <FieldLabel htmlFor="credits">Free credits</FieldLabel>
               <Input
                 id="credits"
                 type="number"
@@ -237,8 +366,8 @@ function UserEditForm({ user, onClose }: { user: UserRow; onClose: () => void })
                 {...register("credits", { valueAsNumber: true })}
               />
               <FieldDescription>
-                Live and mock interviews both spend 10 credits a minute. A session needs a minute
-                of credit to start and stops at zero; this balance also selects the LLM tier.
+                The free hour (600 credits), spent at 10 a minute only while the user has no
+                subscription. At zero a free user&apos;s session stops.
               </FieldDescription>
               <FieldError errors={[errors.credits]} />
             </Field>
