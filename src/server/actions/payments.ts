@@ -7,9 +7,25 @@ import { z } from "zod";
 
 import { paymentSaveSchema } from "@/lib/schemas/payment";
 import { denyUnless } from "@/server/auth/guard";
-import { COLLECTIONS } from "@/server/db";
+import { COLLECTIONS, toObjectId } from "@/server/db";
 import { AppError } from "@/server/errors";
-import { updateById, updateByIdIf } from "@/server/repository";
+import { findOne, updateById, updateByIdIf } from "@/server/repository";
+
+const reviewReasonSchema = z.object({ review_reason: z.string().nullish().default(null) });
+
+/** The order's review note as stored now; null when nothing is pending or it cannot be read. */
+async function currentReviewReason(paymentId: string): Promise<string | null> {
+  try {
+    const doc = await findOne({
+      collection: COLLECTIONS.payments,
+      schema: reviewReasonSchema,
+      filter: { _id: toObjectId(paymentId) },
+    });
+    return doc?.review_reason ?? null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * A support-desk override of a stored payment record. It does not call NOWPayments, does not
@@ -33,12 +49,13 @@ export async function updatePayment(
     return failed("The submitted values are not valid");
   }
 
+  let cleared = true;
   try {
     if (Object.keys(parsed.data).length > 0) {
       await updateById(COLLECTIONS.payments, paymentId, parsed.data, "payment");
     }
     if (resolved.data) {
-      await updateByIdIf(
+      cleared = await updateByIdIf(
         COLLECTIONS.payments,
         paymentId,
         { review_reason: resolved.data },
@@ -51,5 +68,10 @@ export async function updatePayment(
   }
 
   refresh();
+  if (!cleared && (await currentReviewReason(paymentId))) {
+    return failed(
+      "Backend flagged this order again while the sheet was open, so it still needs review. Any other changes were saved: reopen the order to read the new note.",
+    );
+  }
   return ok;
 }
