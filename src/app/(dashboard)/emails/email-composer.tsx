@@ -1,7 +1,15 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { CircleCheck, CircleX, FileCode2, Send, TriangleAlert, Users } from "lucide-react";
+import {
+  CircleCheck,
+  CircleX,
+  FileCode2,
+  RotateCcw,
+  Send,
+  TriangleAlert,
+  Users,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import {
   useCallback,
@@ -47,10 +55,13 @@ import {
   type EmailMessage,
   type EmailTemplate,
   type RecipientOption,
+  campaignUnsentCount,
+  canRetryCampaign,
   emailMessageSchema,
 } from "@/lib/schemas/email";
 import {
   getCampaignProgress,
+  retryEmailCampaign,
   sendTestEmail,
   startEmailCampaign,
 } from "@/server/actions/email-campaigns";
@@ -226,6 +237,20 @@ export function EmailComposer({
       setConfirmOpen(false);
       setProgress(result.data);
       poll(result.data.id);
+    });
+  };
+
+  const onRetry = () => {
+    if (!progress) return;
+    const campaignId = progress.id;
+    startSending(async () => {
+      const result = await retryEmailCampaign(campaignId);
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      setProgress(result.data);
+      poll(campaignId);
     });
   };
 
@@ -428,7 +453,12 @@ export function EmailComposer({
           </Card>
 
           {progress ? (
-            <CampaignProgressCard progress={progress} onDismiss={() => setProgress(null)} />
+            <CampaignProgressCard
+              progress={progress}
+              isRetrying={isStarting}
+              onRetry={onRetry}
+              onDismiss={() => setProgress(null)}
+            />
           ) : (
             <Card>
               <CardHeader>
@@ -617,9 +647,13 @@ function TemplateOption({ template }: { template: EmailTemplate }) {
 
 function CampaignProgressCard({
   progress,
+  isRetrying,
+  onRetry,
   onDismiss,
 }: {
   progress: EmailCampaignProgress;
+  isRetrying: boolean;
+  onRetry: () => void;
   onDismiss: () => void;
 }) {
   const done = progress.sent_count + progress.failed_count;
@@ -685,7 +719,13 @@ function CampaignProgressCard({
         {progress.error && <p className="text-sm text-destructive">{progress.error}</p>}
 
         {!isRunning && (
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
+            {canRetryCampaign(progress) && (
+              <Button variant="outline" size="sm" disabled={isRetrying} onClick={onRetry}>
+                <RotateCcw className={isRetrying ? "animate-spin" : undefined} />
+                Retry {formatNumber(campaignUnsentCount(progress))} unsent
+              </Button>
+            )}
             <Button variant="outline" size="sm" onClick={onDismiss}>
               Compose another
             </Button>

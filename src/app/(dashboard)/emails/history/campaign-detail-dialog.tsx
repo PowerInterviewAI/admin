@@ -1,8 +1,10 @@
 "use client";
 
+import { RotateCcw } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -19,6 +21,8 @@ import {
   type EmailCampaign,
   type EmailCampaignRow,
   type EmailDelivery,
+  campaignUnsentCount,
+  canRetryCampaign,
 } from "@/lib/schemas/email";
 
 import { CampaignStatusBadge } from "../campaign-status-badge";
@@ -36,6 +40,8 @@ interface CampaignDetailDialogProps {
   appName: string;
   /** Footer year for a campaign with no recorded send date. Read on the server, never here. */
   year: number;
+  isRetrying: boolean;
+  onRetry: () => void;
   onClose: () => void;
 }
 
@@ -45,6 +51,8 @@ export function CampaignDetailDialog({
   isLoading,
   appName,
   year,
+  isRetrying,
+  onRetry,
   onClose,
 }: CampaignDetailDialogProps) {
   return (
@@ -72,12 +80,25 @@ export function CampaignDetailDialog({
             {campaign.interrupted && (
               <p className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
                 This run stopped before it finished, most likely because the dashboard restarted
-                mid-send. Recipients still marked pending were never contacted; re-sending to just
-                those means picking them by hand.
+                mid-send. Recipients still marked pending were never contacted; Retry sends to them
+                and to any that failed.
               </p>
             )}
 
             {campaign.error && <p className="text-sm text-destructive">{campaign.error}</p>}
+
+            {canRetryCampaign(campaign) && (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-3">
+                <p className="text-sm text-muted-foreground">
+                  Sends to the {formatNumber(campaignUnsentCount(campaign))} recipients not yet
+                  reached. Anyone already sent to is skipped.
+                </p>
+                <Button size="sm" variant="outline" disabled={isRetrying} onClick={onRetry}>
+                  <RotateCcw className={isRetrying ? "animate-spin" : undefined} />
+                  Retry {formatNumber(campaignUnsentCount(campaign))} unsent
+                </Button>
+              </div>
+            )}
 
             {/* Keyed by campaign so switching rows resets the tab and the filter. */}
             <CampaignBody
@@ -205,7 +226,12 @@ function DeliveryRow({ entry }: { entry: EmailDelivery }) {
     <li className="flex items-start justify-between gap-3 px-3 py-2">
       <div className="flex min-w-0 flex-col">
         <span className="truncate text-sm">{entry.email}</span>
-        {entry.error && <span className="text-xs text-destructive">{entry.error}</span>}
+        {entry.error && (
+          <span className="text-xs text-destructive">
+            {entry.error}
+            {entry.attempts > 1 && ` (after ${entry.attempts} attempts)`}
+          </span>
+        )}
       </div>
       <span className={`shrink-0 text-xs ${badge.className}`}>{badge.label}</span>
     </li>
