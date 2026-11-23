@@ -226,6 +226,33 @@ interface SmtpError {
   message?: string;
 }
 
+const TRANSIENT_ERROR_CODES = new Set([
+  "ECONNECTION",
+  "ETIMEDOUT",
+  "EDNS",
+  "ESOCKET",
+  "ECONNRESET",
+  "EMAXLIMIT",
+]);
+
+/**
+ * Whether sending the same message again a few seconds later could plausibly succeed.
+ *
+ * The SMTP reply code decides first when there is one: 4xx is the protocol's own "try again later"
+ * (greylisting, a provider's rate limit, a full queue), 5xx is a refusal that repeating will only
+ * repeat. Without a reply the failure happened below SMTP, and only the network-level codes are
+ * worth another attempt - a bad credential or a TLS mismatch fails identically every time.
+ */
+export function isTransientSmtpError(error: unknown): boolean {
+  const smtp = error as SmtpError;
+  const responseCode = smtp?.responseCode;
+
+  if (typeof responseCode === "number" && responseCode > 0) {
+    return responseCode >= 400 && responseCode < 500;
+  }
+  return typeof smtp?.code === "string" && TRANSIENT_ERROR_CODES.has(smtp.code);
+}
+
 /**
  * Turns a driver-level failure into something an admin can act on. The generic nodemailer message
  * for a bad Resend key is `Invalid login: 535 ...`, which does not say which of the four settings
