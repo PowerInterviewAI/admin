@@ -24,6 +24,7 @@ import {
 
 import { CampaignStatusBadge } from "../campaign-status-badge";
 import { PreviewFrame } from "../email-preview";
+import { CampaignRunControls } from "../campaign-run-controls";
 import { RetryCampaignButton } from "../retry-campaign-button";
 
 type DeliveryFilter = "all" | "failed";
@@ -78,18 +79,26 @@ export function CampaignDetailDialog({
                   {campaign.retry_count === 1 ? "time" : "times"}
                 </Badge>
               )}
-              {canRetryCampaign(campaign) && (
-                <div className="ml-auto">
+              <div className="ml-auto flex flex-wrap items-center gap-2">
+                <CampaignRunControls campaign={{ ...campaign, id: campaign._id }} />
+                {canRetryCampaign(campaign) && (
                   <RetryCampaignButton campaign={campaign} onConfirm={onRetry} />
-                </div>
-              )}
+                )}
+              </div>
             </div>
 
             {campaign.interrupted && (
               <p className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
                 This run stopped before it finished, most likely because the dashboard restarted
-                mid-send. Recipients still marked pending were never contacted; Retry sends to them
-                and to any that failed.
+                mid-send. Recipients still marked pending were never contacted. Retry sends to them
+                and to any that failed; Stop closes the campaign without sending to anyone else.
+              </p>
+            )}
+
+            {campaign.status === "paused" && (
+              <p className="rounded-md bg-muted p-3 text-sm text-muted-foreground">
+                Paused. Nothing is sent until you resume, which continues with the recipients still
+                marked not sent.
               </p>
             )}
 

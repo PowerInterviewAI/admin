@@ -5,6 +5,8 @@ import {
   CircleCheck,
   CircleX,
   FileCode2,
+  Pause,
+  Square,
   Send,
   TriangleAlert,
   Users,
@@ -56,6 +58,7 @@ import {
   type RecipientOption,
   canRetryCampaign,
   emailMessageSchema,
+  isCampaignLive,
 } from "@/lib/schemas/email";
 import {
   getCampaignProgress,
@@ -68,6 +71,7 @@ import type { EmailSetup } from "@/server/email/transport";
 import { EmailPreview } from "./email-preview";
 import { HtmlEditor, type HtmlEditorHandle } from "./html-editor";
 import { RecipientPicker } from "./recipient-picker";
+import { CampaignRunControls } from "./campaign-run-controls";
 import { RetryCampaignButton } from "./retry-campaign-button";
 import { SendConfirmDialog } from "./send-confirm-dialog";
 
@@ -141,7 +145,8 @@ export function EmailComposer({
   });
 
   const recipientCount = audience === "all" ? mailableCount : selected.length;
-  const isRunning = progress?.status === "sending";
+  // Paused still holds the composer: the campaign is unfinished and its controls live on the card.
+  const isRunning = progress?.status === "sending" || progress?.status === "paused";
 
   // The preview is fed rather than subscribed - see `PreviewPane`. `register`'s own handler still
   // runs first, so RHF stays the source of truth for validation and for what gets sent.
@@ -155,6 +160,9 @@ export function EmailComposer({
 
   const poll = useCallback(
     (campaignId: string) => {
+      // Resume and Retry restart polling for a campaign whose earlier loop may still be scheduled.
+      if (pollTimer.current) clearTimeout(pollTimer.current);
+
       const tick = async () => {
         const result = await getCampaignProgress(campaignId);
         if (!result.ok) {
@@ -173,6 +181,22 @@ export function EmailComposer({
         // from the loop for one - without it the tab polls every 1.5s until it is closed.
         if (result.data.interrupted) {
           toast.error("Sending stopped before it finished. See the history for who was reached.");
+          router.refresh();
+          return;
+        }
+
+        if (result.data.status === "paused") {
+          toast.info("Campaign paused. Resume continues with the recipients not reached yet.");
+          router.refresh();
+          return;
+        }
+
+        if (result.data.status === "stopped") {
+          toast.info(
+            `Campaign stopped after ${formatNumber(result.data.sent_count)} of ${formatNumber(
+              result.data.total,
+            )} delivered`,
+          );
           router.refresh();
           return;
         }
@@ -243,6 +267,15 @@ export function EmailComposer({
       setProgress(result.data);
       poll(result.data.id);
     });
+  };
+
+  // A resume restarts the loop, so polling starts again; a pause or stop request keeps the current
+  // poll, which runs until the loop has acted on it.
+  const onControl = (next: EmailCampaignProgress) => {
+    const wasLive = progress !== null && isCampaignLive(progress);
+    setProgress(next);
+    if (isCampaignLive(next) && !wasLive) poll(next.id);
+    else if (!isCampaignLive(next)) router.refresh();
   };
 
   const onRetry = async (): Promise<boolean> => {
@@ -460,6 +493,7 @@ export function EmailComposer({
             <CampaignProgressCard
               progress={progress}
               onRetry={onRetry}
+              onControl={onControl}
               onDismiss={() => setProgress(null)}
             />
           ) : (
@@ -651,46 +685,75 @@ function TemplateOption({ template }: { template: EmailTemplate }) {
 function CampaignProgressCard({
   progress,
   onRetry,
+  onControl,
   onDismiss,
 }: {
   progress: EmailCampaignProgress;
   onRetry: () => Promise<boolean>;
+  onControl: (progress: EmailCampaignProgress) => void;
   onDismiss: () => void;
 }) {
   const done = progress.sent_count + progress.failed_count;
   const percent = progress.total === 0 ? 0 : Math.round((done / progress.total) * 100);
-  const isRunning = progress.status === "sending" && !progress.interrupted;
+  const isRunning = isCampaignLive(progress);
+  const notReached = progress.total - done;
+
+  const title = isRunning ? (
+    progress.control === "pause" ? (
+      "Pausing"
+    ) : progress.control === "stop" ? (
+      "Stopping"
+    ) : (
+      "Sending"
+    )
+  ) : progress.interrupted ? (
+    <>
+      <CircleX className="size-4 text-destructive" />
+      Sending was interrupted
+    </>
+  ) : progress.status === "paused" ? (
+    <>
+      <Pause className="size-4 text-muted-foreground" />
+      Paused
+    </>
+  ) : progress.status === "stopped" ? (
+    <>
+      <Square className="size-4 text-muted-foreground" />
+      Campaign stopped
+    </>
+  ) : progress.failed_count === 0 ? (
+    <>
+      <CircleCheck className="size-4 text-emerald-600" />
+      Campaign sent
+    </>
+  ) : (
+    <>
+      <CircleX className="size-4 text-destructive" />
+      Campaign finished with failures
+    </>
+  );
+
+  const description = isRunning
+    ? progress.control
+      ? "Finishing the message being sent right now."
+      : "Sending continues even if you navigate away from this page."
+    : progress.interrupted
+      ? "The dashboard restarted mid-send. Recipients still pending were never contacted."
+      : progress.status === "paused"
+        ? `Nothing is sent while paused. Resume continues with the ${formatNumber(
+            notReached,
+          )} not reached yet.`
+        : progress.status === "stopped"
+          ? `${formatNumber(notReached)} ${
+              notReached === 1 ? "recipient was" : "recipients were"
+            } not contacted.`
+          : "The full delivery log is in the campaign history.";
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          {isRunning ? (
-            "Sending"
-          ) : progress.interrupted ? (
-            <>
-              <CircleX className="size-4 text-destructive" />
-              Sending was interrupted
-            </>
-          ) : progress.failed_count === 0 ? (
-            <>
-              <CircleCheck className="size-4 text-emerald-600" />
-              Campaign sent
-            </>
-          ) : (
-            <>
-              <CircleX className="size-4 text-destructive" />
-              Campaign finished with failures
-            </>
-          )}
-        </CardTitle>
-        <CardDescription>
-          {isRunning
-            ? "Sending continues even if you navigate away from this page."
-            : progress.interrupted
-              ? "The dashboard restarted mid-send. Recipients still pending were never contacted."
-              : "The full delivery log is in the campaign history."}
-        </CardDescription>
+        <CardTitle className="flex items-center gap-2">{title}</CardTitle>
+        <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         <div
@@ -702,7 +765,9 @@ function CampaignProgressCard({
           aria-label="Campaign progress"
         >
           <div
-            className="h-full rounded-full bg-primary transition-[width] duration-500"
+            className={`h-full rounded-full transition-[width] duration-500 ${
+              progress.status === "paused" ? "bg-muted-foreground/50" : "bg-primary"
+            }`}
             style={{ width: `${percent}%` }}
           />
         </div>
@@ -719,16 +784,17 @@ function CampaignProgressCard({
 
         {progress.error && <p className="text-sm text-destructive">{progress.error}</p>}
 
-        {!isRunning && (
-          <div className="flex justify-end gap-2">
-            {canRetryCampaign(progress) && (
-              <RetryCampaignButton campaign={progress} onConfirm={onRetry} />
-            )}
+        <div className="flex flex-wrap justify-end gap-2">
+          <CampaignRunControls campaign={progress} onChange={onControl} />
+          {canRetryCampaign(progress) && (
+            <RetryCampaignButton campaign={progress} onConfirm={onRetry} />
+          )}
+          {!isRunning && progress.status !== "paused" && (
             <Button variant="outline" size="sm" onClick={onDismiss}>
               Compose another
             </Button>
-          </div>
-        )}
+          )}
+        </div>
       </CardContent>
     </Card>
   );
