@@ -19,10 +19,13 @@ import {
   type EmailCampaign,
   type EmailCampaignRow,
   type EmailDelivery,
+  canRetryCampaign,
 } from "@/lib/schemas/email";
 
 import { CampaignStatusBadge } from "../campaign-status-badge";
 import { PreviewFrame } from "../email-preview";
+import { CampaignRunControls } from "../campaign-run-controls";
+import { RetryCampaignButton } from "../retry-campaign-button";
 
 type DeliveryFilter = "all" | "failed";
 
@@ -36,6 +39,8 @@ interface CampaignDetailDialogProps {
   appName: string;
   /** Footer year for a campaign with no recorded send date. Read on the server, never here. */
   year: number;
+  /** Resolves whether the retry started. */
+  onRetry: () => Promise<boolean>;
   onClose: () => void;
 }
 
@@ -45,6 +50,7 @@ export function CampaignDetailDialog({
   isLoading,
   appName,
   year,
+  onRetry,
   onClose,
 }: CampaignDetailDialogProps) {
   return (
@@ -67,13 +73,32 @@ export function CampaignDetailDialog({
               {campaign.failed_count > 0 && (
                 <Badge variant="destructive">{formatNumber(campaign.failed_count)} failed</Badge>
               )}
+              {campaign.retry_count > 0 && (
+                <Badge variant="outline">
+                  Retried {formatNumber(campaign.retry_count)}{" "}
+                  {campaign.retry_count === 1 ? "time" : "times"}
+                </Badge>
+              )}
+              <div className="ml-auto flex flex-wrap items-center gap-2">
+                <CampaignRunControls campaign={{ ...campaign, id: campaign._id }} />
+                {canRetryCampaign(campaign) && (
+                  <RetryCampaignButton campaign={campaign} onConfirm={onRetry} />
+                )}
+              </div>
             </div>
 
             {campaign.interrupted && (
               <p className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
                 This run stopped before it finished, most likely because the dashboard restarted
-                mid-send. Recipients still marked pending were never contacted; re-sending to just
-                those means picking them by hand.
+                mid-send. Recipients still marked pending were never contacted. Retry sends to them
+                and to any that failed; Stop closes the campaign without sending to anyone else.
+              </p>
+            )}
+
+            {campaign.status === "paused" && (
+              <p className="rounded-md bg-muted p-3 text-sm text-muted-foreground">
+                Paused. Nothing is sent until you resume, which continues with the recipients still
+                marked not sent.
               </p>
             )}
 
@@ -205,7 +230,12 @@ function DeliveryRow({ entry }: { entry: EmailDelivery }) {
     <li className="flex items-start justify-between gap-3 px-3 py-2">
       <div className="flex min-w-0 flex-col">
         <span className="truncate text-sm">{entry.email}</span>
-        {entry.error && <span className="text-xs text-destructive">{entry.error}</span>}
+        {entry.error && (
+          <span className="text-xs text-destructive">
+            {entry.error}
+            {entry.attempts > 1 && ` (after ${entry.attempts} attempts)`}
+          </span>
+        )}
       </div>
       <span className={`shrink-0 text-xs ${badge.className}`}>{badge.label}</span>
     </li>

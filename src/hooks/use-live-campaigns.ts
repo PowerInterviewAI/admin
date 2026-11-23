@@ -39,6 +39,9 @@ export function useLiveCampaigns(campaigns: EmailCampaignRow[]): EmailCampaignRo
       campaigns.map((campaign) => {
         const live = progress[campaign._id];
         if (!live || !isCampaignLive(campaign)) return campaign;
+        // A poll result from before a retry restarted the run would report it finished and stop
+        // the polling; the heartbeat says which of the two readings is newer.
+        if ((live.updated_at ?? 0) < (campaign.updated_at ?? 0)) return campaign;
 
         return {
           ...campaign,
@@ -48,6 +51,7 @@ export function useLiveCampaigns(campaigns: EmailCampaignRow[]): EmailCampaignRo
           sent_count: live.sent_count,
           failed_count: live.failed_count,
           error: live.error,
+          control: live.control,
         };
       }),
     [campaigns, progress],
@@ -76,7 +80,9 @@ export function useLiveCampaigns(campaigns: EmailCampaignRow[]): EmailCampaignRo
           previous.total === item.total &&
           previous.sent_count === item.sent_count &&
           previous.failed_count === item.failed_count &&
-          previous.error === item.error
+          previous.error === item.error &&
+          previous.updated_at === item.updated_at &&
+          previous.control === item.control
         ) {
           continue;
         }

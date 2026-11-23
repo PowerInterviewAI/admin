@@ -9,6 +9,7 @@ import {
   type EmailCampaignProgress,
   type RecipientOption,
   emailCampaignInputSchema,
+  emailCampaignStatusSchema,
   emailTestSchema,
   isCampaignInterrupted,
 } from "@/lib/schemas/email";
@@ -20,7 +21,13 @@ import {
   toObjectId,
 } from "@/server/db";
 import { denyUnless } from "@/server/auth/guard";
-import { startCampaign } from "@/server/email/campaign-runner";
+import {
+  pauseCampaign,
+  resumeCampaign,
+  retryCampaign,
+  stopCampaign,
+} from "@/server/email/campaign-control";
+import { newRunId, startCampaign } from "@/server/email/campaign-runner";
 import {
   type EmailConfig,
   describeSmtpError,
@@ -161,9 +168,15 @@ export async function startEmailCampaign(
     return failed(describeSmtpError(error));
   }
 
+  const runId = newRunId();
   let campaignId: string;
   try {
-    campaignId = await createCampaign({ audience, subject, body, template }, recipients, config);
+    campaignId = await createCampaign(
+      { audience, subject, body, template },
+      recipients,
+      config,
+      runId,
+    );
   } catch (error) {
     return failed(error instanceof AppError ? error.message : "Could not record this campaign");
   }
@@ -171,8 +184,15 @@ export async function startEmailCampaign(
   startCampaign({
     campaignId,
     message: { subject, body, template },
-    recipients,
+    targets: recipients.map((recipient, index) => ({
+      index,
+      email: recipient.email,
+      name: greetingName(recipient.username),
+    })),
     config,
+    initialSent: 0,
+    initialFailed: 0,
+    runId,
   });
 
   refresh();
@@ -184,6 +204,8 @@ export async function startEmailCampaign(
     sent_count: 0,
     failed_count: 0,
     error: null,
+    updated_at: currentTimestampMs(),
+    control: null,
   });
 }
 
@@ -196,6 +218,7 @@ async function createCampaign(
   campaign: { audience: string; subject: string; body: string; template: string },
   recipients: EmailRecipient[],
   config: EmailConfig,
+  runId: string,
 ): Promise<string> {
   try {
     const result = await getCollection(COLLECTIONS.emailCampaigns).insertOne({
@@ -215,7 +238,10 @@ async function createCampaign(
         status: "pending",
         error: null,
         sent_at: null,
+        attempts: 0,
       })),
+      retry_count: 0,
+      run_id: runId,
       created_at: currentTimestampMs(),
       // Doubles as the run's heartbeat: the runner touches it on every recipient, and a stale
       // value on a campaign still marked `sending` is how the UI spots an interrupted run.
@@ -227,6 +253,62 @@ async function createCampaign(
   }
 }
 
+type CampaignOperation = (
+  campaignId: string,
+  config: EmailConfig,
+) => Promise<ActionData<EmailCampaignProgress>>;
+
+/**
+ * The actions' half of every campaign control: the permission, the config, and the refresh. What
+ * each operation does lives in `campaign-control.ts`.
+ *
+ * Pause and stop need the config only for its pace (the interrupted threshold), but they still
+ * refuse on a missing SMTP setup: nothing can be running without one, and an admin looking at a
+ * read-only `/emails` should not be offered half the controls.
+ */
+async function runOperation(
+  campaignId: string,
+  operation: CampaignOperation,
+): Promise<ActionData<EmailCampaignProgress>> {
+  const denied = await denyUnless("emails:send");
+  if (denied) return denied;
+
+  const configResult = readEmailConfig();
+  if (!configResult.ok) return failed(configResult.error);
+
+  const result = await operation(campaignId, configResult.config);
+  if (result.ok) refresh();
+  return result;
+}
+
+/** Re-sends to every row not yet delivered on a campaign that is no longer running. */
+export async function retryEmailCampaign(
+  campaignId: string,
+): Promise<ActionData<EmailCampaignProgress>> {
+  return runOperation(campaignId, retryCampaign);
+}
+
+/** Asks a running campaign to pause after the message it is sending. */
+export async function pauseEmailCampaign(
+  campaignId: string,
+): Promise<ActionData<EmailCampaignProgress>> {
+  return runOperation(campaignId, pauseCampaign);
+}
+
+/** Continues a paused campaign with the recipients it has not reached yet. */
+export async function resumeEmailCampaign(
+  campaignId: string,
+): Promise<ActionData<EmailCampaignProgress>> {
+  return runOperation(campaignId, resumeCampaign);
+}
+
+/** Ends a running, paused, or interrupted campaign without sending to anyone else. */
+export async function stopEmailCampaign(
+  campaignId: string,
+): Promise<ActionData<EmailCampaignProgress>> {
+  return runOperation(campaignId, stopCampaign);
+}
+
 /** Counters and heartbeat only. The delivery log is the bulk of the document and no poller reads it. */
 const PROGRESS_PROJECTION = {
   status: 1,
@@ -235,10 +317,12 @@ const PROGRESS_PROJECTION = {
   failed_count: 1,
   error: 1,
   updated_at: 1,
+  control: 1,
 } as const;
 
 function toProgress(doc: Document, timeoutMs: number): EmailCampaignProgress {
-  const status = doc.status === "sending" || doc.status === "failed" ? doc.status : "completed";
+  const parsedStatus = emailCampaignStatusSchema.safeParse(doc.status);
+  const status = parsedStatus.success ? parsedStatus.data : "completed";
 
   return {
     id: String(doc._id),
@@ -254,6 +338,8 @@ function toProgress(doc: Document, timeoutMs: number): EmailCampaignProgress {
     sent_count: Number(doc.sent_count ?? 0),
     failed_count: Number(doc.failed_count ?? 0),
     error: typeof doc.error === "string" ? doc.error : null,
+    updated_at: typeof doc.updated_at === "number" ? doc.updated_at : null,
+    control: doc.control === "pause" || doc.control === "stop" ? doc.control : null,
   };
 }
 

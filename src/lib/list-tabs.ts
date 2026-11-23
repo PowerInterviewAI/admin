@@ -110,7 +110,9 @@ export const AUDIT_LOGS_TABS: readonly ListTab<AuditLogsSearchParams>[] = [
 export const CAMPAIGNS_TABS: readonly ListTab<EmailCampaignsSearchParams>[] = [
   { value: "all", label: "All", patch: {} },
   { value: "sending", label: "Sending", patch: { status: "sending" } },
+  { value: "paused", label: "Paused", patch: { status: "paused" } },
   { value: "completed", label: "Completed", patch: { status: "completed" } },
+  { value: "stopped", label: "Stopped", patch: { status: "stopped" } },
   { value: "failed", label: "Failed", patch: { status: "failed" } },
 ];
 

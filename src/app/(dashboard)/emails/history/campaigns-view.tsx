@@ -25,7 +25,7 @@ import {
   PAGE_SIZE,
   emailCampaignsSearchParamsSchema,
 } from "@/lib/search-params";
-import { loadEmailCampaign } from "@/server/actions/email-campaigns";
+import { loadEmailCampaign, retryEmailCampaign } from "@/server/actions/email-campaigns";
 
 import { CampaignStatusBadge } from "../campaign-status-badge";
 import { CampaignDetailDialog } from "./campaign-detail-dialog";
@@ -143,6 +143,23 @@ export function CampaignsView({
     if (result.ok) setDetail(result.data);
   }, [selectedRow]);
 
+  // The action's own `refresh()` brings the row back as live, which is what restarts both the
+  // table's poll and the delivery-log poll below.
+  const retryCampaign = async (): Promise<boolean> => {
+    if (!selectedRow) return false;
+    const id = selectedRow._id;
+    const result = await retryEmailCampaign(id);
+    if (!result.ok) {
+      toast.error(result.error);
+      return false;
+    }
+    const count = result.data.total - result.data.sent_count;
+    toast.success(`Retrying ${formatNumber(count)} ${count === 1 ? "recipient" : "recipients"}`);
+    const reloaded = await loadEmailCampaign(id);
+    if (reloaded.ok) setDetail(reloaded.data);
+    return true;
+  };
+
   usePoll(
     selectedRow !== null && isCampaignLive(selectedRow),
     CAMPAIGN_POLL_INTERVAL_MS,
@@ -207,6 +224,7 @@ export function CampaignsView({
         isLoading={isLoadingDetail}
         appName={appName}
         year={year}
+        onRetry={retryCampaign}
         onClose={closeCampaign}
       />
     </>
